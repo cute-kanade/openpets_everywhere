@@ -367,5 +367,10 @@ if (isMainModule()) {
 }
 
 function isMainModule(): boolean {
-  return process.argv[1] ? resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
 }

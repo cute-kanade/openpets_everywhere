@@ -106,15 +106,21 @@ try {
   assert.equal(claudeLog.at(-1)?.argv.at(-2), "--scope");
   assert.equal(claudeLog.at(-1)?.argv.at(-1), "local");
 
+  const cliBinLink = join(binDir, "openpets");
+  symlinkSync(new URL("./index.js", import.meta.url).pathname, cliBinLink);
+  const symlinkedHelp = spawnSync(process.execPath, [cliBinLink, "--help"], { encoding: "utf8" });
+  assert.equal(symlinkedHelp.status, 0);
+  assert.match(symlinkedHelp.stdout, /Usage:/);
+
   const opencodeProject = join(dir, "opencode-project");
   mkdirSync(opencodeProject);
   await configureProject({ agent: "opencode", petId: "fixer", cwd: opencodeProject, yes: true, force: false, localDev: false });
   const opencodeConfigPath = join(opencodeProject, ".opencode", "opencode.jsonc");
   const opencodeInstructionPath = join(opencodeProject, ".opencode", "openpets.md");
   const opencodeConfig = JSON.parse(readFileSync(opencodeConfigPath, "utf8")) as { readonly mcp?: Record<string, { readonly command?: readonly string[] }>; readonly instructions?: readonly string[]; readonly plugin?: readonly unknown[] };
-  assert.deepEqual(opencodeConfig.mcp?.openpets?.command, ["npx", "-y", "@open-pets/cli@2.0.0", "mcp", "--pet", "fixer"]);
+  assert.deepEqual(opencodeConfig.mcp?.openpets?.command, ["npx", "-y", "@open-pets/cli@2.0.1", "mcp", "--pet", "fixer"]);
   assert.deepEqual(opencodeConfig.instructions, [".opencode/openpets.md"]);
-  assert.deepEqual(opencodeConfig.plugin, [["@open-pets/opencode@2.0.0", { pet: "fixer" }]]);
+  assert.deepEqual(opencodeConfig.plugin, [["@open-pets/opencode@2.0.1", { pet: "fixer" }]]);
   assert.match(readFileSync(opencodeInstructionPath, "utf8"), /OPENPETS:START/);
   await configureProject({ agent: "opencode", petId: "fixer", cwd: opencodeProject, yes: true, force: false, localDev: false });
   const opencodeConfigAgain = readFileSync(opencodeConfigPath, "utf8");
@@ -140,7 +146,7 @@ try {
   const lowerTop = readFileSync(join(lowerOwnerProject, "opencode.json"), "utf8");
   const lowerOwned = JSON.parse(readFileSync(join(lowerOwnerProject, ".opencode", "opencode.jsonc"), "utf8")) as { readonly mcp?: Record<string, { readonly command?: readonly string[] }> };
   assert.equal(lowerTop.includes("@open-pets/cli"), false);
-  assert.deepEqual(lowerOwned.mcp?.openpets?.command, ["npx", "-y", "@open-pets/cli@2.0.0", "mcp", "--pet", "fixer"]);
+  assert.deepEqual(lowerOwned.mcp?.openpets?.command, ["npx", "-y", "@open-pets/cli@2.0.1", "mcp", "--pet", "fixer"]);
 
   const customProject = join(dir, "opencode-custom");
   mkdirSync(customProject);

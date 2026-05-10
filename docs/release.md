@@ -87,7 +87,9 @@ Do not use `0.0.0` or prerelease tags unless the release script is intentionally
 
 ### 2. Bump package versions
 
-Update the workspace package versions together so bundled packages report the same release version.
+Update all workspace package versions together so bundled packages and npm packages report the same release version.
+
+Use a new version for every release. npm package versions are immutable, so any change to a published package requires a new version across all public OpenPets npm packages.
 
 Files to update:
 
@@ -294,6 +296,8 @@ OpenPets publishes these public npm packages, in dependency order:
 
 Do not publish the private workspace root, `@open-pets/desktop`, or `@open-pets/pet-format`.
 
+Publish all public packages together at the same version whenever any public package changes. The CLI depends on the other `@open-pets/*` packages by exact published version, so partial/mixed-version npm releases can break `npx -y @open-pets/cli ...`.
+
 Dry-run npm publishing first:
 
 ```bash
@@ -313,6 +317,18 @@ pnpm release:npm -- --yes --otp <code>
 ```
 
 Publishing with the npm helper requires `npm whoami` to succeed, a clean working tree, and local `HEAD` to match the upstream branch.
+
+After publishing, verify the npm dependency set resolves:
+
+```bash
+npm view @open-pets/client@<version> version
+npm view @open-pets/agent-events@<version> version
+npm view @open-pets/mcp@<version> version
+npm view @open-pets/claude@<version> version
+npm view @open-pets/opencode@<version> version
+npm view @open-pets/cli@<version> version
+npx -y @open-pets/cli@<version> --help
+```
 
 ## Important notes for future agents
 
