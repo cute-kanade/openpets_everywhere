@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 
-import { getAgentSetupSnapshot, runAgentSetupAction } from "./agent-setup.js";
+import { getAgentSetupSnapshot, runAgentSetupAction, updateAgentSetupCommandPaths } from "./agent-setup.js";
 import { refreshAgentPetContent } from "./agent-pet-controller.js";
 import { completeOnboarding, getAppStateSnapshot, normalizePetScale, petScaleOptions, updatePreferences } from "./app-state.js";
 import { getCatalogUiState } from "./catalog.js";
@@ -204,6 +204,11 @@ export function installInternalUiHandlers(): void {
     }
 
     return runAgentSetupAction(action, selectedPetId, commandMode);
+  });
+
+  ipcMain.handle("openpets:agent-setup-command-paths", (event, patch: unknown) => {
+    assertAllowedSender(event, ["agent-setup"]);
+    return updateAgentSetupCommandPaths(patch);
   });
 }
 
@@ -510,6 +515,7 @@ function createAgentSetupHtml(definition: TaskWindowDefinition): string {
                 </div>
                 <h2>Claude Code</h2>
                 <p>Connect Claude Code to your OpenPets companion.</p>
+                <p id="integration-claude-summary" class="integration-summary">Checking Claude Code…</p>
                 <div class="integration-actions stacked">
                   <button id="integration-claude-install" class="agent-action primary" disabled data-loading="true">
                     <svg class="pm-button-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -524,7 +530,7 @@ function createAgentSetupHtml(definition: TaskWindowDefinition): string {
 
               <article class="integration-card" data-integration-card="opencode" tabindex="-1">
                 <div class="integration-card-top"><span class="integration-icon"><img src="${escapeHtml(integrationIcons.opencode)}" alt="" draggable="false" /></span><span id="integration-opencode-status" class="agent-status-pill">Checking</span></div>
-                <h2>OpenCode</h2><p>Connect OpenCode globally to your OpenPets companion.</p>
+                <h2>OpenCode</h2><p>Connect OpenCode globally to your OpenPets companion.</p><p id="integration-opencode-summary" class="integration-summary">Checking OpenCode…</p>
                 <div class="integration-actions stacked">
                   <button id="integration-opencode-install" class="agent-action primary" disabled data-loading="true">Checking…</button>
                   <button id="integration-opencode-configure" class="agent-action secondary" disabled data-loading="true">Checking…</button>
@@ -576,7 +582,13 @@ function createAgentSetupHtml(definition: TaskWindowDefinition): string {
                   <select id="claude-pet-select" class="agent-select"></select>
                 </div>
 
-                <label class="agent-mode-row dev-mode-row">
+                <details class="agent-inline-details">
+                  <summary><span><small>Advanced detection</small><strong>Claude command path</strong></span></summary>
+                  <p class="agent-note">If Claude is not detected, paste the full path to the Claude executable or command shim. Leave blank for automatic PATH detection.</p>
+                  <div class="agent-path-row"><input id="claude-command-path" class="agent-text-input" type="text" spellcheck="false" placeholder="/Users/alvin/.local/bin/claude" /><button id="claude-command-path-save" class="agent-action secondary compact">Save path</button></div>
+                </details>
+
+                <label class="agent-mode-row dev-mode-row" hidden>
                   <span>
                     <strong>Use local dev commands</strong>
                     <small>Developer-only: use this checkout instead of published packages.</small>
@@ -664,6 +676,7 @@ function createAgentSetupHtml(definition: TaskWindowDefinition): string {
                 <div class="agent-section-header"><span><small>Global connection</small><strong id="opencode-status-title">Checking setup…</strong></span><span id="opencode-status" class="agent-status-pill">Checking</span></div>
                 <p id="opencode-details" class="agent-note">Checking OpenCode…</p>
                 <div class="agent-control-group"><label class="agent-field-label" for="opencode-pet-select">Pet routing</label><select id="opencode-pet-select" class="agent-select"></select></div>
+                <details class="agent-inline-details"><summary><span><small>Advanced detection</small><strong>OpenCode command path</strong></span></summary><p class="agent-note">If OpenCode is not detected, paste the full path to the OpenCode executable or command shim. Leave blank for automatic PATH detection.</p><div class="agent-path-row"><input id="opencode-command-path" class="agent-text-input" type="text" spellcheck="false" placeholder="/Users/alvin/.opencode/bin/opencode" /><button id="opencode-command-path-save" class="agent-action secondary compact">Save path</button></div></details>
                 <p class="agent-hook-warning warning">Desktop OpenCode setup is global and can affect every OpenCode project. For project-local setup, run <code>openpets configure --agent opencode --pet &lt;id&gt;</code>. OpenCode may need npm/network access to load the published OpenPets plugin unless it is already cached or installed.</p>
                 <div class="agent-actions agent-main-actions"><button id="opencode-install" class="agent-action primary">Install global setup</button><button id="opencode-remove" class="agent-action danger">Remove global setup</button><button id="opencode-refresh" class="agent-action secondary">Refresh</button></div>
                 <details class="agent-inline-details" open><summary><span><small>Preview</small><strong>Global OpenCode config</strong></span></summary><p id="opencode-paths" class="agent-note"></p><div class="agent-actions advanced-actions"><button id="opencode-copy-config" class="agent-action secondary compact">Copy config preview</button></div><pre id="opencode-json-preview" class="agent-preview-code json-preview" aria-label="OpenCode config preview" aria-live="polite"></pre></details>
@@ -850,11 +863,14 @@ function createTaskWindowStyles(): string {
     body[data-openpets-view="agent-setup"] .integration-card { min-height: 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 9px; border: 1px solid rgba(126, 161, 210, 0.44); border-radius: 20px; background: rgba(255,255,255,0.76); box-shadow: 0 16px 38px rgba(61, 99, 160, 0.1), inset 0 1px 0 rgba(255,255,255,0.94); padding: 16px; }
     body[data-openpets-view="agent-setup"] .integration-card.featured { border-color: rgba(37, 99, 235, 0.36); background: linear-gradient(180deg, rgba(239, 247, 255, 0.92), rgba(255,255,255,0.78)); }
     body[data-openpets-view="agent-setup"] .integration-card.disabled { opacity: 0.74; }
+    body[data-openpets-view="agent-setup"] .integration-card.needs-attention { border-color: rgba(239, 68, 68, 0.38); background: linear-gradient(180deg, rgba(254, 242, 242, 0.82), rgba(255,255,255,0.78)); }
     body[data-openpets-view="agent-setup"] .integration-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
     body[data-openpets-view="agent-setup"] .integration-icon { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid rgba(126, 161, 210, 0.34); border-radius: 16px; background: rgba(255,255,255,0.76); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 10px 20px rgba(61, 99, 160, 0.08); }
     body[data-openpets-view="agent-setup"] .integration-icon img { width: 28px; height: 28px; object-fit: contain; }
     body[data-openpets-view="agent-setup"] .integration-card h2 { margin: 0; font-size: 20px; color: #102149; }
     body[data-openpets-view="agent-setup"] .integration-card p { flex: 1 1 auto; margin: 0; color: #526483; line-height: 1.35; font-size: 14px; }
+    body[data-openpets-view="agent-setup"] .integration-card .integration-summary { flex: 0 0 auto; padding: 10px 11px; border-radius: 12px; background: rgba(239, 246, 255, 0.72); border: 1px solid rgba(37, 99, 235, 0.14); color: #36547d; font-size: 13px; }
+    body[data-openpets-view="agent-setup"] .integration-card.needs-attention .integration-summary { background: rgba(254, 242, 242, 0.78); border-color: rgba(239, 68, 68, 0.22); color: #991b1b; }
     body[data-openpets-view="agent-setup"] .integration-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
     body[data-openpets-view="agent-setup"] .integration-actions.stacked { grid-template-columns: 1fr; gap: 8px; }
     body[data-openpets-view="agent-setup"] .integration-actions .agent-action:only-child { grid-column: 1 / -1; }
@@ -892,6 +908,9 @@ function createTaskWindowStyles(): string {
     body[data-openpets-view="agent-setup"] .agent-field-label { display: block; margin: 0 0 8px; color: #102149; font-weight: 900; }
     body[data-openpets-view="agent-setup"] .agent-select { width: 100%; box-sizing: border-box; min-height: 42px; border: 1px solid rgba(126, 161, 210, 0.54); border-radius: 12px; background: rgba(255,255,255,0.82); color: #17284f; padding: 0 12px; font: inherit; outline: none; }
     body[data-openpets-view="agent-setup"] .agent-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+    body[data-openpets-view="agent-setup"] .agent-path-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+    body[data-openpets-view="agent-setup"] .agent-text-input { width: 100%; box-sizing: border-box; min-height: 38px; border: 1px solid rgba(126, 161, 210, 0.54); border-radius: 11px; background: rgba(255,255,255,0.82); color: #17284f; padding: 0 11px; font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; outline: none; }
+    body[data-openpets-view="agent-setup"] .agent-text-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
     body[data-openpets-view="agent-setup"] .agent-mode-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 0; color: #17284f; }
     body[data-openpets-view="agent-setup"] .agent-mode-row span { display: grid; gap: 4px; }
     body[data-openpets-view="agent-setup"] .agent-mode-row small { color: #63708f; line-height: 1.35; }

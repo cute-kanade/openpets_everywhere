@@ -1,13 +1,13 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { constants, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync, accessSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 import { createRequire } from "node:module";
 
 import { app } from "electron";
 import { buildClaudeMcpGetCommand, buildClaudeMcpPreview, classifyClaudeMcpStatus, createOpenPetsHookSettingsPreview, doctorClaudeHooks, installClaudeHooks, mapAsarPathToUnpacked, uninstallClaudeHooks, type ClaudeCommandSpec, type ClaudeHookDoctorResult, type ClaudeMcpPreview, type OpenPetsCommandMode, type ParsedClaudeMcpEntry } from "@open-pets/claude";
 import { doctorOpenCodeGlobalSetup, getGlobalOpenCodeConfigDir, parseOpenCodeConfig, prepareOpenCodeGlobalRemove, prepareOpenCodeGlobalSetup, writePreparedOpenCodeGlobalRemove, writePreparedOpenCodeGlobalSetup } from "@open-pets/opencode";
 
-import { getAppStateSnapshot, type InstalledPetState } from "./app-state.js";
+import { getAppStateSnapshot, updatePreferences, type InstalledPetState, type OpenPetsStateV1 } from "./app-state.js";
 import { doctorClaudeOpenPetsMemory, installClaudeOpenPetsMemory, uninstallClaudeOpenPetsMemory, type ClaudeOpenPetsMemoryStatus } from "./claude-memory.js";
 
 export type AgentSetupAction = "configure" | "replace" | "remove" | "install-memory" | "doctor-hooks" | "install-hooks" | "uninstall-hooks" | "opencode-install" | "opencode-remove";
@@ -43,8 +43,14 @@ export interface AgentSetupSnapshot {
   readonly memoryStatus: ClaudeOpenPetsMemoryStatus;
   readonly opencodeStatus: OpenCodeSetupStatus;
   readonly opencodePreview: OpenCodeSetupPreview;
+  readonly commandPaths: AgentSetupCommandPaths;
   readonly busy: boolean;
   readonly lastAction?: AgentSetupActionResult;
+}
+
+export interface AgentSetupCommandPaths {
+  readonly claude: string;
+  readonly opencode: string;
 }
 
 export interface OpenCodeSetupStatus {
@@ -121,10 +127,25 @@ export async function getAgentSetupSnapshot(selectedPetId?: unknown, commandMode
     memoryStatus,
     opencodeStatus: opencode.status,
     opencodePreview: opencode.preview,
+    commandPaths: getAgentSetupCommandPaths(),
     busy: operationRunning,
     lastAction,
   };
 }
+
+export function updateAgentSetupCommandPaths(patch: unknown): AgentSetupCommandPaths {
+  if (!isRecord(patch)) throw new Error("Invalid command path settings.");
+  for (const key of Object.keys(patch)) {
+    if (key !== "claude" && key !== "opencode") throw new Error("Invalid command path setting.");
+  }
+  const updates: Writable<Partial<OpenPetsStateV1["preferences"]>> = {};
+  if ("claude" in patch) updates.claudeCommandPath = normalizeOptionalCommandPath(patch.claude, "Claude");
+  if ("opencode" in patch) updates.opencodeCommandPath = normalizeOptionalCommandPath(patch.opencode, "OpenCode");
+  updatePreferences(updates);
+  return getAgentSetupCommandPaths();
+}
+
+type Writable<T> = { -readonly [K in keyof T]: T[K] };
 
 export async function runAgentSetupAction(action: AgentSetupAction, selectedPetId?: unknown, commandModeInput?: unknown): Promise<AgentSetupSnapshot> {
   if (operationRunning) throw new Error("Another Claude setup operation is already running.");
@@ -154,7 +175,7 @@ export function sanitizeAgentSetupOutput(value: string): string {
 
 function safeBuildClaudeMcpPreview(selectedPetId: string | undefined, commandMode: OpenPetsCommandMode): { readonly preview: ClaudeMcpPreview; readonly error?: string } {
   try {
-    return { preview: buildClaudeMcpPreview(selectedPetId, commandMode) };
+    return { preview: withPreferredClaudeCommand(buildClaudeMcpPreview(selectedPetId, commandMode)) };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Packaged OpenPets command resources are unavailable.";
     return { preview: createErrorPreview(commandMode, message), error: message };
@@ -170,12 +191,24 @@ function safeDoctorClaudeHooks(commandMode: OpenPetsCommandMode, selectedPetId: 
 }
 
 function createErrorPreview(commandMode: OpenPetsCommandMode, message: string): ClaudeMcpPreview {
+  const claude = getPreferredClaudeCommand();
   return {
     commandMode,
-    add: { command: "claude", args: [] },
-    remove: { command: "claude", args: ["mcp", "remove", "--scope", "user", "openpets"] },
+    add: { command: claude, args: [] },
+    remove: { command: claude, args: ["mcp", "remove", "--scope", "user", "openpets"] },
     mcpJson: { mcpServers: { openpets: { type: "stdio", command: "node", args: [] } } },
     displayCommand: message,
+  };
+}
+
+function withPreferredClaudeCommand(preview: ClaudeMcpPreview): ClaudeMcpPreview {
+  const claude = getPreferredClaudeCommand();
+  if (claude === preview.add.command && claude === preview.remove.command) return preview;
+  return {
+    ...preview,
+    add: { ...preview.add, command: claude },
+    remove: { ...preview.remove, command: claude },
+    displayCommand: preview.displayCommand.replace(/^claude(?=\s|$)/, quoteCommandForDisplay(claude)),
   };
 }
 
@@ -278,14 +311,14 @@ async function getOpenCodeSetup(commandMode: OpenPetsCommandMode, selectedPetId:
   const pluginVersion = getOpenCodePackageVersion();
   const cliEntryPath = commandMode === "published" ? undefined : getDesktopCliEntryPath(commandMode);
   const prepared = safePrepareOpenCode(configDir, petId, cliVersion, pluginVersion, commandMode, cliEntryPath);
-  const detected = await runCommand({ command: process.platform === "win32" ? "opencode.cmd" : "opencode", args: ["--version"] });
+  const detected = await runCommand({ command: getPreferredOpenCodeCommand(), args: ["--version"] });
   const globalState = doctorOpenCodeGlobalSetup(configDir);
   const configured = globalState.status === "installed";
   return {
     status: {
       state: globalState.status === "error" || globalState.status === "custom" || globalState.status === "conflict" ? "error" : configured ? "configured" : detected.ok ? "needs_setup" : "not_detected",
       label: configured ? "Installed" : globalState.status === "custom" || globalState.status === "conflict" ? "Needs attention" : detected.ok ? "Ready" : "Not detected",
-      details: globalState.status === "custom" || globalState.status === "conflict" || globalState.status === "error" ? globalState.message : configured ? globalState.message : detected.ok ? "OpenCode was detected. Desktop setup writes global OpenCode config." : "OpenCode was not found on PATH. You can still preview setup, but OpenCode must be installed to use it.",
+      details: globalState.status === "custom" || globalState.status === "conflict" || globalState.status === "error" ? globalState.message : configured ? globalState.message : detected.ok ? "OpenCode was detected. Desktop setup writes global OpenCode config." : getPreferredOpenCodeCommand() === (process.platform === "win32" ? "opencode.cmd" : "opencode") ? "OpenCode was not found on PATH. You can still preview setup, but OpenCode must be installed to use it." : "OpenCode did not run from the saved command path. You can still preview setup, but OpenCode must be installed to use it.",
       configDir: formatUserPath(configDir) ?? configDir,
       canInstall: prepared.ok,
       canRemove: configured,
@@ -301,6 +334,44 @@ async function getOpenCodeSetup(commandMode: OpenPetsCommandMode, selectedPetId:
       configPreview: prepared.ok ? prepared.configPreview : {},
     },
   };
+}
+
+function getAgentSetupCommandPaths(): AgentSetupCommandPaths {
+  const preferences = getAppStateSnapshot().preferences;
+  return {
+    claude: preferences.claudeCommandPath ?? "",
+    opencode: preferences.opencodeCommandPath ?? "",
+  };
+}
+
+function getPreferredClaudeCommand(): string {
+  return getAppStateSnapshot().preferences.claudeCommandPath || "claude";
+}
+
+function getPreferredOpenCodeCommand(): string {
+  return getAppStateSnapshot().preferences.opencodeCommandPath || (process.platform === "win32" ? "opencode.cmd" : "opencode");
+}
+
+function normalizeOptionalCommandPath(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") throw new Error(`${label} command path must be text.`);
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > 4096 || /[\r\n\0]/.test(trimmed)) throw new Error(`${label} command path is invalid.`);
+  if (!isAbsolute(trimmed)) throw new Error(`${label} command path must be a full absolute path.`);
+  if (process.platform === "win32" && /[&|<>^%!]/.test(trimmed)) throw new Error(`${label} command path contains unsupported shell characters.`);
+  try {
+    const stat = statSync(trimmed);
+    if (!stat.isFile()) throw new Error();
+    if (process.platform !== "win32") accessSync(trimmed, constants.X_OK);
+  } catch {
+    throw new Error(`${label} command path must point to an existing executable file.`);
+  }
+  return trimmed;
+}
+
+function quoteCommandForDisplay(command: string): string {
+  return /\s/.test(command) ? JSON.stringify(command) : command;
 }
 
 function safePrepareOpenCode(configDir: string, selectedPetId: string | undefined, cliVersion: string, pluginVersion: string, commandMode: OpenPetsCommandMode, cliEntryPath: string | undefined): { readonly ok: true; readonly command: readonly string[]; readonly configPath: string; readonly cleanupConfigPaths: readonly string[]; readonly instructionPath: string; readonly plugin: readonly unknown[] | string; readonly configPreview: Record<string, unknown> } | { readonly ok: false; readonly message: string } {
@@ -421,7 +492,8 @@ async function detectClaudeCodeStatus(selectedPetId: string | undefined, command
 
   const version = await runClaudeCommand({ command: "claude", args: ["--version"] });
   if (!version.ok) {
-    return createStatus("not_detected", "Not detected", `Claude Code was not found or did not run: ${summarizeCommandResult(version)}`, undefined, version, { present: false, source: "none", verified: false, matchesExpected: false });
+    const hasOverride = getPreferredClaudeCommand() !== "claude";
+    return createStatus("not_detected", "Not detected", `${hasOverride ? "Claude Code did not run from the saved command path" : "Claude Code was not found or did not run"}: ${summarizeCommandResult(version)}`, undefined, version, { present: false, source: "none", verified: false, matchesExpected: false });
   }
 
   const list = await runClaudeCommandWithTimeoutRetry({ command: "claude", args: ["mcp", "list"] });
@@ -499,7 +571,13 @@ function runCommand(spec: ClaudeCommandSpec): Promise<CommandResult> {
   return new Promise((resolve) => {
     const command = process.platform === "win32" && spec.command.toLowerCase().endsWith(".cmd") ? "cmd.exe" : spec.command;
     const args = process.platform === "win32" && spec.command.toLowerCase().endsWith(".cmd") ? ["/d", "/s", "/c", spec.command, ...spec.args] : spec.args;
-    const child = spawn(command, args, { cwd: app.getPath("home"), env: createCommandEnv(), windowsHide: true, shell: false });
+    let child;
+    try {
+      child = spawn(command, args, { cwd: app.getPath("home"), env: createCommandEnv(), windowsHide: true, shell: false });
+    } catch (error) {
+      resolve({ ok: false, timedOut: false, exitCode: null, stdout: "", stderr: "", error: error instanceof Error ? error.message : "Command failed to start." });
+      return;
+    }
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -533,14 +611,62 @@ function delay(ms: number): Promise<void> {
 
 function getClaudeCommandCandidates(command: string): readonly string[] {
   if (command !== "claude") return [command];
+  const preferred = getPreferredClaudeCommand();
+  if (preferred !== "claude") return [preferred];
   if (process.platform === "win32") return ["claude", "claude.cmd"];
   return ["claude"];
 }
 
 function createCommandEnv(): NodeJS.ProcessEnv {
-  const extraPaths = process.platform === "win32" ? [] : ["/opt/homebrew/bin", "/usr/local/bin"];
+  const separator = process.platform === "win32" ? ";" : ":";
   const existingPath = process.env.PATH ?? "";
-  return { ...process.env, PATH: [existingPath, ...extraPaths].filter(Boolean).join(process.platform === "win32" ? ";" : ":") };
+  return { ...process.env, PATH: dedupePathEntries([existingPath, ...getExtraCommandPaths()], separator).join(separator) };
+}
+
+function getExtraCommandPaths(): readonly string[] {
+  if (process.platform === "win32") return [];
+  const home = app.getPath("home");
+  const env = process.env;
+  return filterExistingPaths([
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+    join(home, "bin"),
+    join(home, ".local", "bin"),
+    join(home, ".opencode", "bin"),
+    join(env.VOLTA_HOME || join(home, ".volta"), "bin"),
+    join(env.BUN_INSTALL || join(home, ".bun"), "bin"),
+    join(env.MISE_DATA_DIR || join(home, ".local", "share", "mise"), "shims"),
+    join(env.ASDF_DATA_DIR || join(home, ".asdf"), "shims"),
+    env.PNPM_HOME,
+    join(home, ".local", "share", "pnpm"),
+    join(home, "Library", "pnpm"),
+    join(env.NVM_DIR || join(home, ".nvm"), "current", "bin"),
+  ]);
+}
+
+function filterExistingPaths(paths: readonly (string | undefined)[]): readonly string[] {
+  return paths.filter((path): path is string => Boolean(path && existsSync(path)));
+}
+
+function dedupePathEntries(paths: readonly string[], separator: string): readonly string[] {
+  const seen = new Set<string>();
+  const entries: string[] = [];
+  for (const path of paths.flatMap((value) => value.split(separator)).filter(Boolean)) {
+    if (seen.has(path)) continue;
+    seen.add(path);
+    entries.push(path);
+  }
+  return entries;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function isCommandNotFound(result: CommandResult): boolean {

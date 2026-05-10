@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 import { app } from "electron";
 
@@ -36,6 +36,8 @@ export interface OpenPetsStateV1 {
     readonly speechBubblesEnabled: boolean;
     readonly petScale: number;
     readonly onboardingCompleted: boolean;
+    readonly claudeCommandPath?: string;
+    readonly opencodeCommandPath?: string;
   };
   readonly pets: {
     readonly installed: readonly InstalledPetState[];
@@ -277,7 +279,22 @@ function normalizePreferences(value: Partial<OpenPetsStateV1["preferences"]>): O
     speechBubblesEnabled: true,
     petScale: normalizePetScale(value.petScale),
     onboardingCompleted: normalizeOnboardingCompleted(value),
+    claudeCommandPath: normalizeCommandPath(value.claudeCommandPath),
+    opencodeCommandPath: normalizeCommandPath(value.opencodeCommandPath),
   };
+}
+
+function normalizeCommandPath(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 4096 || /[\r\n\0]/.test(trimmed) || !isAbsolute(trimmed)) return undefined;
+  if (process.platform === "win32" && /[&|<>^%!]/.test(trimmed)) return undefined;
+  try {
+    if (!statSync(trimmed).isFile()) return undefined;
+  } catch {
+    return undefined;
+  }
+  return trimmed;
 }
 
 function normalizeInstalledPets(value: Record<string, unknown>): InstalledPetState[] {
@@ -327,6 +344,8 @@ function createDefaultState(): OpenPetsStateV1 {
       speechBubblesEnabled: true,
       petScale: defaultPetScale,
       onboardingCompleted: false,
+      claudeCommandPath: undefined,
+      opencodeCommandPath: undefined,
     },
     pets: {
       installed: [builtInPet],
