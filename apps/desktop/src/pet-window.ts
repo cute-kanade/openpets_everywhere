@@ -194,6 +194,13 @@ function createBasePetWindow(title: string, position: Point): BrowserWindow {
   window.setMenu(null);
   window.setAlwaysOnTop(true, "floating");
 
+  // Show the pet window on all macOS Spaces (desktop workspaces).
+  // Without this, the window is bound to the Space where it was created
+  // and disappears when the user switches to another Space.
+  if (process.platform === "darwin") {
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
     if (isAllowedPetDocumentUrl(url)) return;
