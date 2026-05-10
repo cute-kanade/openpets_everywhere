@@ -47,6 +47,7 @@ portable:
   artifactName: OpenPets-${version}-win-${arch}-portable.${ext}
 
 linux:
+  icon: assets/app-icon.png
   target:
     - AppImage
     - deb

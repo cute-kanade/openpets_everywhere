@@ -182,6 +182,8 @@ async function renderAgentSetup(selectedPetId, commandMode) {
   statusTitle.textContent = statusTitleFor(snapshot);
   details.textContent = snapshot.status.details;
   renderPetSelect(select, snapshot, selected);
+  const devModeRow = devMode.closest(".dev-mode-row");
+  if (devModeRow instanceof HTMLElement) devModeRow.hidden = !snapshot.localDevAvailable;
   devMode.checked = snapshot.commandMode === "local";
   devMode.disabled = !snapshot.localDevAvailable;
   commandPreview.textContent = snapshot.preview.displayCommand;
