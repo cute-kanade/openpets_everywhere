@@ -100,6 +100,7 @@ packages/agent-events/package.json
 packages/claude/package.json
 packages/cli/package.json
 packages/client/package.json
+packages/install-pet/package.json
 packages/mcp/package.json
 packages/opencode/package.json
 packages/pet-format/package.json
