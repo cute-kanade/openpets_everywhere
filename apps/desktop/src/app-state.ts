@@ -17,7 +17,7 @@ export interface InstalledPetState {
   readonly installed: boolean;
   readonly source?: {
     readonly kind?: "catalog";
-    readonly catalogVersion: 2;
+    readonly catalogVersion: 2 | 3;
     readonly zip: string;
     readonly preview: string;
   } | {
@@ -405,11 +405,11 @@ function normalizeSource(value: unknown): InstalledPetState["source"] | undefine
     return { kind: "codex", path: value.path };
   }
 
-  if (value.catalogVersion !== 2 || typeof value.zip !== "string" || typeof value.preview !== "string") return undefined;
+  if ((value.catalogVersion !== 2 && value.catalogVersion !== 3) || typeof value.zip !== "string" || typeof value.preview !== "string") return undefined;
 
   return {
     kind: "catalog",
-    catalogVersion: 2,
+    catalogVersion: value.catalogVersion,
     zip: value.zip,
     preview: value.preview,
   };

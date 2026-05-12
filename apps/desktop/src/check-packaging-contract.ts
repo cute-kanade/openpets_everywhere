@@ -159,6 +159,11 @@ assert.ok(windowsSource.includes(`content="default-src 'none'; img-src data:; st
 assert.doesNotMatch(windowsSource, /data-default-pet-sprite-src|createAssetDataUrl\("default-pet-spritesheet\.webp"/, "Pet Manager must not embed the large default spritesheet into the task-window data URL.");
 assert.match(windowsSource, /default-pet-thumbnail\.png/, "Pet Manager must use the small bundled default pet thumbnail for built-in preview.");
 assert.ok(windowsSource.includes(`content="default-src 'none'; img-src data: https://openpets.dev; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'"`), "Pet Manager image CSP must stay scoped to data URLs and openpets.dev catalog previews.");
+assert.match(windowsSource, /data-pet-filter="codex"/, "Pet Manager must preserve the Codex filter.");
+assert.match(windowsSource, /data-pet-filter="western"/, "Pet Manager must expose a Western catalog filter when v3 metadata is available.");
+assert.match(windowsSource, /data-pet-filter="asian"/, "Pet Manager must expose an Asian catalog filter when v3 metadata is available.");
+assert.match(preloadSource, /api\.getCatalogPage/, "Pet Manager preload must support paged catalog loading.");
+assert.match(preloadSource, /catalogPet\?\.thumbnail/, "Pet Manager cards must prefer lightweight v3 thumbnails over full spritesheets.");
 assert.match(windowsSource, /petManagerWindowWidth\s*=\s*1160/, "Pet Manager should use the approved wider 1160px default window width.");
 assert.match(windowsSource, /petManagerWindowHeight\s*=\s*780/, "Pet Manager should use the approved taller 780px default window height.");
 assert.match(agentSetupHtmlSource, /content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'"/, "Agent Setup image CSP must stay data-only for the bundled logo asset.");

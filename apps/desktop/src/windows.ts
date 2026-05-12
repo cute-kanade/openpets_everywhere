@@ -6,7 +6,7 @@ import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { getAgentSetupSnapshot, runAgentSetupAction, updateAgentSetupCommandPaths } from "./agent-setup.js";
 import { refreshAgentPetContent } from "./agent-pet-controller.js";
 import { completeOnboarding, getAppStateSnapshot, normalizePetScale, petScaleOptions, updatePreferences } from "./app-state.js";
-import { getCatalogUiState } from "./catalog.js";
+import { getCatalogPageUiState, getCatalogUiState } from "./catalog.js";
 import { getCodexPetsUiState, importCodexPet } from "./codex-pets.js";
 import { refreshDefaultPetContent, resetDefaultPetToInitialPosition } from "./default-pet-controller.js";
 import { installPet, removePet, setDefaultInstalledPet } from "./pet-installation.js";
@@ -97,6 +97,12 @@ export function installInternalUiHandlers(): void {
   ipcMain.handle("openpets:get-catalog", async (event) => {
     assertAllowedSender(event, ["pet-manager"]);
     return getCatalogUiState();
+  });
+
+  ipcMain.handle("openpets:get-catalog-page", async (event, pageIndex: unknown) => {
+    assertAllowedSender(event, ["pet-manager"]);
+    if (!Number.isSafeInteger(pageIndex) || pageIndex < 0) throw new Error("Invalid catalog page index.");
+    return getCatalogPageUiState(pageIndex);
   });
 
   ipcMain.handle("openpets:get-codex-pets", async (event) => {
@@ -379,6 +385,8 @@ function createPetManagerHtml(definition: TaskWindowDefinition): string {
                 <button id="pm-filter-all" class="pm-filter active" type="button" data-pet-filter="all" aria-pressed="true">All</button>
                 <button id="pm-filter-installed" class="pm-filter" type="button" data-pet-filter="installed" aria-pressed="false">Installed</button>
                 <button id="pm-filter-codex" class="pm-filter" type="button" data-pet-filter="codex" aria-pressed="false">Codex</button>
+                <button id="pm-filter-western" class="pm-filter" type="button" data-pet-filter="western" aria-pressed="false" hidden>Western</button>
+                <button id="pm-filter-asian" class="pm-filter" type="button" data-pet-filter="asian" aria-pressed="false" hidden>Asian</button>
               </div>
               <span id="catalog-status" class="pm-status-pill">Loading…</span>
             </div>
@@ -1024,6 +1032,9 @@ function createTaskWindowStyles(): string {
     body[data-openpets-view="pet-manager"] .pm-detail-actions button:disabled { opacity: 1; cursor: default; background: linear-gradient(180deg, #ecf5ff, #dbeafe); color: #176df2; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9); }
     body[data-openpets-view="pet-manager"] .pm-detail-actions button:only-child { grid-column: 1 / -1; }
     body[data-openpets-view="pet-manager"] .pm-empty-state { grid-column: 1 / -1; padding: 28px; text-align: center; color: #667694; border: 1px dashed rgba(126, 161, 210, 0.48); border-radius: 18px; background: rgba(255,255,255,0.5); }
+    body[data-openpets-view="pet-manager"] .pm-load-more { grid-column: 1 / -1; border: 1px solid rgba(59, 130, 246, 0.26); border-radius: 16px; background: rgba(255,255,255,0.78); color: #1d4ed8; font-weight: 800; padding: 12px 14px; cursor: pointer; }
+    body[data-openpets-view="pet-manager"] .pm-load-more:disabled { cursor: wait; opacity: 0.66; }
+    body[data-openpets-view="pet-manager"] .pm-page-hint { grid-column: 1 / -1; color: #667694; font-size: 12px; text-align: center; }
     body[data-openpets-view="pet-manager"] [data-error] { position: fixed; left: 18px; right: 18px; bottom: 8px; margin: 0; color: #b91c1c; pointer-events: none; }
     @keyframes pm-idle-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
     @keyframes pm-sprite-idle { from { background-position: 0 0; } to { background-position: 85.714% 0; } }

@@ -8,8 +8,8 @@ import yauzl from "yauzl";
 import type { Entry, ZipFile } from "yauzl";
 
 import { getAppStateSnapshot, installPetState, removePetState, setDefaultPet, type OpenPetsStateV1 } from "./app-state.js";
-import { getCatalogUiState } from "./catalog.js";
-import type { CatalogPetV2 } from "./catalog-validation.js";
+import { getCatalogPetById } from "./catalog.js";
+import type { CatalogPetV2, CatalogPetV3 } from "./catalog-validation.js";
 import { builtInPet } from "./built-in-pet.js";
 import { assertInsideRoot, assertSafePetId, getInstalledPetDir, getPetsRoot } from "./pet-paths.js";
 import { assertOutputPathInside, hasSupportedZipMagic, ZipEntryPathTracker } from "./zip-safety.js";
@@ -51,9 +51,9 @@ export async function installPet(petId: string): Promise<OpenPetsStateV1> {
           displayName: catalogPet.displayName,
           description: catalogPet.description,
           source: {
-            catalogVersion: 2,
+            catalogVersion: "thumbnail" in catalogPet ? 3 : 2,
             zip: catalogPet.zip,
-            preview: catalogPet.preview,
+            preview: "preview" in catalogPet && catalogPet.preview ? catalogPet.preview : "thumbnail" in catalogPet ? catalogPet.thumbnail : catalogPet.preview,
           },
         });
       } catch (error) {
@@ -106,13 +106,8 @@ export async function withPetOperation<T>(key: string, callback: () => Promise<T
   }
 }
 
-async function getCatalogPet(petId: string): Promise<CatalogPetV2> {
-  const catalog = await getCatalogUiState();
-  const pet = catalog.pets.find((candidate) => candidate.id === petId);
-  if (!pet) {
-    throw new Error(`Pet is not available in the validated catalog: ${petId}`);
-  }
-  return pet;
+async function getCatalogPet(petId: string): Promise<CatalogPetV2 | CatalogPetV3> {
+  return getCatalogPetById(petId);
 }
 
 async function downloadPetZip(zipUrl: string): Promise<Buffer> {
