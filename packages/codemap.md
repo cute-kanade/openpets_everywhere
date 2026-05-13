@@ -11,6 +11,7 @@ Provides modular, reusable components for the OpenPets ecosystem:
 - **cli**: Main CLI tool for configuring agents and managing pets
 - **mcp**: MCP server implementation for agent integration
 - **opencode**: OpenCode editor integration (plugin, config management)
+- **pi**: Pi coding-agent extension integration (event reactions, slash commands)
 - **claude**: Claude Code integration (hooks, MCP config)
 - **install-pet**: Standalone pet installer from gallery catalog
 
@@ -44,6 +45,9 @@ MCP Server (packages/mcp/src/index.ts)
 OpenCode Plugin (packages/opencode/src/plugin.ts)
     └── Hooks into editor events → @open-pets/client
 
+Pi Extension (packages/pi/src/extension.ts)
+    └── Hooks into Pi extension events → @open-pets/client
+
 Claude Hooks (packages/claude/src/hooks.ts)
     └── Processes hook events → @open-pets/client
 ```
@@ -55,6 +59,7 @@ Claude Hooks (packages/claude/src/hooks.ts)
 - `mcp` depends on: `client`
 - `claude` depends on: `client`, `agent-events`
 - `opencode` depends on: `client`, `agent-events`
+- `pi` depends on: `client`, `agent-events`
 - `install-pet` depends on: `client`
 
 **External Integrations**:

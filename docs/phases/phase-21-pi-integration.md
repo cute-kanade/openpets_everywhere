@@ -7,7 +7,7 @@ Add first-class OpenPets support for Pi through a dedicated Pi extension package
 Target support means:
 
 - Pi agent activity drives OpenPets reactions automatically.
-- Pi users can install OpenPets with Pi's package system.
+- Pi users can install the OpenPets Pi extension with Pi's package system. The OpenPets desktop app remains a separate app installation.
 - Pi users can run a small `/openpets` command namespace for status and manual checks.
 - OpenPets desktop can show Pi in Integrations using `apps/desktop/assets/integrations/pi.svg`.
 - Public docs explain Pi setup as extension-first, not MCP-first.
@@ -107,6 +107,20 @@ pi install -l npm:@open-pets/pi
 
 The package should export one Pi extension that uses `@open-pets/client` to send local IPC updates. It should not depend on MCP for core behavior.
 
+## Compatibility gate
+
+Pi's coding-agent package is currently treated as an unstable integration surface until verified against a real release.
+
+Before public support is claimed:
+
+- Record the exact tested Pi package version or commit.
+- Record tested operating systems.
+- Confirm the extension can load through both local package loading and `pi -e ./dist/extension.js` or the closest supported equivalent.
+- Confirm whether Pi package dependencies should use a narrow supported peer range or `"*"`. Do not publish with `"*"` unless Pi package-manager behavior confirms that is the intended package convention.
+- Keep desktop and web status planned/manual until real Pi loading passes.
+
+Current Phase 21B local validation uses Pi package API shape from `@earendil-works/pi-coding-agent@0.74.0`, installed through the workspace lockfile. Full real-CLI validation with `pi install` / `pi -e` remains required before marking the integration supported.
+
 ## Package contract
 
 Recommended `package.json` shape:
@@ -114,20 +128,41 @@ Recommended `package.json` shape:
 ```json
 {
   "name": "@open-pets/pi",
+  "version": "0.0.0",
+  "license": "MIT",
   "type": "module",
   "keywords": ["pi-package", "openpets", "coding-agent"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
     "./extension": "./dist/extension.js"
   },
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alvinunreal/openpets.git",
+    "directory": "packages/pi"
+  },
   "pi": {
     "extensions": ["./dist/extension.js"]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@open-pets/client": "workspace:*"
   },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "<tested-range>",
+    "typescript": "^5.0.0"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "<tested-range>"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
 ```
@@ -138,6 +173,10 @@ Notes:
 - Keep runtime dependencies minimal.
 - Build output should be plain ESM JavaScript that Pi can load without TypeScript compilation.
 - The extension should tolerate missing OpenPets desktop IPC and keep Pi startup/session flow unaffected.
+- Add `@open-pets/pi` to `scripts/release-npm.mjs` publish order after its dependencies.
+- `pnpm pack --dry-run` must show the tarball includes built `dist` JavaScript and declarations only, not phase docs or source-only runtime files.
+- Verify workspace dependency rewriting before publish.
+- Reuse `@open-pets/agent-events` for shared event messages/safety if it fits the exact validation requirements; otherwise document the reason and test Pi against the same rejection corpus as desktop/MCP.
 
 ## Runtime behavior
 
@@ -151,7 +190,7 @@ The extension should:
 - Avoid long-lived timers unless needed for throttling cleanup.
 - Clean up on `session_shutdown`.
 
-If configured with a pet id, the package should request or reuse an agent-pet lease where practical. If lease behavior is too heavy for MVP, the first version may target the default pet and defer explicit pet routing to a later subphase.
+MVP targets the default pet only. Explicit pet routing, selected-pet config, and lease reuse are deferred until the Pi extension behavior is verified in production. A later pet-routing phase must define configuration, lease acquire/reuse, stale-lease fallback, shutdown cleanup, and missing-pet tests before enabling `--pet`-style behavior.
 
 ## Event mapping
 
@@ -159,23 +198,28 @@ Default mapping should favor silent reactions over speech.
 
 | Pi event | Condition | OpenPets reaction | Speech |
 | --- | --- | --- | --- |
-| `session_start` | Pi starts, resumes, or reloads. | `waving` | Optional short connected message, throttled. |
+| `session_start` | Pi starts, resumes, or reloads. | `waving` | None by default. |
 | `agent_start` | Agent loop begins. | `thinking` | None. |
 | `turn_start` | New turn begins. | `working` | None. |
 | `tool_execution_start` | Tool looks like edit, write, patch, or apply. | `editing` | None. |
 | `tool_execution_start` | Tool or shell command looks test-like. | `testing` | None. |
 | `tool_execution_start` | Shell/bash command, non-test. | `running` | None. |
 | `tool_execution_start` | Other tool. | `working` | None. |
-| `tool_execution_end` | Tool result is error. | `error` | Optional short error-pool message, throttled. |
-| `agent_end` | Agent loop finishes. | `success` | None. |
+| `tool_execution_end` | `isError` is true. | `error` | Optional short fixed error-pool message, throttled. |
+| `agent_end` | Agent loop finishes without a recent tool error. | `success` | None. |
 | `session_shutdown` | Quit, reload, new, resume, or fork. | `idle` | None. |
 
 Classification rules:
 
 - Tool names may be inspected.
-- Tool arguments may be inspected only for coarse classification, such as test detection.
+- Tool arguments may be inspected only through bounded in-memory slices for coarse classification, such as test detection.
+- `tool_execution_end` must use `isError` only and must not inspect `result`.
 - Never place raw tool arguments, command text, output, stack traces, prompt text, or assistant text in pet speech.
 - Ignore OpenPets-related commands/tools to prevent self-trigger loops.
+- Do not subscribe to prompt/content-heavy events in MVP: `input`, `before_agent_start`, `message_update`, `message_end`, or `tool_result`.
+- Track current-agent error state so `agent_end` does not immediately overwrite a recent `error` reaction with `success`.
+- Do not register model-callable Pi tools in Phase 21. No `pi.registerTool()` usage is allowed in MVP.
+- Avoid `tool_call` handlers in MVP unless a later phase needs blocking/mutation behavior.
 
 ## Slash command namespace
 
@@ -220,6 +264,11 @@ The Pi integration must preserve the OpenPets safety model.
 - Manual `/openpets say` input is validated before sending.
 - OpenPets failures never block Pi model calls or tool execution.
 - Pi package docs warn that Pi extensions run with local system permissions.
+- Debug logging is off by default, sanitized, and never logs raw event payloads.
+
+The Pi package must include tests proving no prompt, assistant text, tool output, command text, file paths, URLs, diffs, logs, stack traces, secrets, or tokens can reach `client.say` through automatic events.
+
+Speech validation must be exact, not approximate. Either extract a shared public validator used by desktop/MCP/Pi, or test Pi against the same rejection corpus: newline, length, code-like text, URLs, paths, secrets, private-key-looking text, and trimming behavior.
 
 ## Desktop integration UI
 
@@ -240,6 +289,8 @@ Implementation should:
 
 Do not add risky desktop-managed writes to Pi settings until the package contract is stable. The first desktop release can be documentation/install-command oriented.
 
+If a desktop detail panel is added, update all hard-coded integration UI surfaces together: icon map, card data, navigation/back/focus behavior, busy-control lists, preload event routing, disabled/manual state styling, and CSP-safe data-only icon rendering.
+
 ## Public docs
 
 Add or keep a public integration guide at:
@@ -259,6 +310,7 @@ The page should explain:
 - Privacy model.
 - Package trust warning.
 - Current status if not yet released.
+- Tested Pi version and tested operating systems once verified.
 
 When `@open-pets/pi` is actually published and supported, update the frontmatter from planned/inactive to active/supported and link it from active integration surfaces.
 
@@ -268,25 +320,31 @@ When `@open-pets/pi` is actually published and supported, update the frontmatter
 - Do not require MCP for Pi's automatic reactions.
 - Do not add new public OpenPets MCP tools.
 - Do not expose pet install/remove/default controls to the Pi model in MVP.
+- Do not expose model-callable OpenPets tools through Pi in MVP.
+- Do not call `pi.registerTool()` in Phase 21.
 - Do not send raw prompts, assistant text, tool inputs, tool output, file paths, command output, logs, diffs, URLs, or secrets to pet speech.
 - Do not build custom Pi TUI widgets in MVP.
 - Do not make OpenPets availability affect Pi startup, model requests, or tool execution.
 
 ## Proposed subphase sequence
 
-### Phase 21A — Pi Package Foundation
+### Phase 21A — Pi API Spike and Package Foundation
 
-**Goal:** Add `packages/pi` with extension loading shape, shared event classification, command parsing, and no desktop UI changes beyond packaging contracts.
+**Goal:** Verify Pi extension/package API assumptions, then add `packages/pi` with extension loading shape, shared event classification, and command parsing. No desktop UI or packaging-contract changes in this phase.
 
 **Scope:**
 
 - Add workspace package `@open-pets/pi`.
+- Verify current Pi extension loading and event API against a real Pi version or local cloned Pi package before relying on it.
+- Record tested Pi version or commit in this plan/docs.
 - Export a Pi extension entry compatible with Pi's package loader.
 - Add a small OpenPets client wrapper with timeout and failure swallowing.
+- Use explicit short timeouts for OpenPets calls, initially 500ms for automatic reactions.
 - Add event classification helpers.
-- Add speech safety and throttling helpers, preferably reusing existing shared agent-event utilities where possible.
+- Add exact speech safety and throttling helpers, reusing shared validators or matching the desktop/MCP rejection corpus.
 - Register `/openpets` command with `status`, `test`, `react`, `say`, and `help` subcommands.
-- Add unit tests for command parsing, reaction validation, speech rejection, and event classification.
+- Add unit tests for command parsing, reaction validation, speech rejection, event classification, non-blocking automatic handlers, unhandled rejection prevention, sanitized debug logging, and no automatic privacy leakage into `client.say`.
+- Do not register Pi tools.
 
 **Acceptance criteria:**
 
@@ -294,6 +352,9 @@ When `@open-pets/pi` is actually published and supported, update the frontmatter
 - Extension factory returns quickly and does not require OpenPets desktop to be running.
 - Automatic event handlers do not await IPC in a way that blocks Pi.
 - `/openpets say` rejects unsafe text.
+- Automatic handlers never call `client.say` with raw event payload data.
+- `agent_end` success is suppressed after recent tool errors.
+- `pnpm pack --dry-run` includes the expected package files only.
 - Existing Claude/OpenCode/MCP behavior remains unchanged.
 
 **Checks:**
@@ -301,6 +362,7 @@ When `@open-pets/pi` is actually published and supported, update the frontmatter
 - `pnpm --filter @open-pets/pi check`
 - `pnpm --filter @open-pets/client check`
 - `pnpm --filter @open-pets/agent-events check`
+- `pnpm --filter @open-pets/pi pack --dry-run`
 
 ### Phase 21B — Pi Event Runtime and Manual Smoke Test
 
@@ -310,18 +372,25 @@ When `@open-pets/pi` is actually published and supported, update the frontmatter
 
 - Install/load the local package in Pi using a local package path or `pi -e` flow.
 - Confirm event names and payload shapes against the current Pi release.
+- Confirm global package install works.
+- Confirm project-local package install works.
+- Confirm global and project-local removal behavior.
 - Confirm that handlers are safe in interactive, print, and non-interactive modes.
 - Confirm that unavailable OpenPets desktop app does not produce noisy failures.
+- Confirm reload/new/resume/fork cleanup behavior.
+- Confirm parallel tool execution does not produce stale state or unhandled rejections.
 - Add a manual smoke-test checklist.
 - Adjust mapping for any event names that differ from the researched API.
 
 **Acceptance criteria:**
 
 - Pi can load the local OpenPets extension.
+- Pi can load the packed package locally.
 - `/openpets status` reports reachable/unreachable clearly.
 - Tool start/end events produce expected reactions when OpenPets is running.
 - No prompts, outputs, or commands appear in pet speech during normal automation.
 - Pi continues normally when OpenPets is closed.
+- Malformed/missing discovery files fail clearly or are ignored by Pi without OpenPets-specific noise.
 
 **Checks:**
 
@@ -382,14 +451,13 @@ When `@open-pets/pi` is actually published and supported, update the frontmatter
 - `pnpm --filter @open-pets/pi check`
 - `pnpm --filter @open-pets/desktop check`
 - Web docs build/check command for the web workspace.
+- From `web/`: `bun lint`
+- From `web/`: `bun run build`
 
 ## Open questions
 
-- Should MVP support explicit `--pet` / selected pet routing, or should it target the default pet first?
 - Does Pi's package loader prefer ESM-only packages, CJS-compatible exports, or both?
-- Should `@earendil-works/pi-coding-agent` stay a peer dependency with `"*"`, or should the package pin/test a supported range?
 - Can desktop safely run `pi install` for users, or should it remain manual until Pi settings semantics are stable?
-- Should automatic `session_start` speech be disabled by default to avoid noise?
 - Where should debug logging go for extension failures without polluting Pi output?
 
 ## Initial recommendation

@@ -47,7 +47,7 @@ assertNonEmptyFile(join(appDir, "assets", "default-pet-spritesheet.webp"), "defa
 assertNonEmptyFile(join(appDir, "assets", "default-pet-thumbnail.png"), "default pet thumbnail must exist for Pet Manager preview.");
 assertNonEmptyFile(join(appDir, "assets", "onboarding-logo.webp"), "onboarding logo asset must exist for packaging.");
 assertNonEmptyFile(join(appDir, "assets", "onboarding-pets.webp"), "onboarding pet scene asset must exist for packaging.");
-for (const icon of ["claude.svg", "cursor.svg", "opencode.svg", "vscode.svg", "windsurf.svg", "zed.svg"]) {
+for (const icon of ["claude.svg", "cursor.svg", "opencode.svg", "pi.svg", "vscode.svg", "windsurf.svg", "zed.svg"]) {
   assertSafeBundledSvg(join(appDir, "assets", "integrations", icon), `integration icon must be safe and packaged: ${icon}`);
 }
 assert.match(readFileSync(join(appDir, "src", "assets.ts"), "utf8"), /assets["']?,\s*["']tray-icon\.png|join\("assets", "tray-icon\.png"\)/, "tray icon code must keep using assets/tray-icon.png.");
@@ -165,12 +165,17 @@ assert.match(agentSetupHtmlSource, /content="default-src 'none'; img-src data:; 
 assert.match(windowsSource, /integrations\/claude\.svg/, "Agent Setup integrations hub must use bundled integration SVG assets.");
 assert.match(windowsSource, /integration-opencode-status/, "Agent Setup must show an enabled OpenCode integration card.");
 assert.match(windowsSource, /opencode-detail-view/, "Agent Setup must include an OpenCode detail pane.");
+assert.match(windowsSource, /integrations\/pi\.svg/, "Agent Setup integrations hub must use the bundled Pi SVG asset.");
+assert.match(windowsSource, /integration-pi-status/, "Agent Setup must show a Pi integration card.");
+assert.match(windowsSource, /pi-detail-view/, "Agent Setup must include a Pi manual setup detail pane.");
 assert.match(windowsSource, /Desktop OpenCode setup is global/, "OpenCode desktop setup must clearly warn that it is global.");
 assert.match(preloadSource, /opencode-install/, "Agent Setup preload must bind OpenCode install actions.");
 assert.match(preloadSource, /setIconButtonContent\(opencodeInstall, "spinner", "Installing…"\)/, "OpenCode integration-card install button must show a loading spinner.");
 assert.match(preloadSource, /opencode-remove/, "Agent Setup preload must bind OpenCode remove actions.");
 assert.match(preloadSource, /opencode-copy-config/, "Agent Setup preload must bind OpenCode copy-preview actions.");
 assert.match(preloadSource, /opencodePreview/, "Agent Setup preload must render OpenCode previews.");
+assert.match(preloadSource, /integration-pi-configure/, "Agent Setup preload must bind the Pi integration card.");
+assert.match(preloadSource, /pi-copy-global-install/, "Agent Setup preload must bind Pi copy commands.");
 assert.match(preloadSource, /cleanupConfigPaths/, "OpenCode preview must disclose stale overlay cleanup config paths.");
 assert.match(preloadSource, /configPreview/, "OpenCode preview copy must use the prepared config preview shape.");
 assert.doesNotMatch(agentSetupSource, /JSON\.parse\(prepared\.configWrite\.content\)/, "OpenCode desktop preview must parse JSONC planned config safely, not JSON.parse.");

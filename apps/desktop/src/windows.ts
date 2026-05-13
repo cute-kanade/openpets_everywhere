@@ -519,6 +519,7 @@ function createAgentSetupHtml(definition: TaskWindowDefinition): string {
     claude: createAssetDataUrl("integrations/claude.svg", "image/svg+xml"),
     cursor: createAssetDataUrl("integrations/cursor.svg", "image/svg+xml"),
     opencode: createAssetDataUrl("integrations/opencode.svg", "image/svg+xml"),
+    pi: createAssetDataUrl("integrations/pi.svg", "image/svg+xml"),
     vscode: createAssetDataUrl("integrations/vscode.svg", "image/svg+xml"),
     windsurf: createAssetDataUrl("integrations/windsurf.svg", "image/svg+xml"),
     zed: createAssetDataUrl("integrations/zed.svg", "image/svg+xml"),
@@ -540,7 +541,7 @@ function createAgentSetupHtml(definition: TaskWindowDefinition): string {
               <img class="agent-logo" src="${escapeHtml(logoUrl)}" alt="OpenPets" draggable="false" />
               <p class="eyebrow">OpenPets</p>
               <h1 id="agent-title" tabindex="-1">Integrations</h1>
-              <p class="lede">Install Claude or OpenCode integrations now, or configure the details when you need them.</p>
+              <p class="lede">Install Claude or OpenCode integrations now, explore Pi manual setup, or configure the details when you need them.</p>
             </header>
 
             <div class="integration-grid" aria-label="Available integrations">
@@ -569,6 +570,13 @@ function createAgentSetupHtml(definition: TaskWindowDefinition): string {
                 <div class="integration-actions stacked">
                   <button id="integration-opencode-install" class="agent-action primary" disabled data-loading="true">Checking…</button>
                   <button id="integration-opencode-configure" class="agent-action secondary" disabled data-loading="true">Checking…</button>
+                </div>
+              </article>
+              <article class="integration-card" data-integration-card="pi" tabindex="-1">
+                <div class="integration-card-top"><span class="integration-icon"><img src="${escapeHtml(integrationIcons.pi)}" alt="" draggable="false" /></span><span id="integration-pi-status" class="agent-status-pill info">Manual</span></div>
+                <h2>Pi</h2><p>Connect Pi coding-agent activity through the OpenPets Pi extension package.</p>
+                <div class="integration-actions stacked">
+                  <button id="integration-pi-configure" class="agent-action secondary">View setup</button>
                 </div>
               </article>
               <article class="integration-card disabled">
@@ -718,6 +726,30 @@ function createAgentSetupHtml(definition: TaskWindowDefinition): string {
                 <details class="agent-inline-details" open><summary><span><small>Preview</small><strong>Global OpenCode config</strong></span></summary><p id="opencode-paths" class="agent-note"></p><div class="agent-actions advanced-actions"><button id="opencode-copy-config" class="agent-action secondary compact">Copy config preview</button></div><pre id="opencode-json-preview" class="agent-preview-code json-preview" aria-label="OpenCode config preview" aria-live="polite"></pre></details>
               </article>
               <p id="opencode-action-result" class="agent-result" aria-live="polite">OpenCode may need to be restarted after global setup changes.</p>
+            </section>
+          </section>
+
+          <section id="pi-detail-view" class="claude-detail-view" aria-labelledby="pi-detail-title" hidden>
+            <div class="claude-detail-toolbar"><button id="pi-integration-back" class="agent-action secondary compact">Back to integrations</button></div>
+            <section class="agent-setup-pane" aria-labelledby="pi-detail-title">
+              <header class="agent-title-block compact-title"><p class="eyebrow">Manual integration</p><h1 id="pi-detail-title" tabindex="-1">Pi</h1><p class="lede">Use Pi's package system to load the OpenPets extension. The extension maps Pi session and tool activity to local pet reactions without forwarding prompts or tool output.</p></header>
+              <article class="agent-status-card connection-card">
+                <div class="agent-section-header"><span><small>Status</small><strong>Manual package setup</strong></span><span class="agent-status-pill info">Planned</span></div>
+                <p class="agent-note">The OpenPets Pi package is prepared for extension-first integration. Keep the desktop app running for pet updates. Desktop does not edit Pi settings automatically yet.</p>
+                <div class="docs-table-wrap">
+                  <table>
+                    <tbody>
+                      <tr><td><strong>Global install</strong></td><td>Use Pi's global package settings for every project.</td></tr>
+                      <tr><td><strong>Project install</strong></td><td>Use <code>-l</code> so the current repository owns its Pi package settings.</td></tr>
+                      <tr><td><strong>Privacy</strong></td><td>Automatic reactions do not send prompts, assistant text, tool output, paths, URLs, or secrets.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <details class="agent-inline-details" open><summary><span><small>Commands</small><strong>Pi package setup</strong></span></summary><p class="agent-note">Copy these commands into your terminal. Restart or reload Pi after changing package settings.</p><div class="agent-actions advanced-actions"><button id="pi-copy-global-install" class="agent-action secondary compact">Copy global install</button><button id="pi-copy-project-install" class="agent-action secondary compact">Copy project install</button></div><pre id="pi-command-preview" class="agent-preview-code command-preview" aria-label="Pi setup command preview">pi install npm:@open-pets/pi
+pi install -l npm:@open-pets/pi
+pi remove npm:@open-pets/pi</pre></details>
+              </article>
+              <p id="pi-action-result" class="agent-result" aria-live="polite">Pi setup is manual until real Pi CLI install validation is complete.</p>
             </section>
           </section>
 

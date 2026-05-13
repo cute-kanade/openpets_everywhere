@@ -36,13 +36,15 @@ OpenPets is a pnpm/TypeScript monorepo for an Electron desktop companion app plu
 | `packages/mcp/src/` | MCP server bootstrap, argument parsing, tool registration, and executable validation helpers. | [View Map](packages/mcp/src/codemap.md) |
 | `packages/opencode/` | OpenCode editor integration package with plugin runtime and global setup helpers. | [View Map](packages/opencode/codemap.md) |
 | `packages/opencode/src/` | OpenCode plugin, config mutation, previews, status, and project/global setup modules. | [View Map](packages/opencode/src/codemap.md) |
+| `packages/pi/` | Pi coding-agent integration package with extension runtime and slash command support. | [View Map](packages/pi/codemap.md) |
+| `packages/pi/src/` | Pi extension entry point, event classification, OpenPets command parsing, and validation checks. | [View Map](packages/pi/src/codemap.md) |
 | `packages/pet-format/` | Minimal package marker/type interface for OpenPets pet package identity. | [View Map](packages/pet-format/codemap.md) |
 | `packages/pet-format/src/` | Marker source export for pet-format package consumers. | [View Map](packages/pet-format/src/codemap.md) |
 
 ## Architecture Flow
 
 1. The desktop app starts `apps/desktop/src/main.ts`, initializes app state, creates tray/task windows, and starts a local IPC server.
-2. Agent integrations (`packages/claude`, `packages/opencode`, and `packages/mcp`) emit pet commands through `@open-pets/client`.
+2. Agent integrations (`packages/claude`, `packages/opencode`, `packages/pi`, and `packages/mcp`) emit pet commands through `@open-pets/client`.
 3. The desktop IPC server routes commands through lease-managed controllers so default and agent pets can coexist safely.
 4. Pet assets are resolved from built-in assets, locally developed Codex pets, or remotely downloaded catalog ZIPs.
 5. Workspace packages share TypeScript/ESM build conventions and are wired together through pnpm `workspace:*` dependencies.

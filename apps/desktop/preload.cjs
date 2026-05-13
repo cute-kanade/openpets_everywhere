@@ -343,6 +343,7 @@ function bindIntegrationHubButtons(snapshot, select) {
   const configure = document.getElementById("integration-claude-configure");
   const opencodeInstall = document.getElementById("integration-opencode-install");
   const opencodeConfigure = document.getElementById("integration-opencode-configure");
+  const piConfigure = document.getElementById("integration-pi-configure");
   if (install instanceof HTMLButtonElement) {
     install.onclick = async () => {
       if (install.disabled || snapshot.busy) return;
@@ -383,10 +384,15 @@ function bindIntegrationHubButtons(snapshot, select) {
     };
   }
   if (opencodeConfigure instanceof HTMLButtonElement) opencodeConfigure.onclick = () => showOpenCodeDetailView();
+  if (piConfigure instanceof HTMLButtonElement) piConfigure.onclick = () => showPiDetailView();
   const back = document.getElementById("integration-back");
-  if (back instanceof HTMLButtonElement) back.onclick = showIntegrationsView;
+  if (back instanceof HTMLButtonElement) back.onclick = () => showIntegrationsView("claude");
   const openCodeBack = document.getElementById("opencode-integration-back");
-  if (openCodeBack instanceof HTMLButtonElement) openCodeBack.onclick = showIntegrationsView;
+  if (openCodeBack instanceof HTMLButtonElement) openCodeBack.onclick = () => showIntegrationsView("opencode");
+  const piBack = document.getElementById("pi-integration-back");
+  if (piBack instanceof HTMLButtonElement) piBack.onclick = () => showIntegrationsView("pi");
+  bindAgentSetupButton("pi-copy-global-install", async () => copyText("pi install npm:@open-pets/pi", "pi-action-result", "Copied Pi global install command."), false);
+  bindAgentSetupButton("pi-copy-project-install", async () => copyText("pi install -l npm:@open-pets/pi", "pi-action-result", "Copied Pi project install command."), false);
 }
 
 function showClaudeDetailView() {
@@ -397,24 +403,40 @@ function showClaudeDetailView() {
   document.getElementById("claude-detail-title")?.focus();
 }
 
-function showIntegrationsView() {
+function showIntegrationsView(focusCard = "claude") {
   const grid = document.getElementById("integrations-view");
   const detail = document.getElementById("claude-detail-view");
   const opencodeDetail = document.getElementById("opencode-detail-view");
+  const piDetail = document.getElementById("pi-detail-view");
   if (detail) detail.hidden = true;
   if (opencodeDetail) opencodeDetail.hidden = true;
+  if (piDetail) piDetail.hidden = true;
   if (grid) grid.hidden = false;
-  document.querySelector('[data-integration-card="claude"]')?.focus();
+  document.querySelector(`[data-integration-card="${focusCard}"]`)?.focus();
 }
 
 function showOpenCodeDetailView() {
   const grid = document.getElementById("integrations-view");
   const detail = document.getElementById("opencode-detail-view");
   const claude = document.getElementById("claude-detail-view");
+  const pi = document.getElementById("pi-detail-view");
   if (grid) grid.hidden = true;
   if (claude) claude.hidden = true;
+  if (pi) pi.hidden = true;
   if (detail) detail.hidden = false;
   document.getElementById("opencode-detail-title")?.focus();
+}
+
+function showPiDetailView() {
+  const grid = document.getElementById("integrations-view");
+  const detail = document.getElementById("pi-detail-view");
+  const claude = document.getElementById("claude-detail-view");
+  const opencode = document.getElementById("opencode-detail-view");
+  if (grid) grid.hidden = true;
+  if (claude) claude.hidden = true;
+  if (opencode) opencode.hidden = true;
+  if (detail) detail.hidden = false;
+  document.getElementById("pi-detail-title")?.focus();
 }
 
 function displayClaudeStatusLabel(snapshot) {
@@ -460,7 +482,7 @@ function memoryStatusClassFor(status) {
 }
 
 function decorateAgentSetupButtons() {
-  for (const id of ["claude-configure", "claude-refresh", "claude-command-path-save", "node-command-path-save", "claude-copy-command", "claude-replace", "claude-remove", "claude-memory-install", "claude-hooks-doctor", "claude-hooks-install", "claude-hooks-uninstall", "opencode-install", "opencode-remove", "opencode-refresh", "opencode-command-path-save", "opencode-node-command-path-save", "opencode-copy-config"]) {
+  for (const id of ["claude-configure", "claude-refresh", "claude-command-path-save", "node-command-path-save", "claude-copy-command", "claude-replace", "claude-remove", "claude-memory-install", "claude-hooks-doctor", "claude-hooks-install", "claude-hooks-uninstall", "opencode-install", "opencode-remove", "opencode-refresh", "opencode-command-path-save", "opencode-node-command-path-save", "opencode-copy-config", "pi-copy-global-install", "pi-copy-project-install"]) {
     delete requireButton(id).dataset.loading;
   }
   setIconButtonContent(requireButton("claude-configure"), "plug", "Install integration");

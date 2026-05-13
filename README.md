@@ -175,8 +175,8 @@ Available MCP tools:
 ## How it works
 
 ```text
-Claude Code / OpenCode / MCP client
-  -> @open-pets/mcp, @open-pets/cli mcp, @open-pets/claude hook, or @open-pets/opencode plugin
+Claude Code / OpenCode / Pi / MCP client
+  -> @open-pets/mcp, @open-pets/cli mcp, @open-pets/claude hook, @open-pets/opencode plugin, or @open-pets/pi extension
   -> @open-pets/client
   -> OpenPets desktop local IPC discovery file
   -> OpenPets desktop IPC socket/pipe
@@ -205,6 +205,17 @@ Common reaction mapping:
 | Session/error stop | `error` |
 
 Generic shell activity is intentionally quiet by default. Hook/plugin speech is throttled and selected from local static message pools such as `Approval needed` or `Something failed`.
+
+### Pi extension package
+
+OpenPets includes an experimental Pi extension package at `@open-pets/pi`. Pi support is extension-first rather than MCP-first: the extension listens to Pi lifecycle/tool events and sends local best-effort reactions through `@open-pets/client`.
+
+```bash
+pi install npm:@open-pets/pi
+pi install -l npm:@open-pets/pi
+```
+
+Inside Pi, the extension registers `/openpets status`, `/openpets test`, `/openpets react <reaction>`, and `/openpets say <message>`. Automatic events do not forward prompts, assistant text, tool output, file contents, paths, URLs, or secrets. Real Pi CLI install validation is still required before marking the integration fully supported.
 
 ## Development
 
@@ -262,6 +273,7 @@ packages/client           @open-pets/client, local IPC client
 packages/mcp              @open-pets/mcp, MCP stdio server
 packages/claude           @open-pets/claude, Claude command and hook helpers
 packages/opencode         @open-pets/opencode, OpenCode config and plugin integration
+packages/pi               @open-pets/pi, Pi extension package
 packages/agent-events     Shared safe agent event speech helpers
 packages/cli              @open-pets/cli, user-run CLI and MCP/hook entrypoints
 packages/pet-format       @open-pets/pet-format, pet/catalog format types
