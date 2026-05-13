@@ -17,14 +17,3 @@ body:
     validations:
       required: true
 
-  - type: textarea
-    id: reproduce
-    attributes:
-      label: How can we reproduce it?
-      description: List the shortest steps that trigger the issue.
-      placeholder: |
-        1. Open OpenPets
-        2. ...
-        3. The bug happens
-    validations:
-      required: true
