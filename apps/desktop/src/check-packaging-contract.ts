@@ -105,6 +105,9 @@ assert.match(reactionMessagesSource, /satisfies Record<OpenPetsReaction, readonl
 assert.match(petWindowSource, /pickReactionMessage\(display\.reaction\)/, "reaction-only bubbles must render randomized messages instead of raw lowercase reaction ids.");
 assert.match(petWindowSource, /function preparePetTransientDisplay/, "reaction-only bubbles must prepare a stable random message before rerenders.");
 assert.match(petWindowSource, /function mergePetTransientDisplay/, "reaction-only events must not replace an active explicit message bubble.");
+assert.match(petWindowSource, /function getTransientDisplayDurationMs[\s\S]*?12_000[\s\S]*?message\.length \* 70/, "speech bubbles must stay visible longer for longer messages without becoming permanent.");
+assert.match(defaultPetControllerSource, /getTransientDisplayDurationMs\(transientDisplay\)/, "default pet speech bubble timeout must be length-aware.");
+assert.match(agentPetControllerSourceForLogging, /getTransientDisplayDurationMs\(preparedDisplay\)/, "agent pet speech bubble timeout must be length-aware.");
 assert.match(petWindowSource, /function getTransientReactionAnimationMs/, "finite reaction animations must expose their own shorter lifetime.");
 assert.match(petWindowSource, /function clearTransientReaction/, "finite reaction animations must be clearable while the bubble remains visible.");
 assert.match(petWindowSource, /webContents\.send\("openpets:pet-reaction-state"/, "finite reaction animations must clear sprite state without reloading the bubble.");

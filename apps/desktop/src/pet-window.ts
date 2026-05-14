@@ -359,6 +359,13 @@ export function getTransientReactionAnimationMs(display: PetTransientDisplay): n
   return typeof iterations === "number" ? row.durationMs * iterations : null;
 }
 
+export function getTransientDisplayDurationMs(display: PetTransientDisplay): number {
+  const baseMs = display.reaction === "success" || display.reaction === "error" ? 5_000 : 4_000;
+  const message = display.message ?? display.reactionMessage;
+  if (!message) return baseMs;
+  return Math.min(12_000, Math.max(baseMs, message.length * 70));
+}
+
 export function clearTransientReaction(display: PetTransientDisplay): PetTransientDisplay {
   if (!display.reaction) return display;
   return { ...display, reaction: undefined };

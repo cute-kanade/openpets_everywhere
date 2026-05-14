@@ -4,7 +4,7 @@ import { getAppStateSnapshot, getDefaultPetPosition, resetDefaultPetPosition, se
 import { defaultPetWindowSize, getDefaultPetInitialPosition } from "./display.js";
 import { debug, info } from "./logger.js";
 import { transientDisplayMs, type OpenPetsReaction } from "./local-ipc-protocol.js";
-import { clearTransientReaction, createDefaultPetWindow, getSafeDefaultPetPosition, getTransientReactionAnimationMs, loadDefaultPetContent, mergePetTransientDisplay, readWindowPosition, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
+import { clearTransientReaction, createDefaultPetWindow, getSafeDefaultPetPosition, getTransientDisplayDurationMs, getTransientReactionAnimationMs, loadDefaultPetContent, mergePetTransientDisplay, readWindowPosition, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
 
 let defaultPetWindow: BrowserWindow | null = null;
 let paused = false;
@@ -149,7 +149,8 @@ function setTransientDisplay(display: PetTransientDisplay): void {
   }
 
   const animationMs = getTransientReactionAnimationMs(transientDisplay);
-  if (animationMs !== null && animationMs < transientDisplayMs) {
+  const displayDurationMs = getTransientDisplayDurationMs(transientDisplay);
+  if (animationMs !== null && animationMs < displayDurationMs) {
     transientAnimationTimeout = setTimeout(() => {
       if (!transientDisplay) return;
       transientDisplay = clearTransientReaction(transientDisplay);
@@ -166,7 +167,7 @@ function setTransientDisplay(display: PetTransientDisplay): void {
       transientAnimationTimeout = null;
     }
     refreshDefaultPetContent();
-  }, transientDisplayMs);
+  }, displayDurationMs);
 
   refreshDefaultPetContent();
 }

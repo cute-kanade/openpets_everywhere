@@ -4,7 +4,7 @@ import { getAppStateSnapshot } from "./app-state.js";
 import { defaultPetWindowSize, getDefaultPetInitialPosition } from "./display.js";
 import { debug, info } from "./logger.js";
 import { transientDisplayMs, type OpenPetsReaction } from "./local-ipc-protocol.js";
-import { clearTransientReaction, createAgentPetWindow, getTransientReactionAnimationMs, loadExplicitPetContent, mergePetTransientDisplay, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
+import { clearTransientReaction, createAgentPetWindow, getTransientDisplayDurationMs, getTransientReactionAnimationMs, loadExplicitPetContent, mergePetTransientDisplay, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
 
 const agentPetWindows = new Map<string, BrowserWindow>();
 const transientDisplays = new Map<string, PetTransientDisplay>();
@@ -129,7 +129,8 @@ function setAgentDisplay(petId: string, display: PetTransientDisplay): void {
   if (existingAnimationTimer) clearTimeout(existingAnimationTimer);
 
   const animationMs = getTransientReactionAnimationMs(preparedDisplay);
-  if (animationMs !== null && animationMs < transientDisplayMs) {
+  const displayDurationMs = getTransientDisplayDurationMs(preparedDisplay);
+  if (animationMs !== null && animationMs < displayDurationMs) {
     const animationTimer = setTimeout(() => {
       const current = transientDisplays.get(petId);
       if (!current) return;
@@ -150,7 +151,7 @@ function setAgentDisplay(petId: string, display: PetTransientDisplay): void {
     transientAnimationTimers.delete(petId);
     const window = agentPetWindows.get(petId);
     if (window && !window.isDestroyed()) void loadExplicitPetContent(window, petId, null, statusBadges.get(petId) ?? null);
-  }, transientDisplayMs);
+  }, displayDurationMs);
   transientTimers.set(petId, timer);
   const window = agentPetWindows.get(petId);
   if (window && !window.isDestroyed()) void loadExplicitPetContent(window, petId, preparedDisplay, statusBadges.get(petId) ?? null);
