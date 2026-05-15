@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, type IpcMainEvent } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, screen, type IpcMainEvent } from "electron";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -136,6 +136,8 @@ function installMousePassthroughAndDrag(window: BrowserWindow): void {
   let dragging: { readonly startScreenX: number; readonly startScreenY: number; readonly startWindowX: number; readonly startWindowY: number } | null = null;
   let rendererReady = false;
   let listenersRemoved = false;
+  let lastInteractive = false;
+  const rearmTimers = new Set<NodeJS.Timeout>();
   const windowId = window.id;
   const webContents = window.webContents;
   const canForwardMouseEvents = process.platform === "darwin" || process.platform === "win32";
@@ -156,6 +158,53 @@ function installMousePassthroughAndDrag(window: BrowserWindow): void {
     else window.setIgnoreMouseEvents(false);
   };
 
+  const clearRearmTimers = (): void => {
+    for (const timer of rearmTimers) clearTimeout(timer);
+    rearmTimers.clear();
+  };
+
+  const getCursorProbe = (): { readonly inside: boolean; readonly cursor: Point; readonly bounds: Electron.Rectangle; readonly clientX: number; readonly clientY: number } => {
+    const cursor = screen.getCursorScreenPoint();
+    const bounds = window.getContentBounds();
+    const clientX = cursor.x - bounds.x;
+    const clientY = cursor.y - bounds.y;
+    return {
+      cursor,
+      bounds,
+      clientX,
+      clientY,
+      inside: clientX >= 0 && clientX < bounds.width && clientY >= 0 && clientY < bounds.height,
+    };
+  };
+
+  const requestCursorHitTestProbe = (reason: string): void => {
+    if (window.isDestroyed() || webContents.isDestroyed()) return;
+    const probe = getCursorProbe();
+    debug("pet.window", "cursor hit-test probe", { windowId, reason, inside: probe.inside, cursor: probe.cursor, bounds: probe.bounds });
+    if (!probe.inside) return;
+    webContents.send("openpets:pet-probe-hit-test", { clientX: probe.clientX, clientY: probe.clientY, reason });
+  };
+
+  const rearmWindowsMouseForwarding = (reason: string): void => {
+    if (window.isDestroyed()) return;
+    if (dragging || lastInteractive) {
+      debug("pet.window", "windows mouse forwarding rearm skipped", { windowId, reason, dragging: Boolean(dragging), interactive: lastInteractive });
+      return;
+    }
+    debug("pet.window", "windows mouse forwarding rearm", { windowId, reason });
+    window.setIgnoreMouseEvents(false);
+    window.setIgnoreMouseEvents(true, { forward: true });
+    requestCursorHitTestProbe(reason);
+  };
+
+  const scheduleWindowsMouseForwardingRearm = (reason: string, delayMs: number): void => {
+    const timer = setTimeout(() => {
+      rearmTimers.delete(timer);
+      rearmWindowsMouseForwarding(reason);
+    }, delayMs);
+    rearmTimers.add(timer);
+  };
+
   const rearmPassthroughAfterLoad = (): void => {
     if (window.isDestroyed()) return;
     if (process.platform !== "win32") {
@@ -165,17 +214,20 @@ function installMousePassthroughAndDrag(window: BrowserWindow): void {
 
     // On Windows, rapid pet HTML reloads can leave Chromium's forwarded mouse
     // tracking stale while the cursor is already over the transparent window.
-    // Toggle passthrough after each completed reload so hover/drag mousemove
-    // forwarding is re-registered without requiring the cursor to leave/re-enter.
-    window.setIgnoreMouseEvents(false);
-    window.setIgnoreMouseEvents(true, { forward: true });
+    // Toggle immediately, probe the current cursor hit target, then repeat the
+    // toggle shortly after load because Windows sometimes re-registers mouse
+    // forwarding after Chromium finishes late compositing work.
+    rearmWindowsMouseForwarding("did-finish-load");
+    scheduleWindowsMouseForwardingRearm("did-finish-load+75ms", 75);
+    scheduleWindowsMouseForwardingRearm("did-finish-load+175ms", 175);
   };
 
-  const handleHitTest = (event: IpcMainEvent, interactive: unknown): void => {
+  const handleHitTest = (event: IpcMainEvent, interactive: unknown, source: unknown): void => {
     if (!isFromWindow(event)) return;
     rendererReady = true;
-    debug("pet.window", "hit test", { windowId, interactive: Boolean(interactive), dragging });
-    setPassthrough(!interactive && !dragging);
+    lastInteractive = Boolean(interactive);
+    debug("pet.window", "hit test", { windowId, interactive: lastInteractive, dragging, source: typeof source === "string" ? source : undefined });
+    setPassthrough(!lastInteractive && !dragging);
   };
 
   const handleReady = (event: IpcMainEvent): void => {
@@ -206,12 +258,15 @@ function installMousePassthroughAndDrag(window: BrowserWindow): void {
   const resetForNavigation = (): void => {
     dragging = null;
     rendererReady = false;
+    lastInteractive = false;
+    clearRearmTimers();
     debug("pet.window", "navigation reset passthrough", { windowId });
     setPassthrough(false);
   };
 
   const rearmAfterLoad = (): void => {
     dragging = null;
+    lastInteractive = false;
     debug("pet.window", "load rearm passthrough", { windowId });
     rearmPassthroughAfterLoad();
   };
@@ -222,6 +277,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow): void {
 
   const handleLoadFailure = (): void => {
     dragging = null;
+    lastInteractive = false;
     debug("pet.window", "load failure rearm passthrough", { windowId });
     setPassthrough(true);
   };
@@ -234,6 +290,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow): void {
     ipcMain.off("openpets:pet-drag-start", handleDragStart);
     ipcMain.off("openpets:pet-drag-move", handleDragMove);
     ipcMain.off("openpets:pet-drag-end", handleDragEnd);
+    clearRearmTimers();
     if (!webContents.isDestroyed()) {
       webContents.off("did-start-navigation", resetForNavigation);
       webContents.off("did-start-loading", resetForNavigation);

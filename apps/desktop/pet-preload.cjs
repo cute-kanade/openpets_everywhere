@@ -42,15 +42,28 @@ const getInteractiveTarget = (event) => {
   return target && target.closest(".pet-shell, .bubble");
 };
 
-const setInteractiveHit = (interactive) => {
-  if (lastInteractiveHit === interactive) return;
+const reportInteractiveHit = (interactive, source, force = false) => {
+  if (!force && lastInteractiveHit === interactive) return;
   lastInteractiveHit = interactive;
-  ipcRenderer.send("openpets:pet-hit-test", interactive);
+  ipcRenderer.send("openpets:pet-hit-test", interactive, source);
+};
+
+const setInteractiveHit = (interactive, source = "mouse") => {
+  if (lastInteractiveHit === interactive) return;
+  reportInteractiveHit(interactive, source);
 };
 
 const updateInteractiveHit = (event) => {
   setInteractiveHit(Boolean(getInteractiveTarget(event)) || dragging);
 };
+
+ipcRenderer.on("openpets:pet-probe-hit-test", (_event, point) => {
+  if (!point || typeof point.clientX !== "number" || typeof point.clientY !== "number" || !Number.isFinite(point.clientX) || !Number.isFinite(point.clientY)) return;
+  const clientX = point.clientX;
+  const clientY = point.clientY;
+  const target = document.elementFromPoint(clientX, clientY);
+  reportInteractiveHit(Boolean(target && target.closest(".pet-shell, .bubble")) || dragging, typeof point.reason === "string" ? point.reason.slice(0, 80) : "probe", true);
+});
 
 const installMouseInterop = () => {
   lastInteractiveHit = null;
@@ -81,7 +94,7 @@ const installMouseInterop = () => {
     if (!dragging) setInteractiveHit(false);
   }, { passive: true });
 
-  setInteractiveHit(false);
+  setInteractiveHit(false, "ready");
   ipcRenderer.send("openpets:pet-ready");
 };
 

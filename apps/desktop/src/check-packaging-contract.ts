@@ -131,6 +131,9 @@ assert.match(petWindowSource, /setIgnoreMouseEvents\(true, \{ forward: true \}\)
 assert.match(petWindowSource, /setIgnoreMouseEvents\(false\)/, "visible pet and bubble hit targets must re-enable mouse handling.");
 assert.match(petWindowSource, /openpets:pet-ready/, "pet windows must resync passthrough after each renderer reload.");
 assert.match(petWindowSource, /function installMousePassthroughAndDrag[\s\S]*?const rearmPassthroughAfterLoad[\s\S]*?process\.platform !== "win32"[\s\S]*?window\.setIgnoreMouseEvents\(false\);[\s\S]*?window\.setIgnoreMouseEvents\(true, \{ forward: true \}\);/, "Windows pet reloads must toggle forwarded mouse passthrough to re-register hover and drag tracking.");
+assert.match(petWindowSource, /scheduleWindowsMouseForwardingRearm\("did-finish-load\+75ms", 75\);[\s\S]*?scheduleWindowsMouseForwardingRearm\("did-finish-load\+175ms", 175\);/, "Windows pet reloads must retry mouse forwarding rearm after load settles.");
+assert.match(petWindowSource, /openpets:pet-probe-hit-test/, "Windows pet reloads must probe current cursor hit target when mousemove forwarding is stale.");
+assert.match(petPreloadSource, /openpets:pet-probe-hit-test[\s\S]*?elementFromPoint\(clientX, clientY\)[\s\S]*?reportInteractiveHit/, "pet preload must answer main-process cursor hit-test probes.");
 assert.match(petWindowSource, /did-finish-load", rearmAfterLoad/, "pet windows must re-arm mouse passthrough after every content load.");
 assert.match(petWindowSource, /did-fail-load", handleLoadFailure/, "pet windows must restore passthrough after failed content loads.");
 assert.match(petWindowSource, /window\.setIgnoreMouseEvents\(false\);[\s\S]*?await window\.loadFile/, "pet reloads must reset OS mouse passthrough before navigation.");
