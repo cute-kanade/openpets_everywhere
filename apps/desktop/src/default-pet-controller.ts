@@ -91,6 +91,8 @@ export function applyExternalPetSay(message: string, reaction?: OpenPetsReaction
 }
 
 export function destroyDefaultPet(): void {
+  clearDefaultPetDisplayTimers();
+
   if (!defaultPetWindow || defaultPetWindow.isDestroyed()) {
     debug("pet.default", "destroy skipped", { reason: "no-window" });
     defaultPetWindow = null;
@@ -101,6 +103,7 @@ export function destroyDefaultPet(): void {
   setDefaultPetPosition(readWindowPosition(defaultPetWindow));
   const window = defaultPetWindow;
   defaultPetWindow = null;
+  window.setIgnoreMouseEvents(false);
   window.destroy();
 }
 
@@ -200,6 +203,17 @@ function clearStatusBadge(): void {
   statusBadge = null;
   if (statusBadgeTimeout) clearTimeout(statusBadgeTimeout);
   statusBadgeTimeout = null;
+}
+
+function clearDefaultPetDisplayTimers(): void {
+  if (transientDisplayTimeout) clearTimeout(transientDisplayTimeout);
+  if (transientAnimationTimeout) clearTimeout(transientAnimationTimeout);
+  if (statusBadgeTimeout) clearTimeout(statusBadgeTimeout);
+  transientDisplayTimeout = null;
+  transientAnimationTimeout = null;
+  statusBadgeTimeout = null;
+  transientDisplay = null;
+  statusBadge = null;
 }
 
 function isBusyStatusBadgeReaction(reaction: OpenPetsReaction): boolean {

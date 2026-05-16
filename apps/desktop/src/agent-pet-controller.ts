@@ -36,6 +36,7 @@ export function closeAgentPetIfOpen(petId: string): void {
   info("pet.agent", "close requested", { petId, windowId: window.id, activeWindows: agentPetWindows.size });
   agentPetWindows.delete(petId);
   clearAgentDisplay(petId);
+  window.setIgnoreMouseEvents(false);
   window.destroy();
 }
 
@@ -77,6 +78,7 @@ export function closeAllAgentPets(): void {
   for (const petId of [...agentPetWindows.keys()]) {
     closeAgentPetIfOpen(petId);
   }
+  clearAllAgentDisplayTimers();
 }
 
 export function refreshAgentPetContent(): void {
@@ -171,6 +173,17 @@ function clearAgentDisplay(petId: string): void {
   statusBadgeTimers.delete(petId);
   transientDisplays.delete(petId);
   statusBadges.delete(petId);
+}
+
+function clearAllAgentDisplayTimers(): void {
+  for (const timer of transientTimers.values()) clearTimeout(timer);
+  for (const timer of transientAnimationTimers.values()) clearTimeout(timer);
+  for (const timer of statusBadgeTimers.values()) clearTimeout(timer);
+  transientTimers.clear();
+  transientAnimationTimers.clear();
+  statusBadgeTimers.clear();
+  transientDisplays.clear();
+  statusBadges.clear();
 }
 
 function setStatusBadge(petId: string, reaction: OpenPetsReaction): void {

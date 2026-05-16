@@ -7,6 +7,7 @@ import { stopLocalIpcServer } from "./local-ipc.js";
 import { focusOpenTaskWindows } from "./windows.js";
 
 let intentionalQuit = false;
+let hardExitTimer: NodeJS.Timeout | null = null;
 
 export function installAppLifecycle(): void {
   app.on("second-instance", () => {
@@ -30,6 +31,7 @@ export function installAppLifecycle(): void {
   app.on("before-quit", () => {
     intentionalQuit = true;
     info("app", "before quit cleanup begin");
+    scheduleHardExitFallback("before-quit");
     stopLocalIpcServer();
     closeAllAgentPets();
     destroyDefaultPet();
@@ -39,5 +41,15 @@ export function installAppLifecycle(): void {
 export function quitOpenPets(): void {
   intentionalQuit = true;
   info("app", "quit requested");
+  scheduleHardExitFallback("quit-requested");
   app.quit();
+}
+
+function scheduleHardExitFallback(reason: string): void {
+  if (hardExitTimer) return;
+  hardExitTimer = setTimeout(() => {
+    info("app", "hard exit fallback", { reason });
+    app.exit(0);
+  }, 2_000);
+  hardExitTimer.unref?.();
 }
