@@ -121,6 +121,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
   let rendererReady = false;
   let listenersRemoved = false;
   let lastInteractive = false;
+  let forwardingWatchTimer: NodeJS.Timeout | null = null;
   const rearmTimers = new Set<NodeJS.Timeout>();
   const windowId = window.id;
   const webContents = window.webContents;
@@ -167,6 +168,12 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
     rearmTimers.clear();
   };
 
+  const clearWindowsForwardingWatch = (): void => {
+    if (!forwardingWatchTimer) return;
+    clearTimeout(forwardingWatchTimer);
+    forwardingWatchTimer = null;
+  };
+
   const getCursorProbe = (): { readonly inside: boolean; readonly cursor: Point; readonly bounds: Electron.Rectangle; readonly clientX: number; readonly clientY: number } => {
     const cursor = screen.getCursorScreenPoint();
     const bounds = window.getContentBounds();
@@ -209,6 +216,17 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
     rearmTimers.add(timer);
   };
 
+  const scheduleWindowsForwardingWatch = (reason: string): void => {
+    if (process.platform !== "win32" || forwardingWatchTimer || dragging || lastInteractive || window.isDestroyed()) return;
+    forwardingWatchTimer = setTimeout(() => {
+      forwardingWatchTimer = null;
+      if (window.isDestroyed() || dragging || lastInteractive) return;
+      if (getCursorProbe().inside) rearmWindowsMouseForwarding(reason);
+      scheduleWindowsForwardingWatch(reason);
+    }, 750);
+    forwardingWatchTimer.unref?.();
+  };
+
   const rearmPassthrough = (reason: string): void => {
     if (window.isDestroyed()) return;
     if (process.platform !== "win32") {
@@ -236,6 +254,8 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
     lastInteractive = Boolean(interactive);
     debug("pet.window", "hit test", { windowId, interactive: lastInteractive, dragging, source: typeof source === "string" ? source : undefined });
     setPassthrough(!lastInteractive && !dragging);
+    if (lastInteractive || dragging) clearWindowsForwardingWatch();
+    else scheduleWindowsForwardingWatch("idle-forwarding-watch");
   };
 
   const handleReady = (event: IpcMainEvent): void => {
@@ -249,6 +269,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
     const [startWindowX, startWindowY] = window.getPosition();
     dragging = { startScreenX: point.screenX, startScreenY: point.screenY, startWindowX, startWindowY };
     debug("pet.window", "drag start", { windowId, point, startWindowX, startWindowY });
+    clearWindowsForwardingWatch();
     setPassthrough(false);
   };
 
@@ -306,6 +327,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
     ipcMain.off("openpets:pet-drag-end", handleDragEnd);
     ipcMain.off("openpets:bubble-dismissed", handleBubbleDismissed);
     clearRearmTimers();
+    clearWindowsForwardingWatch();
     petMouseInteropRecovery.delete(window);
     if (!webContents.isDestroyed()) {
       webContents.off("did-start-navigation", resetForNavigation);
