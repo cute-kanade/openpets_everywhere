@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +16,17 @@ class FakeRuntime {
   async start(): Promise<void> {}
   stop(): void { this.stopped = true; }
   async reloadPlugin(id: string): Promise<void> { this.reloads.push(id); }
+}
+
+class ThrowingStateStore extends PluginStateStore {
+  failNextUpsert = false;
+  override upsertRecord(record: PluginStateRecord): PluginStateRecord {
+    if (this.failNextUpsert) {
+      this.failNextUpsert = false;
+      throw new Error("state write failed");
+    }
+    return super.upsertRecord(record);
+  }
 }
 
 await scenario("initializes store and roots", async ({ userData }) => {
@@ -218,6 +230,49 @@ await localScenario("loadLocal copies only manifest", async ({ service, source, 
   assert.equal(existsSync(join(install, "extra.txt")), false);
 });
 
+await localScenario("uninstall removes state reloads and rejects symlink deletion", async ({ service, store, runtime, userData, root }) => {
+  const install = join(userData, "plugins", "remove-plug");
+  const manifestPath = writeManifest(install, manifest({ id: "remove-plug" }));
+  store.upsertRecord({ id: "remove-plug", version: "1.0.0", installPath: install, manifestPath, source: "catalog", enabled: true, approvedPermissions: ["timer", "pet:speak"], config: {} });
+  const result = await service.uninstall("remove-plug");
+  assert.equal(result.ok, true);
+  assert.equal(store.getRecord("remove-plug"), undefined);
+  assert.deepEqual(runtime.reloads, ["remove-plug"]);
+
+  const outside = join(root, "outside-remove");
+  mkdirSync(outside, { recursive: true });
+  const link = join(userData, "plugins", "link-plug");
+  symlinkSync(outside, link, "dir");
+  store.upsertRecord({ id: "link-plug", version: "1.0.0", installPath: link, manifestPath: join(link, OPENPETS_PLUGIN_MANIFEST_FILENAME), source: "catalog", enabled: true, approvedPermissions: ["timer", "pet:speak"], config: {} });
+  const rejected = await service.uninstall("link-plug");
+  assert.equal(rejected.ok, false);
+  assert.equal(store.getRecord("link-plug")?.id, "link-plug");
+  assert.equal(existsSync(outside), true);
+
+  const rootOutside = join(root, "outside-root");
+  mkdirSync(rootOutside, { recursive: true });
+  rmSync(join(userData, "plugins"), { recursive: true, force: true });
+  symlinkSync(rootOutside, join(userData, "plugins"), "dir");
+  store.upsertRecord({ id: "root-link", version: "1.0.0", installPath: join(userData, "plugins", "root-link"), manifestPath: join(userData, "plugins", "root-link", OPENPETS_PLUGIN_MANIFEST_FILENAME), source: "catalog", enabled: true, approvedPermissions: ["timer", "pet:speak"], config: {} });
+  const rootRejected = await service.uninstall("root-link");
+  assert.equal(rootRejected.ok, false);
+  assert.equal(store.getRecord("root-link")?.id, "root-link");
+});
+
+await catalogRollbackScenario("catalog update rolls back manifest if state write fails", async ({ service, store, runtime, userData }) => {
+  const oldManifest = manifest({ id: "rollback-plug", version: "1.0.0" });
+  const install = join(userData, "plugins", "rollback-plug");
+  const manifestPath = writeManifest(install, oldManifest);
+  store.upsertRecord({ id: "rollback-plug", version: "1.0.0", installPath: install, manifestPath, source: "catalog", enabled: true, approvedPermissions: ["timer", "pet:speak"], config: {} });
+
+  store.failNextUpsert = true;
+  const result = await service.updateCatalog("rollback-plug");
+  assert.equal(result.ok, false);
+  assert.equal(store.getRecord("rollback-plug")?.version, "1.0.0");
+  assert.equal(JSON.parse(readFileSync(manifestPath, "utf8")).version, "1.0.0");
+  assert.deepEqual(runtime.reloads, []);
+});
+
 console.error("Plugin service validation passed.");
 
 async function scenario(name: string, fn: (ctx: { root: string; userData: string; store: PluginStateStore; service: PluginService; runtime: FakeRuntime }) => Promise<void>): Promise<void> {
@@ -248,6 +303,27 @@ async function localScenario(name: string, fn: (ctx: { root: string; userData: s
   try { await fn({ root, userData, source, store, service, runtime }); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); }
 }
 
+async function catalogRollbackScenario(name: string, fn: (ctx: { root: string; userData: string; store: ThrowingStateStore; service: PluginService; runtime: FakeRuntime }) => Promise<void>): Promise<void> {
+  const root = mkdtempSync(join(tmpdir(), "openpets-plugin-catalog-root-"));
+  const userData = mkdtempSync(join(tmpdir(), "openpets-plugin-catalog-user-"));
+  mkdirSync(join(userData, "plugins"), { recursive: true });
+  mkdirSync(join(userData, "plugins-dev"), { recursive: true });
+  const store = new ThrowingStateStore({ statePath: join(userData, "state.json") });
+  store.initialize();
+  const runtime = new FakeRuntime();
+  const nextManifest = manifest({ id: "rollback-plug", version: "2.0.0" });
+  const zip = makeZip(OPENPETS_PLUGIN_MANIFEST_FILENAME, Buffer.from(JSON.stringify(nextManifest), "utf8"));
+  const downloadUrl = "https://zip.openpets.dev/plugins/rollback-plug.zip";
+  const catalog = { version: 1, generatedAt: new Date().toISOString(), plugins: [{ id: nextManifest.id, name: nextManifest.name, version: nextManifest.version, description: "Rollback", runtime: "declarative", permissions: nextManifest.permissions, downloadUrl, sha256: createHash("sha256").update(zip).digest("hex") }] };
+  const fetchImpl = async (url: string | URL | Request): Promise<Response> => {
+    const value = String(url);
+    if (value === downloadUrl) return new Response(new Uint8Array(zip), { status: 200 });
+    return new Response(JSON.stringify(catalog), { status: 200 });
+  };
+  const service = new PluginService({ userDataPath: userData, stateStore: store, runtime: runtime as never, fetchImpl, confirmPermissions: async () => true });
+  try { await fn({ root, userData, store, service, runtime }); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); }
+}
+
 function addPlugin(store: PluginStateStore, patch: Partial<PluginStateRecord> = {}, data: unknown = manifest()): void {
   const id = patch.id ?? "plug";
   const installPath = patch.installPath ?? join(currentRootFromStore(store), id);
@@ -267,3 +343,14 @@ function writeManifest(dir: string, data: unknown): string {
   writeFileSync(path, JSON.stringify(data), "utf8");
   return path;
 }
+
+function makeZip(name: string, data: Buffer): Buffer {
+  const nameBuffer = Buffer.from(name); const crc = crc32(data); const now = 0;
+  const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0, 6); local.writeUInt16LE(0, 8); local.writeUInt32LE(now, 10); local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(nameBuffer.length, 26);
+  const central = Buffer.alloc(46); central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0, 8); central.writeUInt16LE(0, 10); central.writeUInt32LE(now, 12); central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(nameBuffer.length, 28); central.writeUInt32LE((0o100644 << 16) >>> 0, 38);
+  const localPart = Buffer.concat([local, nameBuffer, data]); const centralPart = Buffer.concat([central, nameBuffer]);
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(centralPart.length, 12); end.writeUInt32LE(localPart.length, 16);
+  return Buffer.concat([localPart, centralPart, end]);
+}
+
+function crc32(buffer: Buffer): number { let crc = -1; for (const byte of buffer) { crc ^= byte; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); } return (crc ^ -1) >>> 0; }

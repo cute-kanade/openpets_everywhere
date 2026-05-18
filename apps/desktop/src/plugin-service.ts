@@ -1,10 +1,12 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, promises as fs } from "node:fs";
 import { join } from "node:path";
 
+import { getCatalogPlugin, getPluginCatalog, type PluginCatalogOptions } from "./plugin-catalog.js";
 import { getEffectivePluginConfig, validatePluginConfigReplacement, type PluginConfigValidationError, type PluginConfig } from "./plugin-config.js";
 import { publishLocalPluginSnapshot, readLocalPluginSourceManifest } from "./plugin-local-loader.js";
 import { readSafePluginManifest } from "./plugin-manifest-reader.js";
 import { type OpenPetsPluginManifest, type PluginPermission } from "./plugin-manifest.js";
+import { downloadCatalogPluginZip, installCatalogPluginPackage, readCatalogPluginManifestFromZip, resolveSafePluginInstallDir } from "./plugin-package.js";
 import type { PluginPetApi } from "./plugin-pet-api.js";
 import { PluginRuntime, type PluginRuntimeScheduler } from "./plugin-runtime.js";
 import { PluginStateStore, type PluginSource, type PluginStateRecord } from "./plugin-state.js";
@@ -23,6 +25,8 @@ export type SafePluginRecord = {
 };
 
 export type PluginServiceSnapshot = { readonly plugins: readonly SafePluginRecord[] };
+export type SafeCatalogPluginRecord = { readonly id: string; readonly name: string; readonly version: string; readonly description: string; readonly runtime: "declarative"; readonly permissions: readonly PluginPermission[]; readonly installed: boolean };
+export type PluginCatalogSnapshot = { readonly plugins: readonly SafeCatalogPluginRecord[] };
 export type PluginServiceResult = { readonly ok: true; readonly snapshot: PluginServiceSnapshot } | { readonly ok: false; readonly error: string; readonly snapshot: PluginServiceSnapshot };
 export type PluginFolderDialog = () => Promise<{ readonly canceled: boolean; readonly filePaths: readonly string[] }>;
 export type PluginPermissionDialog = (manifest: OpenPetsPluginManifest) => Promise<boolean>;
@@ -37,6 +41,8 @@ export type PluginServiceOptions = {
   readonly maxManifestBytes?: number;
   readonly showOpenDialog?: PluginFolderDialog;
   readonly confirmPermissions?: PluginPermissionDialog;
+  readonly catalogOptions?: PluginCatalogOptions;
+  readonly fetchImpl?: typeof fetch;
 };
 
 export class PluginService {
@@ -47,6 +53,8 @@ export class PluginService {
   readonly #userDataPath?: string;
   readonly #showOpenDialog?: PluginFolderDialog;
   readonly #confirmPermissions?: PluginPermissionDialog;
+  readonly #catalogOptions?: PluginCatalogOptions;
+  readonly #fetchImpl?: typeof fetch;
 
   constructor(options: PluginServiceOptions) {
     if (!options.stateStore && !options.userDataPath) throw new Error("Plugin service requires userDataPath or stateStore.");
@@ -55,6 +63,8 @@ export class PluginService {
     this.#userDataPath = options.userDataPath;
     this.#showOpenDialog = options.showOpenDialog;
     this.#confirmPermissions = options.confirmPermissions;
+    this.#catalogOptions = options.catalogOptions;
+    this.#fetchImpl = options.fetchImpl;
     this.stateStore = options.stateStore ?? new PluginStateStore({ userDataPath: options.userDataPath ?? "" });
     if (options.runtime) {
       this.runtime = options.runtime;
@@ -110,6 +120,37 @@ export class PluginService {
     return { ok: true, snapshot: await this.getSnapshot() };
   }
 
+  async getCatalogSnapshot(refresh = false): Promise<PluginCatalogSnapshot> {
+    try {
+      const catalog = await getPluginCatalog({ ...this.#catalogOptions, fetchImpl: this.#fetchImpl ?? this.#catalogOptions?.fetchImpl, refresh });
+      return { plugins: catalog.plugins.map((entry) => ({ id: entry.id, name: entry.name, version: entry.version, description: entry.description, runtime: entry.runtime, permissions: entry.permissions, installed: this.stateStore.getRecord(entry.id)?.source === "catalog" })) };
+    } catch {
+      return { plugins: [] };
+    }
+  }
+
+  async installCatalog(id: string): Promise<PluginServiceResult> {
+    return this.#installOrUpdateCatalog(id, false);
+  }
+
+  async updateCatalog(id: string): Promise<PluginServiceResult> {
+    return this.#installOrUpdateCatalog(id, true);
+  }
+
+  async uninstall(id: string): Promise<PluginServiceResult> {
+    if (!this.#userDataPath) return this.#error("Plugin uninstall is unavailable.");
+    const record = this.stateStore.getRecord(id);
+    if (!record) return this.#error("Plugin is not installed.");
+    let realInstall: string;
+    try { realInstall = await resolveSafePluginInstallDir(this.#userDataPath, id, record.installPath, record.source); }
+    catch (error) { return this.#error(safeError(error)); }
+    this.stateStore.removeRecord(id);
+    await this.runtime.reloadPlugin(id);
+    try { await fs.rm(realInstall, { recursive: true, force: true }); }
+    catch (error) { return this.#error(safeError(error)); }
+    return { ok: true, snapshot: await this.getSnapshot() };
+  }
+
   async loadLocal(): Promise<PluginServiceResult> {
     if (!this.#userDataPath) return this.#error("Local plugin loading is unavailable.");
     const picker = this.#showOpenDialog ?? defaultOpenDialog;
@@ -149,6 +190,34 @@ export class PluginService {
     });
     if (enabled || wasEnabled) await this.runtime.reloadPlugin(loaded.manifest.id);
     return { ok: true, snapshot: await this.getSnapshot() };
+  }
+
+  async #installOrUpdateCatalog(id: string, update: boolean): Promise<PluginServiceResult> {
+    if (!this.#userDataPath) return this.#error("Catalog plugin installation is unavailable.");
+    const existing = this.stateStore.getRecord(id);
+    if (!update && existing) return this.#error("Plugin is already installed.");
+    if (update && (!existing || existing.source !== "catalog")) return this.#error("Catalog plugin is not installed.");
+    if (existing?.source === "local") return this.#error("A local plugin with this id is already loaded.");
+    const confirm = this.#confirmPermissions ?? defaultConfirmPermissions;
+    try {
+      const entry = await getCatalogPlugin(id, { ...this.#catalogOptions, fetchImpl: this.#fetchImpl ?? this.#catalogOptions?.fetchImpl, refresh: update });
+      const zip = await downloadCatalogPluginZip(entry, this.#fetchImpl ?? this.#catalogOptions?.fetchImpl ?? fetch);
+      const preview = await readCatalogPluginManifestFromZip({ catalogEntry: entry, zip, maxManifestBytes: this.#maxManifestBytes });
+      const permissionsChanged = existing ? !isPermissionSubset(preview.manifest.permissions, existing.approvedPermissions) : true;
+      if (permissionsChanged && !(await confirm(preview.manifest))) return { ok: true, snapshot: await this.getSnapshot() };
+      const previousManifestText = existing ? await fs.readFile(existing.manifestPath, "utf8").catch(() => undefined) : undefined;
+      const loaded = await installCatalogPluginPackage({ userDataPath: this.#userDataPath, catalogEntry: entry, zip, maxManifestBytes: this.#maxManifestBytes });
+      const wasEnabled = existing?.enabled === true;
+      try {
+        this.stateStore.upsertRecord({ id: loaded.manifest.id, version: loaded.manifest.version, source: "catalog", installPath: loaded.installPath, manifestPath: loaded.manifestPath, enabled: existing && !permissionsChanged ? existing.enabled : false, approvedPermissions: loaded.manifest.permissions, config: existing?.config ?? {} });
+      } catch (error) {
+        if (previousManifestText !== undefined) await fs.writeFile(loaded.manifestPath, previousManifestText, { mode: 0o600 }).catch(() => undefined);
+        else await fs.rm(loaded.installPath, { recursive: true, force: true }).catch(() => undefined);
+        throw error;
+      }
+      if (wasEnabled || (existing && !permissionsChanged && existing.enabled)) await this.runtime.reloadPlugin(id);
+      return { ok: true, snapshot: await this.getSnapshot() };
+    } catch (error) { return this.#error(safeError(error)); }
   }
 
   async #safeRecord(record: PluginStateRecord): Promise<SafePluginRecord> {

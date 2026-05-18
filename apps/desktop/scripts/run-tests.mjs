@@ -23,6 +23,8 @@ const behaviorTests = [
   ".test-dist/tests/plugin-config.test.js",
   ".test-dist/tests/plugin-state.test.js",
   ".test-dist/tests/plugin-runtime.test.js",
+  ".test-dist/tests/plugin-catalog-validation.test.js",
+  ".test-dist/tests/plugin-package.test.js",
   ".test-dist/tests/plugin-service.test.js",
   ".test-dist/tests/plugins-window.test.js",
   ".test-dist/tests/plugin-ui-static.test.js",

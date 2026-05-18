@@ -137,6 +137,29 @@ export function installInternalUiHandlers(): void {
     return getPluginService().loadLocal();
   });
 
+  ipcMain.handle("openpets:plugins-catalog-snapshot", async (event, refresh: unknown) => {
+    assertAllowedSender(event, ["plugins"]);
+    return getPluginService().getCatalogSnapshot(refresh === true);
+  });
+
+  ipcMain.handle("openpets:plugins-install-catalog", async (event, id: unknown): Promise<PluginServiceResult> => {
+    assertAllowedSender(event, ["plugins"]);
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id)) return pluginUiError("Invalid plugin install request.");
+    return getPluginService().installCatalog(id);
+  });
+
+  ipcMain.handle("openpets:plugins-update-catalog", async (event, id: unknown): Promise<PluginServiceResult> => {
+    assertAllowedSender(event, ["plugins"]);
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id)) return pluginUiError("Invalid plugin update request.");
+    return getPluginService().updateCatalog(id);
+  });
+
+  ipcMain.handle("openpets:plugins-uninstall", async (event, id: unknown): Promise<PluginServiceResult> => {
+    assertAllowedSender(event, ["plugins"]);
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id)) return pluginUiError("Invalid plugin uninstall request.");
+    return getPluginService().uninstall(id);
+  });
+
   ipcMain.handle("openpets:get-catalog", async (event) => {
     assertAllowedSender(event, ["pet-manager"]);
     return getCatalogUiState();

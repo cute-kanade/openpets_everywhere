@@ -55,12 +55,16 @@ export function createPluginsHtml(definition: PluginsWindowDefinition): string {
           </header>
           <nav class="tabs" aria-label="Plugin sections">
             <button id="plugins-installed-tab" class="tab active" type="button">Installed</button>
+            <button id="plugins-discover-tab" class="tab" type="button">Discover</button>
             <button id="plugins-developer-tab" class="tab" type="button">Developer</button>
           </nav>
           <section id="plugins-status" class="muted" aria-live="polite">Loading plugins…</section>
           <section id="plugins-installed-view" class="layout">
             <div class="panel"><div id="plugins-list" class="plugin-list"></div></div>
             <div id="plugins-detail" class="panel empty">Select a plugin to configure it.</div>
+          </section>
+          <section id="plugins-discover-view" class="panel" hidden>
+            <div id="plugins-discover-list" class="plugin-list"></div>
           </section>
           <section id="plugins-developer-view" class="panel" hidden>
             <h2>Developer plugins</h2>

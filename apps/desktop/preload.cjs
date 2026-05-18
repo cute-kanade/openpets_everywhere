@@ -39,6 +39,10 @@ const pluginsApi = {
   saveConfig: (id, config) => ipcRenderer.invoke("openpets:plugins-save-config", id, config),
   reload: (id) => ipcRenderer.invoke("openpets:plugins-reload", id),
   loadLocal: () => ipcRenderer.invoke("openpets:plugins-load-local"),
+  catalogSnapshot: (refresh) => ipcRenderer.invoke("openpets:plugins-catalog-snapshot", refresh),
+  installCatalog: (id) => ipcRenderer.invoke("openpets:plugins-install-catalog", id),
+  updateCatalog: (id) => ipcRenderer.invoke("openpets:plugins-update-catalog", id),
+  uninstall: (id) => ipcRenderer.invoke("openpets:plugins-uninstall", id),
 };
 
 let activeAgentCommandMode = "published";
@@ -115,8 +119,15 @@ function renderPluginsSnapshot(snapshot) {
   const status = requireElement("plugins-status");
   list.replaceChildren();
   status.textContent = snapshot.plugins.length === 0 ? "No plugins installed yet." : `${snapshot.plugins.length} plugin${snapshot.plugins.length === 1 ? "" : "s"} installed.`;
-  requireButton("plugins-refresh").onclick = () => { void renderPlugins().catch(renderCaughtError); };
+  requireButton("plugins-refresh").onclick = () => {
+    if (currentPluginsTab === "discover") {
+      void renderDiscover(true).catch(renderCaughtError);
+    } else {
+      void renderPlugins().catch(renderCaughtError);
+    }
+  };
   requireButton("plugins-installed-tab").onclick = () => setPluginsTab("installed");
+  requireButton("plugins-discover-tab").onclick = () => setPluginsTab("discover");
   requireButton("plugins-developer-tab").onclick = () => setPluginsTab("developer");
   const loadLocalButton = document.getElementById("plugins-load-local");
   if (loadLocalButton) loadLocalButton.onclick = () => { void loadLocalPlugin().catch(renderCaughtError); };
@@ -198,6 +209,17 @@ function renderPluginDetail(plugin) {
   reload.textContent = "Reload";
   reload.onclick = () => runPluginAction(() => pluginsApi.reload(plugin.id));
   actions.append(toggle, reload);
+
+  const uninstallBtn = document.createElement("button");
+  uninstallBtn.type = "button";
+  uninstallBtn.textContent = "Uninstall";
+  uninstallBtn.onclick = () => {
+    if (confirm(`Are you sure you want to uninstall ${plugin.name || plugin.id}?`)) {
+      runPluginAction(() => pluginsApi.uninstall(plugin.id));
+    }
+  };
+  actions.append(uninstallBtn);
+
   detail.append(actions);
   renderPluginConfigForm(detail, plugin);
 }
@@ -309,12 +331,96 @@ async function runPluginAction(action) {
   else await renderPlugins();
 }
 
+async function renderDiscover(refresh = false) {
+  const status = requireElement("plugins-status");
+  status.textContent = "Loading catalog...";
+  status.className = "muted";
+
+  try {
+    const catalog = await pluginsApi.catalogSnapshot(refresh);
+    if (!catalog || !Array.isArray(catalog.plugins)) {
+      throw new Error("Invalid catalog data.");
+    }
+
+    const list = requireElement("plugins-discover-list");
+    list.replaceChildren();
+
+    if (catalog.plugins.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty muted";
+      empty.textContent = "No plugins available in the catalog.";
+      list.append(empty);
+      status.textContent = "Catalog loaded.";
+      return;
+    }
+
+    for (const plugin of catalog.plugins) {
+      const card = document.createElement("div");
+      card.className = "plugin-card";
+
+      const title = document.createElement("h3");
+      title.textContent = plugin.name || plugin.id;
+      title.style.margin = "0 0 4px 0";
+
+      const meta = document.createElement("div");
+      meta.className = "muted";
+      meta.textContent = `${plugin.version} · ${plugin.runtime}`;
+
+      const desc = document.createElement("p");
+      desc.textContent = plugin.description;
+      desc.style.margin = "8px 0";
+
+      const permissions = document.createElement("div");
+      for (const permission of plugin.permissions || []) {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.textContent = permission;
+        permissions.append(pill);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      const installBtn = document.createElement("button");
+      installBtn.type = "button";
+      if (plugin.installed) {
+        installBtn.textContent = "Update";
+        installBtn.onclick = () => runPluginAction(() => pluginsApi.updateCatalog(plugin.id));
+      } else {
+        installBtn.className = "primary";
+        installBtn.textContent = "Install";
+        installBtn.onclick = () => runPluginAction(() => pluginsApi.installCatalog(plugin.id));
+      }
+      actions.append(installBtn);
+
+      card.append(title, meta, desc, permissions, actions);
+      list.append(card);
+    }
+
+    status.textContent = `Showing ${catalog.plugins.length} plugin${catalog.plugins.length === 1 ? "" : "s"} from catalog.`;
+  } catch {
+    status.textContent = "Failed to load plugin catalog.";
+    status.className = "error";
+  }
+}
+
+let currentPluginsTab = "installed";
+
 function setPluginsTab(tab) {
+  currentPluginsTab = tab;
   const installed = tab === "installed";
+  const discover = tab === "discover";
+  const developer = tab === "developer";
   requireElement("plugins-installed-view").hidden = !installed;
-  requireElement("plugins-developer-view").hidden = installed;
+  requireElement("plugins-discover-view").hidden = !discover;
+  requireElement("plugins-developer-view").hidden = !developer;
   requireButton("plugins-installed-tab").classList.toggle("active", installed);
-  requireButton("plugins-developer-tab").classList.toggle("active", !installed);
+  requireButton("plugins-discover-tab").classList.toggle("active", discover);
+  requireButton("plugins-developer-tab").classList.toggle("active", developer);
+
+  if (discover) {
+    void renderDiscover();
+  }
 }
 
 function isPluginsSnapshot(value) {
