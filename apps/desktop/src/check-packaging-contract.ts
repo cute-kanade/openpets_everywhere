@@ -47,11 +47,13 @@ assert.match(builderConfig, /node_modules\/\*\*/);
 assert.match(builderConfig, /dist\/\*\*/);
 assert.match(builderConfig, /preload\.cjs/);
 assert.match(builderConfig, /pet-preload\.cjs/);
+assert.match(builderConfig, /plugin-sdk-preload\.cjs/);
 assert.match(builderConfig, /assets\/\*\*/);
 assert.match(builderConfig, /icon:\s*assets\/app-icon\.icns/);
 
 assert.ok(existsSync(join(appDir, "preload.cjs")), "preload.cjs must exist for packaging.");
 assert.ok(existsSync(join(appDir, "pet-preload.cjs")), "pet-preload.cjs must exist for pet window motion state updates.");
+assert.ok(existsSync(join(appDir, "plugin-sdk-preload.cjs")), "plugin-sdk-preload.cjs must exist for JavaScript plugin SDK hosting.");
 assert.ok(existsSync(join(appDir, "assets", "tray-icon.png")), "tray icon must exist for packaging.");
 assert.ok(existsSync(join(appDir, "assets", "app-icon.icns")), "app icon must exist for packaging.");
 assert.ok(existsSync(join(appDir, "assets", "app-icon.ico")), "Windows app icon must exist for packaging.");

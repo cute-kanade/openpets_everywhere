@@ -1,6 +1,6 @@
 import type { OpenPetsPluginManifest, PluginConfigField } from "./plugin-manifest.js";
 
-export type PluginConfigValue = string | number | boolean;
+export type PluginConfigValue = string | number | boolean | string[] | Array<Record<string, unknown>>;
 export type PluginConfig = Record<string, PluginConfigValue>;
 
 export type PluginConfigValidationError = { path: string; code: string; message: string };
@@ -69,19 +69,33 @@ function validateConfigObject(manifest: OpenPetsPluginManifest, value: unknown, 
 
 function validateFieldValue(value: unknown, field: PluginConfigField, path: string): PluginConfigValidationError[] {
   const errors: PluginConfigValidationError[] = [];
-  if (value === null || Array.isArray(value) || typeof value === "object") return [{ path, code: "invalid_config_value", message: "Config value must be a string, finite number, or boolean matching the field type." }];
+  if (field.type === "list") {
+    if (!Array.isArray(value) || !value.every((item) => isPlainRecord(item))) return [{ path, code: "invalid_config_value", message: "List config value must be an array of objects." }];
+    if (field.maxItems !== undefined && value.length > field.maxItems) return [{ path, code: "invalid_config_value", message: "List config has too many items." }];
+    const itemSchema = field.itemSchema ?? {};
+    for (const [index, item] of value.entries()) for (const [itemKey, itemField] of Object.entries(itemSchema)) if (Object.prototype.hasOwnProperty.call(item, itemKey)) errors.push(...validateFieldValue(item[itemKey], itemField, `${path}[${index}].${itemKey}`));
+    return errors;
+  }
+  if (field.type === "multiSelect") return Array.isArray(value) && value.every((item) => typeof item === "string" && field.options?.some((option) => option.value === item)) ? [] : [{ path, code: "invalid_config_value", message: "Multi-select config value must be an array of option values." }];
+  if (value === null || Array.isArray(value) || typeof value === "object") return [{ path, code: "invalid_config_value", message: "Config value must match the field type." }];
   if (field.type === "text" || field.type === "textarea") {
     if (typeof value !== "string") errors.push({ path, code: "invalid_config_value", message: "Config value must be a string." });
+    else if (field.maxLength !== undefined && value.length > field.maxLength) errors.push({ path, code: "invalid_config_value", message: "Config value is too long." });
+  } else if (field.type === "time") {
+    if (typeof value !== "string" || !isValidTime(value)) errors.push({ path, code: "invalid_config_value", message: "Time config value must be HH:mm between 00:00 and 23:59." });
   } else if (field.type === "select") {
     if (typeof value !== "string") errors.push({ path, code: "invalid_config_value", message: "Select config value must be a string." });
     else if (!field.options?.some((option) => option.value === value)) errors.push({ path, code: "invalid_select_value", message: "Select config value must match one of the schema options." });
   } else if (field.type === "number") {
     if (typeof value !== "number" || !Number.isFinite(value)) errors.push({ path, code: "invalid_config_value", message: "Config value must be a finite number." });
+    else if ((field.min !== undefined && value < field.min) || (field.max !== undefined && value > field.max)) errors.push({ path, code: "invalid_config_value", message: "Number config value is outside allowed range." });
   } else if (field.type === "boolean") {
     if (typeof value !== "boolean") errors.push({ path, code: "invalid_config_value", message: "Config value must be a boolean." });
   }
   return errors;
 }
+
+function isValidTime(value: string): boolean { const m = /^(\d{2}):(\d{2})$/.exec(value); return !!m && Number(m[1]) <= 23 && Number(m[2]) <= 59; }
 
 function configSchemaEntries(manifest: OpenPetsPluginManifest): Array<[string, PluginConfigField]> {
   return Object.entries(manifest.configSchema ?? {}).sort(([a], [b]) => a.localeCompare(b));

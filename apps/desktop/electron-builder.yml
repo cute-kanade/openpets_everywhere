@@ -12,6 +12,7 @@ files:
   - dist/**
   - preload.cjs
   - pet-preload.cjs
+  - plugin-sdk-preload.cjs
   - assets/**
   - package.json
 

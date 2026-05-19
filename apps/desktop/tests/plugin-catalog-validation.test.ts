@@ -11,4 +11,10 @@ assert.throws(() => validatePluginCatalog({ version: 1, generatedAt: "now", plug
 assert.throws(() => validatePluginCatalog({ version: 1, generatedAt: "now", plugins: [entry, entry] }), /Duplicate plugin id/);
 assert.throws(() => validatePluginCatalog({ version: 1, generatedAt: "now", plugins: [{ ...entry, sha256: "A".repeat(64) }] }), /sha256/);
 
+const catalogV2 = validatePluginCatalog({ version: 2, generatedAt: "now", plugins: [{ ...entry, id: "js-plugin", runtime: "javascript", sdkVersion: "1.0.0", permissions: ["pet:speak", "network"], minOpenPetsVersion: "2.0.0", maxOpenPetsVersion: "3.0.0", deprecated: true, statusReason: "Use another plugin", network: { hosts: ["api.example.com"] } }] });
+assert.equal(catalogV2.version, 2);
+assert.equal(catalogV2.plugins[0].runtime, "javascript");
+assert.throws(() => validatePluginCatalog({ version: 2, generatedAt: "now", plugins: [{ ...entry, runtime: "python" }] }), /runtime/);
+assert.throws(() => validatePluginCatalog({ version: 2, generatedAt: "now", plugins: [{ ...entry, runtime: "javascript", sdkVersion: "1.0.0", permissions: ["pet:speak", "network"], network: { hosts: ["*.example.com"] } }] }), /network/);
+
 console.error("Plugin catalog validation passed.");

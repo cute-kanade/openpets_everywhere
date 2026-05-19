@@ -21,7 +21,17 @@ const installed = await installCatalogPluginPackage({ userDataPath: userData, ca
 assert.equal(installed.manifest.id, manifest.id);
 assert.equal(readFileSync(join(userData, "plugins", manifest.id, "openpets.plugin.json"), "utf8"), text);
 assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: { ...entry, name: "Other" }, zip }), /does not match/);
-assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: entry, zip: makeZip("nested/openpets.plugin.json", Buffer.from(text)) }), /exactly one root manifest/);
+assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: entry, zip: makeZip("nested/openpets.plugin.json", Buffer.from(text)) }), /invalid|exactly one root manifest|must contain openpets/);
+
+const jsManifest: OpenPetsPluginManifest = { manifestVersion: 2, id: "js-plug", name: "JS Plug", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "index.mjs", permissions: ["pet:speak"] };
+const jsText = JSON.stringify(jsManifest);
+const jsEntryText = "export default {};\n";
+const jsZip = makeZipFiles([{ name: "openpets.plugin.json", data: Buffer.from(jsText) }, { name: "index.mjs", data: Buffer.from(jsEntryText) }]);
+const jsCatalogEntry = { id: jsManifest.id, name: jsManifest.name, version: jsManifest.version, description: "desc", runtime: "javascript" as const, sdkVersion: "1.0.0", permissions: jsManifest.permissions, downloadUrl: "https://zip.openpets.dev/plugins/js-plug.zip", sha256: createHash("sha256").update(jsZip).digest("hex") };
+const jsInstalled = await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: jsCatalogEntry, zip: jsZip });
+assert.equal(readFileSync(join(jsInstalled.installPath, "index.mjs"), "utf8"), jsEntryText);
+await assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: jsCatalogEntry, zip: makeZipFiles([{ name: "openpets.plugin.json", data: Buffer.from(jsText) }]) }), /manifest and entry/);
+await assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: jsCatalogEntry, zip: makeZipFiles([{ name: "openpets.plugin.json", data: Buffer.from(jsText) }, { name: "index.mjs", data: Buffer.from(jsEntryText) }, { name: "extra.js", data: Buffer.from("") }]) }), /manifest and entry|too many entries/);
 
 const canonicalEntry = validatePluginCatalog({ version: 1, generatedAt: new Date().toISOString(), plugins: [{ ...entry, permissions: ["timer", "pet:speak"] }] }).plugins[0];
 await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: canonicalEntry, zip });
@@ -39,12 +49,18 @@ await assert.rejects(() => safeDeletePluginInstallDir(deleteRoot, manifest.id, j
 console.error("Plugin package validation passed.");
 
 function makeZip(name: string, data: Buffer): Buffer {
-  const nameBuffer = Buffer.from(name); const crc = crc32(data); const now = 0;
-  const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0, 6); local.writeUInt16LE(0, 8); local.writeUInt32LE(now, 10); local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(nameBuffer.length, 26);
-  const central = Buffer.alloc(46); central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0, 8); central.writeUInt16LE(0, 10); central.writeUInt32LE(now, 12); central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(nameBuffer.length, 28); central.writeUInt32LE((0o100644 << 16) >>> 0, 38);
-  const localPart = Buffer.concat([local, nameBuffer, data]); const centralPart = Buffer.concat([central, nameBuffer]);
-  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(centralPart.length, 12); end.writeUInt32LE(localPart.length, 16);
-  return Buffer.concat([localPart, centralPart, end]);
+  return makeZipFiles([{ name, data }]);
+}
+
+function makeZipFiles(files: Array<{ name: string; data: Buffer }>): Buffer {
+  const locals: Buffer[] = []; const centrals: Buffer[] = []; let offset = 0;
+  for (const file of files) {
+    const nameBuffer = Buffer.from(file.name); const crc = crc32(file.data); const now = 0;
+    const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0, 6); local.writeUInt16LE(0, 8); local.writeUInt32LE(now, 10); local.writeUInt32LE(crc, 14); local.writeUInt32LE(file.data.length, 18); local.writeUInt32LE(file.data.length, 22); local.writeUInt16LE(nameBuffer.length, 26);
+    const central = Buffer.alloc(46); central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0, 8); central.writeUInt16LE(0, 10); central.writeUInt32LE(now, 12); central.writeUInt32LE(crc, 16); central.writeUInt32LE(file.data.length, 20); central.writeUInt32LE(file.data.length, 24); central.writeUInt16LE(nameBuffer.length, 28); central.writeUInt32LE((0o100644 << 16) >>> 0, 38); central.writeUInt32LE(offset, 42);
+    const localPart = Buffer.concat([local, nameBuffer, file.data]); locals.push(localPart); centrals.push(Buffer.concat([central, nameBuffer])); offset += localPart.length;
+  }
+  const localPart = Buffer.concat(locals); const centralPart = Buffer.concat(centrals); const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(centralPart.length, 12); end.writeUInt32LE(localPart.length, 16); return Buffer.concat([localPart, centralPart, end]);
 }
 
 function crc32(buffer: Buffer): number { let crc = -1; for (const byte of buffer) { crc ^= byte; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); } return (crc ^ -1) >>> 0; }

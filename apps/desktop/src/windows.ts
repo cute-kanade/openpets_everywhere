@@ -132,6 +132,12 @@ export function installInternalUiHandlers(): void {
     return getPluginService().reload(id);
   });
 
+  ipcMain.handle("openpets:plugins-execute-command", async (event, id: unknown, commandId: unknown): Promise<PluginServiceResult> => {
+    assertAllowedSender(event, ["plugins"]);
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id) || typeof commandId !== "string" || !/^[A-Za-z0-9._:-]{1,64}$/.test(commandId)) return pluginUiError("Invalid plugin command request.");
+    return getPluginService().executeCommand(id, commandId);
+  });
+
   ipcMain.handle("openpets:plugins-load-local", async (event): Promise<PluginServiceResult> => {
     assertAllowedSender(event, ["plugins"]);
     return getPluginService().loadLocal();

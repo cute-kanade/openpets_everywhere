@@ -1,11 +1,13 @@
 import { app } from "electron";
+import { delimiter, resolve } from "node:path";
 
 import { initializeAppState, isOnboardingCompleted, releaseStartupInstallLock } from "./app-state.js";
 import { installDefaultPetDisplayHandlers, shouldOpenDefaultPetOnLaunch, showDefaultPet } from "./default-pet-controller.js";
 import { installAppLifecycle } from "./lifecycle.js";
-import { error as logError, getLogFilePath, info, initializeLogger } from "./logger.js";
+import { debug, error as logError, getLogFilePath, info, initializeLogger, warn } from "./logger.js";
 import { startLocalIpcServer } from "./local-ipc.js";
 import { defaultPluginPetApi } from "./plugin-pet-api.js";
+import { ElectronPluginJsHost } from "./plugin-js-host.js";
 import { initializePluginService } from "./plugin-service.js";
 import { createAppTray, refreshTrayMenu } from "./tray.js";
 import { checkForGitHubReleaseUpdate } from "./update-checker.js";
@@ -43,7 +45,6 @@ if (!gotSingleInstanceLock) {
     }
 
     initializeAppState();
-    await initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion()).start();
     installInternalUiProtocol();
     installInternalUiHandlers();
     createAppTray();
@@ -61,6 +62,20 @@ if (!gotSingleInstanceLock) {
       }
     }
     refreshTrayMenu();
+    void (async () => {
+      const service = initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion(), new ElectronPluginJsHost(), writePluginRuntimeLog);
+      await service.start();
+      const roots = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_ROOTS);
+      const paths = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_PATHS);
+      for (const path of paths) {
+        const result = await service.loadLocalPath(path, { autoApprove: true });
+        if (!result.ok) logError("app", "dev plugin path load failed", new Error(result.error));
+      }
+      if (roots.length > 0) {
+        const results = await service.loadLocalRoots(roots, { autoApprove: true });
+        for (const result of results) if (!result.ok) logError("app", "dev plugin root load failed", new Error(`${result.path}: ${result.error}`));
+      }
+    })().catch((error) => logError("app", "plugin service startup failed", error));
     void checkForGitHubReleaseUpdate().then(() => refreshTrayMenu());
     info("app", "startup complete", { logFile: getLogFilePath(), openDefaultPetOnLaunch: shouldOpenDefaultPetOnLaunch(), onboardingCompleted: isOnboardingCompleted() });
     console.log("OpenPets desktop shell ready.");
@@ -70,4 +85,16 @@ if (!gotSingleInstanceLock) {
     console.error("Failed to start OpenPets desktop shell.", error);
     app.quit();
   });
+}
+
+function parseDevPluginEnv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value.split(delimiter).map((item) => item.trim()).filter(Boolean).map((item) => resolve(item));
+}
+
+function writePluginRuntimeLog(level: "debug" | "info" | "warn" | "error", message: string, fields?: Record<string, unknown>): void {
+  if (level === "error") logError("plugin", message, fields);
+  else if (level === "info") info("plugin", message, fields);
+  else if (level === "warn") warn("plugin", message, fields);
+  else debug("plugin", message, fields);
 }

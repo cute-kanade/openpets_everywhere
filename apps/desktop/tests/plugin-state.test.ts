@@ -68,7 +68,7 @@ assert.equal(reloadedStore.clearBrokenReason("stretch-reminder").brokenReason, u
 
 assert.throws(() => reloadedStore.upsertRecord(makeRecord({ id: "bad-dupe", approvedPermissions: ["timer", "timer"] })), /Duplicate plugin permission/);
 assert.throws(
-  () => reloadedStore.upsertRecord(makeRecord({ id: "bad-invalid", approvedPermissions: ["timer", "network" as "timer"] })),
+  () => reloadedStore.upsertRecord(makeRecord({ id: "bad-invalid", approvedPermissions: ["timer", "bad" as "timer"] })),
   /Invalid plugin permission/,
 );
 
@@ -137,7 +137,7 @@ function tempDir(): string {
 
 function makeRecord(patch: Partial<PluginStateRecord> = {}): PluginStateRecord {
   const id = patch.id ?? "stretch-reminder";
-  return {
+  return Object.fromEntries(Object.entries({
     id,
     version: patch.version ?? "1.0.0",
     manifestPath: patch.manifestPath ?? `/tmp/${id}/openpets.plugin.json`,
@@ -148,5 +148,5 @@ function makeRecord(patch: Partial<PluginStateRecord> = {}): PluginStateRecord {
     config: patch.config ?? {},
     brokenReason: patch.brokenReason,
     update: patch.update,
-  };
+  }).filter(([, value]) => value !== undefined)) as unknown as PluginStateRecord;
 }

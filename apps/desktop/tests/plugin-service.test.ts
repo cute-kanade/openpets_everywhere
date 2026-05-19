@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { OPENPETS_PLUGIN_MANIFEST_FILENAME, type OpenPetsPluginManifest } from "../src/plugin-manifest.js";
+import { OPENPETS_PLUGIN_MANIFEST_FILENAME, type OpenPetsDeclarativePluginManifest } from "../src/plugin-manifest.js";
 import { PluginService } from "../src/plugin-service.js";
 import { PluginStateStore, type PluginStateRecord } from "../src/plugin-state.js";
 
@@ -230,6 +230,59 @@ await localScenario("loadLocal copies only manifest", async ({ service, source, 
   assert.equal(existsSync(join(install, "extra.txt")), false);
 });
 
+await localScenario("loadLocal snapshots javascript entry", async ({ service, source, store, userData }) => {
+  writeManifest(source, { manifestVersion: 2, id: "js-local", name: "JS Local", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "index.mjs", permissions: ["pet:speak"] });
+  writeFileSync(join(source, "index.mjs"), "export default {};\n", "utf8");
+  const result = await service.loadLocal();
+  assert.equal(result.ok, true);
+  const install = store.getRecord("js-local")?.installPath ?? join(userData, "plugins-dev", "js-local");
+  assert.equal(existsSync(join(install, OPENPETS_PLUGIN_MANIFEST_FILENAME)), true);
+  assert.equal(readFileSync(join(install, "index.mjs"), "utf8"), "export default {};\n");
+});
+
+await localScenario("loadLocalPath auto-approves explicit dev path", async ({ service, source, store }) => {
+  writeManifest(source, { manifestVersion: 2, id: "dev-js", name: "Dev JS", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "index.js", permissions: ["network"], network: { hosts: ["api.github.com"] } });
+  writeFileSync(join(source, "index.js"), "OpenPetsPlugin.register({ start() {} });\n", "utf8");
+  service["__denyPermissions"] = true;
+  const result = await service.loadLocalPath(source, { autoApprove: true });
+  assert.equal(result.ok, true);
+  assert.deepEqual(store.getRecord("dev-js")?.approvedPermissions, ["network"]);
+  assert.deepEqual(store.getRecord("dev-js")?.approvedNetworkHosts, ["api.github.com"]);
+});
+
+await localScenario("loadLocalRoots loads children and reports bad plugins", async ({ service, root, store }) => {
+  const pluginsRoot = join(root, "official");
+  const good = join(pluginsRoot, "good");
+  const bad = join(pluginsRoot, "bad");
+  writeManifest(good, manifest({ id: "root-good" }));
+  writeManifest(bad, { bad: true });
+  const results = await service.loadLocalRoots([pluginsRoot], { autoApprove: true });
+  assert.equal(results.length, 2);
+  assert.equal(results.some((result) => result.ok), true);
+  assert.equal(results.some((result) => !result.ok), true);
+  assert.equal(store.getRecord("root-good")?.source, "local");
+});
+
+await localScenario("loadLocal rejects javascript nested entry symlink", async ({ service, source, root }) => {
+  writeManifest(source, { manifestVersion: 2, id: "js-entry-link", name: "JS Entry Link", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "nested/index.mjs", permissions: ["pet:speak"] });
+  mkdirSync(join(source, "nested"), { recursive: true });
+  const real = join(root, "real-entry.mjs");
+  writeFileSync(real, "export default {};\n", "utf8");
+  symlinkSync(real, join(source, "nested", "index.mjs"));
+  const result = await service.loadLocal();
+  assert.equal(result.ok, false);
+});
+
+await localScenario("loadLocal rejects javascript symlinked entry parent", async ({ service, source, root }) => {
+  writeManifest(source, { manifestVersion: 2, id: "js-parent-link", name: "JS Parent Link", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "nested/index.mjs", permissions: ["pet:speak"] });
+  const realNested = join(root, "real-nested");
+  mkdirSync(realNested, { recursive: true });
+  writeFileSync(join(realNested, "index.mjs"), "export default {};\n", "utf8");
+  symlinkSync(realNested, join(source, "nested"), "dir");
+  const result = await service.loadLocal();
+  assert.equal(result.ok, false);
+});
+
 await localScenario("uninstall removes state reloads and rejects symlink deletion", async ({ service, store, runtime, userData, root }) => {
   const install = join(userData, "plugins", "remove-plug");
   const manifestPath = writeManifest(install, manifest({ id: "remove-plug" }));
@@ -355,7 +408,7 @@ function addPlugin(store: PluginStateStore, patch: Partial<PluginStateRecord> = 
 
 function currentRootFromStore(_store: PluginStateStore): string { return lastRoot; }
 
-function manifest(patch: Partial<OpenPetsPluginManifest> & { everyMinutes?: OpenPetsPluginManifest["triggers"][number]["everyMinutes"] } = {}): OpenPetsPluginManifest {
+function manifest(patch: Partial<OpenPetsDeclarativePluginManifest> & { everyMinutes?: OpenPetsDeclarativePluginManifest["triggers"][number]["everyMinutes"] } = {}): OpenPetsDeclarativePluginManifest {
   return { manifestVersion: 1, id: patch.id ?? "plug", name: "Plug", version: patch.version ?? "1.0.0", runtime: "declarative", permissions: patch.permissions ?? ["timer", "pet:speak"], configSchema: patch.configSchema, triggers: patch.triggers ?? [{ on: "timer", everyMinutes: patch.everyMinutes ?? 5, actions: [{ type: "pet.speak", message: "Stretch" }] }] };
 }
 

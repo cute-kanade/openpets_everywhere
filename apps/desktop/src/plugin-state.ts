@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { canonicalizePluginPermissions, type PluginPermission } from "./plugin-manifest.js";
+import { canonicalizePluginPermissions, type KnownPluginRuntime, type PluginPermission } from "./plugin-manifest.js";
 
 export const openPetsPluginStateFileName = "openpets-plugin-state.json";
 
@@ -19,10 +19,17 @@ export type PluginStateRecord = {
   readonly manifestPath: string;
   readonly installPath: string;
   readonly source: PluginSource;
+  readonly manifestVersion?: 1 | 2;
+  readonly runtime?: KnownPluginRuntime;
+  readonly sdkVersion?: string;
   readonly enabled: boolean;
   readonly approvedPermissions: readonly PluginPermission[];
+  readonly approvedNetworkHosts?: readonly string[];
   readonly config: Record<string, unknown>;
   readonly brokenReason?: string;
+  readonly catalogDisabled?: boolean;
+  readonly catalogDeprecated?: boolean;
+  readonly catalogStatusReason?: string;
   readonly update?: PluginUpdateMetadata;
 };
 
@@ -179,18 +186,25 @@ function normalizePluginRecordFromDisk(key: string, value: unknown): PluginState
     return null;
   }
   try {
-    return {
+    return omitUndefined({
       id: value.id,
       version: value.version,
       manifestPath: value.manifestPath,
       installPath: value.installPath,
       source: value.source,
+      manifestVersion: value.manifestVersion === 1 || value.manifestVersion === 2 ? value.manifestVersion : undefined,
+      runtime: value.runtime === "declarative" || value.runtime === "javascript" ? value.runtime : undefined,
+      sdkVersion: isNonEmptyString(value.sdkVersion) ? value.sdkVersion : undefined,
       enabled: value.enabled,
       approvedPermissions,
+      approvedNetworkHosts: normalizeStringArray(value.approvedNetworkHosts),
       config: normalizeConfigObjectFromDisk(value.config),
       brokenReason: isNonEmptyString(value.brokenReason) ? value.brokenReason : undefined,
+      catalogDisabled: typeof value.catalogDisabled === "boolean" ? value.catalogDisabled : undefined,
+      catalogDeprecated: typeof value.catalogDeprecated === "boolean" ? value.catalogDeprecated : undefined,
+      catalogStatusReason: isNonEmptyString(value.catalogStatusReason) ? value.catalogStatusReason : undefined,
       update: normalizeUpdateMetadata(value.update),
-    };
+    }) as PluginStateRecord;
   } catch {
     return null;
   }
@@ -201,18 +215,35 @@ function normalizePluginRecordForApi(record: PluginStateRecord): PluginStateReco
   if (record.source !== "catalog" && record.source !== "local") throw new Error("Invalid plugin state record.");
   if (typeof record.enabled !== "boolean" || !isPlainRecord(record.config)) throw new Error("Invalid plugin state record.");
   assertJsonCompatibleConfigObject(record.config);
-  return {
+  return omitUndefined({
     id: record.id,
     version: record.version,
     manifestPath: record.manifestPath,
     installPath: record.installPath,
     source: record.source,
+    manifestVersion: record.manifestVersion === 1 || record.manifestVersion === 2 ? record.manifestVersion : undefined,
+    runtime: record.runtime === "declarative" || record.runtime === "javascript" ? record.runtime : undefined,
+    sdkVersion: isNonEmptyString(record.sdkVersion) ? record.sdkVersion : undefined,
     enabled: record.enabled,
     approvedPermissions: canonicalizePermissions(record.approvedPermissions),
+    approvedNetworkHosts: normalizeStringArray(record.approvedNetworkHosts),
     config: cloneJsonObject(record.config),
     brokenReason: isNonEmptyString(record.brokenReason) ? record.brokenReason : undefined,
+    catalogDisabled: typeof record.catalogDisabled === "boolean" ? record.catalogDisabled : undefined,
+    catalogDeprecated: typeof record.catalogDeprecated === "boolean" ? record.catalogDeprecated : undefined,
+    catalogStatusReason: isNonEmptyString(record.catalogStatusReason) ? record.catalogStatusReason : undefined,
     update: normalizeUpdateMetadata(record.update),
-  };
+  });
+}
+
+function omitUndefined<T extends Record<string, unknown>>(record: T): T {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as T;
+}
+
+function normalizeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const hosts = value.filter((item): item is string => isNonEmptyString(item));
+  return hosts.length > 0 ? Array.from(new Set(hosts)) : undefined;
 }
 
 function canonicalizePermissions(value: unknown): PluginPermission[] {

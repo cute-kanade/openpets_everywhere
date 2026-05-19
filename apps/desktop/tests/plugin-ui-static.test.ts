@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 const desktopRoot = process.env.OPENPETS_DESKTOP_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const windowsSource = readFileSync(resolve(desktopRoot, "src/windows.ts"), "utf8");
 const preloadSource = readFileSync(resolve(desktopRoot, "preload.cjs"), "utf8");
+const jsHostSource = readFileSync(resolve(desktopRoot, "src/plugin-js-host.ts"), "utf8");
+const pluginSdkPreloadSource = readFileSync(resolve(desktopRoot, "plugin-sdk-preload.cjs"), "utf8");
 
 assert.match(windowsSource, /kind === "plugins"[\s\S]*preload: getPreloadPath\(\)/);
 assert.match(windowsSource, /assertAllowedSender\(event, \["plugins"\]\)/);
@@ -28,5 +30,12 @@ assert.doesNotMatch(preloadSource, /plugins-load-local",\s*[^)]/);
 assert.doesNotMatch(preloadSource, /manifestPath/);
 assert.doesNotMatch(preloadSource, /installPath/);
 assert.doesNotMatch(preloadSource, /openpets:plugins-install-catalog",\s*[^)]+,\s*[^)]/);
+assert.match(jsHostSource, /OpenPetsPlugin[\s\S]*register/);
+assert.match(jsHostSource, /start\(sdk\)/);
+assert.match(jsHostSource, /__openPetsRegisteredPlugin[\s\S]*stop/);
+assert.match(jsHostSource, /preload: getPluginSdkPreloadPath\(\)/);
+assert.match(pluginSdkPreloadSource, /contextBridge\.exposeInMainWorld\("__openPetsSdk", sdk\)/);
+assert.match(pluginSdkPreloadSource, /speak: \(message\) => call\("pet\.speak", \[message\]\)/);
+assert.match(pluginSdkPreloadSource, /register: \(command, handler\) => call\("commands\.register"/);
 
 console.error("Plugin UI static validation passed.");

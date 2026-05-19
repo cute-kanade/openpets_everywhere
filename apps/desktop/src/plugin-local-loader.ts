@@ -2,15 +2,16 @@ import { constants, promises as fs } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
-import { defaultMaxPluginManifestBytes, readSafePluginManifest } from "./plugin-manifest-reader.js";
+import { defaultMaxPluginManifestBytes, isUnderPath, readSafePluginManifest } from "./plugin-manifest-reader.js";
 import { OPENPETS_PLUGIN_MANIFEST_FILENAME, validatePluginManifest, type OpenPetsPluginManifest } from "./plugin-manifest.js";
 
 export type LocalPluginLoadResult = { readonly manifest: OpenPetsPluginManifest; readonly installPath: string; readonly manifestPath: string };
-export type LocalPluginSourceManifest = { readonly manifest: OpenPetsPluginManifest; readonly manifestText: string };
+export type LocalPluginSourceManifest = { readonly manifest: OpenPetsPluginManifest; readonly manifestText: string; readonly entryText?: string };
+const maxPluginEntryBytes = 1024 * 1024;
 
 export async function loadLocalPluginSnapshot(options: { readonly sourceFolder: string; readonly userDataPath: string; readonly maxManifestBytes?: number }): Promise<LocalPluginLoadResult> {
   const source = await readLocalPluginSourceManifest({ sourceFolder: options.sourceFolder, maxManifestBytes: options.maxManifestBytes });
-  return publishLocalPluginSnapshot({ manifest: source.manifest, manifestText: source.manifestText, userDataPath: options.userDataPath, maxManifestBytes: options.maxManifestBytes });
+  return publishLocalPluginSnapshot({ manifest: source.manifest, manifestText: source.manifestText, entryText: source.entryText, userDataPath: options.userDataPath, maxManifestBytes: options.maxManifestBytes });
 }
 
 export async function readLocalPluginSourceManifest(options: { readonly sourceFolder: string; readonly maxManifestBytes?: number }): Promise<LocalPluginSourceManifest> {
@@ -35,13 +36,25 @@ export async function readLocalPluginSourceManifest(options: { readonly sourceFo
     const result = validatePluginManifest(parsed);
     if (!result.ok) throw new Error("Plugin manifest validation failed.");
     if (!isSafePluginDirectoryName(result.manifest.id)) throw new Error("Plugin id is reserved.");
-    return { manifest: result.manifest, manifestText: text };
+    if (result.manifest.manifestVersion !== 2) return { manifest: result.manifest, manifestText: text };
+    const entryPath = join(realSourceFolder, result.manifest.entry);
+    const entryStat = await fs.lstat(entryPath);
+    if (!entryStat.isFile() || entryStat.isSymbolicLink()) throw new Error("Selected plugin entry is invalid.");
+    if (entryStat.size > maxPluginEntryBytes) throw new Error("Plugin entry file is too large.");
+    const realEntryPath = await fs.realpath(entryPath);
+    if (!isUnderPath(realEntryPath, realSourceFolder) || realEntryPath !== join(realSourceFolder, result.manifest.entry)) throw new Error("Selected plugin entry is invalid.");
+    let entryHandle: FileHandle | undefined;
+    try {
+      const nofollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+      entryHandle = await fs.open(entryPath, constants.O_RDONLY | nofollow);
+      return { manifest: result.manifest, manifestText: text, entryText: await readBoundedUtf8(entryHandle, maxPluginEntryBytes) };
+    } finally { await entryHandle?.close().catch(() => undefined); }
   } finally {
     await handle?.close().catch(() => undefined);
   }
 }
 
-export async function publishLocalPluginSnapshot(options: { readonly manifest: OpenPetsPluginManifest; readonly manifestText: string; readonly userDataPath: string; readonly maxManifestBytes?: number }): Promise<LocalPluginLoadResult> {
+export async function publishLocalPluginSnapshot(options: { readonly manifest: OpenPetsPluginManifest; readonly manifestText: string; readonly entryText?: string; readonly userDataPath: string; readonly maxManifestBytes?: number }): Promise<LocalPluginLoadResult> {
   const maxBytes = options.maxManifestBytes ?? defaultMaxPluginManifestBytes;
   const devRoot = join(options.userDataPath, "plugins-dev");
   await fs.mkdir(devRoot, { recursive: true });
@@ -55,9 +68,14 @@ export async function publishLocalPluginSnapshot(options: { readonly manifest: O
   try {
     await assertRealDirectory(tempPath, "Plugin temporary directory is invalid.");
     await fs.writeFile(tempManifestPath, options.manifestText, { mode: 0o600 });
+    if (options.manifest.manifestVersion === 2) {
+      if (options.entryText === undefined) throw new Error("Plugin entry file is missing.");
+      const tempEntryPath = join(tempPath, options.manifest.entry);
+      await fs.mkdir(dirname(tempEntryPath), { recursive: true });
+      await fs.writeFile(tempEntryPath, options.entryText, { mode: 0o600 });
+    }
     await readSafePluginManifest({ installPath: tempPath, manifestPath: tempManifestPath, allowedPluginRoots: [devRoot], maxManifestBytes: maxBytes, expectedId: options.manifest.id, expectedVersion: options.manifest.version });
-    await ensureWritableInstallDirectory(installPath, manifestPath);
-    await fs.rename(tempManifestPath, manifestPath);
+    await replaceInstallDirectory(devRoot, installPath, tempPath);
   } finally {
     await fs.rm(tempPath, { recursive: true, force: true });
   }
@@ -65,28 +83,26 @@ export async function publishLocalPluginSnapshot(options: { readonly manifest: O
   return { manifest: copied, installPath, manifestPath };
 }
 
-async function ensureWritableInstallDirectory(installPath: string, manifestPath: string): Promise<void> {
-  try {
-    await assertRealDirectory(installPath, "Plugin install directory is invalid.");
-  } catch (error) {
-    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined;
-    if (code !== "ENOENT") throw error;
-    await fs.mkdir(installPath, { recursive: false, mode: 0o700 });
-    await assertRealDirectory(installPath, "Plugin install directory is invalid.");
-  }
-
-  try {
-    const manifestStat = await fs.lstat(manifestPath);
-    if (!manifestStat.isFile() || manifestStat.isSymbolicLink()) throw new Error("Plugin install manifest is invalid.");
-  } catch (error) {
-    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined;
-    if (code !== "ENOENT") throw error;
-  }
-}
-
 async function assertRealDirectory(path: string, message: string): Promise<void> {
   const stat = await fs.lstat(path);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(message);
+}
+
+async function replaceInstallDirectory(root: string, installPath: string, tempPath: string): Promise<void> {
+  const backupPath = join(root, `.bak-${Date.now()}-${process.pid}`);
+  let hadExisting = false;
+  try {
+    await assertRealDirectory(tempPath, "Plugin temporary directory is invalid.");
+    try { await assertRealDirectory(installPath, "Plugin install directory is invalid."); hadExisting = true; }
+    catch (error) { const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined; if (code !== "ENOENT") throw error; }
+    if (hadExisting) await fs.rename(installPath, backupPath);
+    await fs.rename(tempPath, installPath);
+    await fs.rm(backupPath, { recursive: true, force: true });
+  } catch (error) {
+    await fs.rm(installPath, { recursive: true, force: true }).catch(() => undefined);
+    if (hadExisting) await fs.rename(backupPath, installPath).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function readBoundedUtf8(handle: FileHandle, maxBytes: number): Promise<string> {

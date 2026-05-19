@@ -5,15 +5,22 @@ export const openPetsPluginManifestFilename = OPENPETS_PLUGIN_MANIFEST_FILENAME;
 
 export type PluginRuntime = "declarative";
 export type KnownPluginRuntime = PluginRuntime | "javascript";
-export type PluginPermission = "pet:speak" | "pet:reaction" | "timer";
-export type PluginConfigFieldType = "text" | "textarea" | "number" | "boolean" | "select";
+export type PluginPermission = "pet:speak" | "pet:reaction" | "timer" | "schedule" | "storage" | "status" | "commands" | "network";
+export type PluginJavascriptPermission = Exclude<PluginPermission, "timer">;
+export type PluginConfigFieldType = "text" | "textarea" | "number" | "boolean" | "select" | "time" | "multiSelect" | "list";
 
 export type PluginConfigField = {
   type: PluginConfigFieldType;
   label?: string;
   description?: string;
-  default?: string | number | boolean;
+  default?: string | number | boolean | string[] | Array<Record<string, unknown>>;
   options?: Array<{ label: string; value: string }>;
+  min?: number;
+  max?: number;
+  step?: number;
+  maxLength?: number;
+  maxItems?: number;
+  itemSchema?: Record<string, PluginConfigField>;
 };
 
 export type PluginStringConfigRef = { config: string };
@@ -21,7 +28,7 @@ export type PluginAction = { type: "pet.speak"; message: string | PluginStringCo
 export type PluginTimerEveryMinutes = number | { config: string };
 export type PluginTrigger = { on: "timer"; everyMinutes: PluginTimerEveryMinutes; actions: PluginAction[] };
 
-export type OpenPetsPluginManifest = {
+export type OpenPetsDeclarativePluginManifest = {
   manifestVersion: 1;
   id: string;
   name: string;
@@ -31,6 +38,21 @@ export type OpenPetsPluginManifest = {
   configSchema?: Record<string, PluginConfigField>;
   triggers: PluginTrigger[];
 };
+
+export type OpenPetsJavascriptPluginManifest = {
+  manifestVersion: 2;
+  id: string;
+  name: string;
+  version: string;
+  runtime: "javascript";
+  sdkVersion: string;
+  entry: string;
+  permissions: PluginJavascriptPermission[];
+  network?: { hosts: string[] };
+  configSchema?: Record<string, PluginConfigField>;
+};
+
+export type OpenPetsPluginManifest = OpenPetsDeclarativePluginManifest | OpenPetsJavascriptPluginManifest;
 
 export type PluginManifestValidationError = {
   path: string;
@@ -43,16 +65,19 @@ export type PluginManifestValidationResult =
   | { ok: false; errors: PluginManifestValidationError[] };
 
 const topLevelFields = new Set(["manifestVersion", "id", "name", "version", "runtime", "permissions", "configSchema", "triggers"]);
-const configFieldFields = new Set(["type", "label", "description", "default", "options"]);
+const jsTopLevelFields = new Set(["manifestVersion", "id", "name", "version", "runtime", "sdkVersion", "entry", "permissions", "network", "configSchema"]);
+const configFieldFields = new Set(["type", "label", "description", "default", "options", "min", "max", "step", "maxLength", "maxItems", "itemSchema"]);
 const configOptionFields = new Set(["label", "value"]);
 const triggerFields = new Set(["on", "everyMinutes", "actions"]);
 const speakActionFields = new Set(["type", "message"]);
 const reactActionFields = new Set(["type", "reaction"]);
-const supportedConfigTypes = new Set(["text", "textarea", "number", "boolean", "select"]);
-const deferredConfigTypes = new Set(["multi-select", "time", "date", "schedule", "connection", "secret"]);
+const supportedConfigTypes = new Set(["text", "textarea", "number", "boolean", "select", "time", "multiSelect", "list"]);
+const deferredConfigTypes = new Set(["multi-select", "date", "schedule", "connection", "secret"]);
 const deferredConfigFeatures = new Set(["dynamicOptions"]);
-export const pluginPermissions = ["pet:speak", "pet:reaction", "timer"] as const satisfies readonly PluginPermission[];
+export const pluginPermissions = ["pet:speak", "pet:reaction", "timer", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginPermission[];
+const javascriptPluginPermissions = ["pet:speak", "pet:reaction", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginJavascriptPermission[];
 export const pluginPermissionSet: ReadonlySet<string> = new Set(pluginPermissions);
+const declarativePluginPermissionSet: ReadonlySet<string> = new Set(["pet:speak", "pet:reaction", "timer"]);
 
 export function canonicalizePluginPermissions(value: unknown): PluginPermission[] {
   if (!Array.isArray(value)) throw new Error("Plugin permissions must be an array.");
@@ -71,8 +96,10 @@ export function validatePluginManifest(input: unknown): PluginManifestValidation
     return { ok: false, errors: [{ path: "$", code: "invalid_manifest", message: "Plugin manifest must be a JSON object." }] };
   }
 
+  if (input.manifestVersion === 2) return validateJavascriptPluginManifest(input);
+
   rejectUnknownFields(input, topLevelFields, "$", errors);
-  if (input.manifestVersion !== 1) addError(errors, "$.manifestVersion", "invalid_manifest_version", "manifestVersion must be 1.");
+  if (input.manifestVersion !== 1) addError(errors, "$.manifestVersion", "invalid_manifest_version", "manifestVersion must be 1 or 2.");
   validateString(input.id, "$.id", "id", errors, /^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/);
   validateString(input.name, "$.name", "name", errors);
   validateString(input.version, "$.version", "version", errors, /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
@@ -83,7 +110,7 @@ export function validatePluginManifest(input: unknown): PluginManifestValidation
     addError(errors, "$.runtime", "invalid_runtime", 'runtime must be "declarative".');
   }
 
-  const permissions = validatePermissions(input.permissions, errors);
+  const permissions = validatePermissions(input.permissions, errors, declarativePluginPermissionSet);
   const configFields = validateConfigSchema(input.configSchema, errors);
   validateTriggers(input.triggers, permissions, configFields, errors);
 
@@ -91,14 +118,55 @@ export function validatePluginManifest(input: unknown): PluginManifestValidation
   return { ok: true, manifest: input as OpenPetsPluginManifest, errors: [] };
 }
 
-function validatePermissions(value: unknown, errors: PluginManifestValidationError[]): Set<string> {
+function validateJavascriptPluginManifest(input: Record<string, unknown>): PluginManifestValidationResult {
+  const errors: PluginManifestValidationError[] = [];
+  rejectUnknownFields(input, jsTopLevelFields, "$", errors);
+  validateString(input.id, "$.id", "id", errors, /^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/);
+  validateString(input.name, "$.name", "name", errors);
+  validateString(input.version, "$.version", "version", errors, /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
+  if (input.runtime !== "javascript") addError(errors, "$.runtime", "invalid_runtime", 'manifestVersion 2 runtime must be "javascript".');
+  validateString(input.sdkVersion, "$.sdkVersion", "sdkVersion", errors, /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
+  validateEntryPath(input.entry, errors);
+  validateJavascriptPermissions(input.permissions, errors);
+  validateConfigSchema(input.configSchema, errors);
+  validateNetwork(input.network, errors);
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, manifest: input as OpenPetsPluginManifest, errors: [] };
+}
+
+function validateJavascriptPermissions(value: unknown, errors: PluginManifestValidationError[]): Set<string> {
+  const allowed = new Set<string>(javascriptPluginPermissions);
+  const permissions = validatePermissions(value, errors);
+  for (const permission of permissions) if (!allowed.has(permission)) addError(errors, "$.permissions", "invalid_permission", "Permission is not valid for javascript plugins.");
+  return permissions;
+}
+
+function validateEntryPath(value: unknown, errors: PluginManifestValidationError[]): void {
+  validateString(value, "$.entry", "entry", errors);
+  if (typeof value !== "string") return;
+  if (value.startsWith("/") || value.includes("\\") || value.split("/").includes("..") || !/\.(?:mjs|js)$/.test(value)) addError(errors, "$.entry", "invalid_entry", "entry must be a relative .js or .mjs path.");
+}
+
+function validateNetwork(value: unknown, errors: PluginManifestValidationError[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value) || !Array.isArray(value.hosts)) return addError(errors, "$.network.hosts", "invalid_network_hosts", "network.hosts must be an array.");
+  rejectUnknownFields(value, new Set(["hosts"]), "$.network", errors);
+  const seen = new Set<string>();
+  value.hosts.forEach((host, index) => {
+    if (typeof host !== "string" || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) || host.includes("*") || host.trim() !== host) addError(errors, `$.network.hosts[${index}]`, "invalid_network_host", "network hosts must be exact host names.");
+    else if (seen.has(host)) addError(errors, `$.network.hosts[${index}]`, "duplicate_network_host", "Duplicate network host.");
+    seen.add(String(host));
+  });
+}
+
+function validatePermissions(value: unknown, errors: PluginManifestValidationError[], allowedPermissions: ReadonlySet<string> = pluginPermissionSet): Set<string> {
   const permissions = new Set<string>();
   if (!Array.isArray(value)) {
     addError(errors, "$.permissions", "invalid_permissions", "permissions must be an array.");
     return permissions;
   }
   value.forEach((permission, index) => {
-    if (typeof permission !== "string" || !pluginPermissionSet.has(permission)) {
+    if (typeof permission !== "string" || !allowedPermissions.has(permission)) {
       addError(errors, `$.permissions[${index}]`, "invalid_permission", "Permission must be one of pet:speak, pet:reaction, timer.");
       return;
     }
@@ -147,12 +215,19 @@ function validateConfigSchema(value: unknown, errors: PluginManifestValidationEr
 function validateConfigFieldSemantics(field: Record<string, unknown>, path: string, errors: PluginManifestValidationError[]): void {
   if (field.label !== undefined) validateString(field.label, `${path}.label`, "label", errors);
   if (field.description !== undefined) validateString(field.description, `${path}.description`, "description", errors);
-  if (field.type !== "select" && field.options !== undefined) addError(errors, `${path}.options`, "invalid_options", "options are only valid for select config fields.");
+  if (field.type !== "select" && field.type !== "multiSelect" && field.options !== undefined) addError(errors, `${path}.options`, "invalid_options", "options are only valid for select config fields.");
   if ((field.type === "text" || field.type === "textarea") && field.default !== undefined && typeof field.default !== "string") addError(errors, `${path}.default`, "invalid_default", "Default must be a string.");
   if (field.type === "number" && field.default !== undefined && (typeof field.default !== "number" || !Number.isFinite(field.default))) addError(errors, `${path}.default`, "invalid_default", "Default must be a finite number.");
   if (field.type === "boolean" && field.default !== undefined && typeof field.default !== "boolean") addError(errors, `${path}.default`, "invalid_default", "Default must be a boolean.");
-  if (field.type === "select") validateSelectField(field, path, errors);
+  if (field.type === "time" && field.default !== undefined && (typeof field.default !== "string" || !isValidTime(field.default))) addError(errors, `${path}.default`, "invalid_default", "Default must be HH:mm between 00:00 and 23:59.");
+  if (field.type === "select" || field.type === "multiSelect") validateSelectField(field, path, errors);
+  if (field.type === "list") {
+    if (field.maxItems !== undefined && (typeof field.maxItems !== "number" || !Number.isInteger(field.maxItems) || field.maxItems < 0)) addError(errors, `${path}.maxItems`, "invalid_max_items", "maxItems must be a non-negative integer.");
+    if (field.itemSchema !== undefined) validateConfigSchema(field.itemSchema, errors);
+  }
 }
+
+function isValidTime(value: string): boolean { const m = /^(\d{2}):(\d{2})$/.exec(value); return !!m && Number(m[1]) <= 23 && Number(m[2]) <= 59; }
 
 function validateSelectField(field: Record<string, unknown>, path: string, errors: PluginManifestValidationError[]): void {
   if (!Array.isArray(field.options) || field.options.length === 0) {
@@ -161,7 +236,9 @@ function validateSelectField(field: Record<string, unknown>, path: string, error
   }
   const values = validateOptions(field.options, path, errors);
   if (field.default !== undefined) {
-    if (typeof field.default !== "string") addError(errors, `${path}.default`, "invalid_default", "Select default must be a string.");
+    if (field.type === "multiSelect") {
+      if (!Array.isArray(field.default) || field.default.some((item) => typeof item !== "string" || !values.has(item))) addError(errors, `${path}.default`, "invalid_default", "Multi-select default must match option values.");
+    } else if (typeof field.default !== "string") addError(errors, `${path}.default`, "invalid_default", "Select default must be a string.");
     else if (!values.has(field.default)) addError(errors, `${path}.default`, "invalid_default", "Select default must match one of the option values.");
   }
 }

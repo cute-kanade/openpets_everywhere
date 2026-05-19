@@ -3,9 +3,10 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { OPENPETS_PLUGIN_MANIFEST_FILENAME, type OpenPetsPluginManifest } from "../src/plugin-manifest.js";
+import { OPENPETS_PLUGIN_MANIFEST_FILENAME, type OpenPetsDeclarativePluginManifest, type OpenPetsJavascriptPluginManifest } from "../src/plugin-manifest.js";
 import { type PluginPetApi } from "../src/plugin-pet-api.js";
 import { PluginRuntime, type PluginRuntimeScheduler, type PluginTimerHandle } from "../src/plugin-runtime.js";
+import type { PluginJsHost, PluginJsHostInstance, PluginJsHostStartOptions } from "../src/plugin-js-host.js";
 import { initializePluginState, type PluginStateStore, type PluginStateRecord } from "../src/plugin-state.js";
 
 let currentRoot = "";
@@ -44,10 +45,134 @@ class FakePetApi implements PluginPetApi {
   }
 }
 
+class FakeJsHost implements PluginJsHost {
+  starts: PluginJsHostStartOptions[] = [];
+  instances: Array<{ stopped: boolean; id: string }> = [];
+  fail = false;
+  breakBeforeReturn = false;
+  async startPlugin(options: PluginJsHostStartOptions): Promise<PluginJsHostInstance> {
+    this.starts.push(options);
+    if (this.fail) throw new Error("host failed");
+    const instance = { stopped: false, id: options.record.id };
+    this.instances.push(instance);
+    if (options.record.approvedPermissions.includes("commands")) options.sdk?.commands.register({ id: "run", title: "Run" }, () => options.sdk?.status.set("ran"));
+    if (this.breakBeforeReturn) options.onBroken("early crash");
+    return { stop: () => { instance.stopped = true; } };
+  }
+}
+
 await scenario("disabled no timers", async ({ store, scheduler }) => {
   addPlugin(store, { enabled: false });
   await runtime(store, scheduler).start();
   assert.equal(scheduler.activeCount(), 0);
+});
+
+await scenario("javascript sdk command status storage schedule and permissions", async ({ store, scheduler, petApi }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: ["commands", "status", "storage", "schedule", "pet:speak"] }, jsManifest({ permissions: ["commands", "status", "storage", "schedule", "pet:speak"] }));
+  const rt = runtime(store, scheduler, petApi, undefined, jsHost);
+  await rt.start();
+  assert.deepEqual(rt.getPluginState("plug").commands.map((c) => c.id), ["run"]);
+  await rt.executeCommand("plug", "run");
+  assert.equal(rt.getPluginState("plug").status?.text, "ran");
+  jsHost.starts[0].sdk?.storage.set("a", "b");
+  assert.equal(jsHost.starts[0].sdk?.storage.get("a"), "b");
+  assert.equal(store.getRecord("plug")?.config["storage:a"], undefined);
+  jsHost.starts[0].sdk?.schedule.once("s", 1, () => jsHost.starts[0].sdk?.pet.speak("hi"));
+  scheduler.fire(0);
+  await Promise.resolve();
+  assert.deepEqual(petApi.events, ["speak:hi"]);
+});
+
+await scenario("javascript sdk permission rejection", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: ["commands"] }, jsManifest({ permissions: ["commands"] }));
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  assert.throws(() => jsHost.starts[0].sdk?.storage.set("a", "b"), /not approved/);
+});
+
+await scenario("javascript http fetch allows approved github host", async ({ store }) => {
+  const originalFetch = globalThis.fetch;
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: ["network"], approvedNetworkHosts: ["api.github.com"] }, jsManifest({ permissions: ["network"], network: { hosts: ["api.github.com"] } }));
+  globalThis.fetch = (async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json", etag: "abc" } })) as typeof fetch;
+  try {
+    await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+    const result = await jsHost.starts[0].sdk?.http.fetch("https://api.github.com/repos/open-pets/openpets/releases");
+    assert.equal(result?.status, 200);
+    assert.deepEqual(result?.json, { ok: true });
+    assert.equal(result?.headers.etag, "abc");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+await scenario("javascript http fetch denies unapproved host and non-get", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: ["network"], approvedNetworkHosts: ["api.github.com"] }, jsManifest({ permissions: ["network"], network: { hosts: ["api.github.com"] } }));
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  await assert.rejects(() => jsHost.starts[0].sdk!.http.fetch("https://example.com/"), /host is not approved/);
+  await assert.rejects(() => jsHost.starts[0].sdk!.http.fetch("https://api.github.com/", { method: "POST" }), /only supports GET/);
+});
+
+await scenario("javascript http fetch rejects oversized response", async ({ store }) => {
+  const originalFetch = globalThis.fetch;
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: ["network"], approvedNetworkHosts: ["api.github.com"] }, jsManifest({ permissions: ["network"], network: { hosts: ["api.github.com"] } }));
+  globalThis.fetch = (async () => new Response("x".repeat(1024 * 1024 + 1), { status: 200 })) as typeof fetch;
+  try {
+    await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+    await assert.rejects(() => jsHost.starts[0].sdk!.http.fetch("https://api.github.com/"), /too large/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+await scenario("javascript plugin starts through host", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: [] }, jsManifest());
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  assert.equal(jsHost.starts.length, 1);
+  assert.equal(store.getRecord("plug")?.brokenReason, undefined);
+});
+
+await scenario("javascript stop cancels host", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: [] }, jsManifest());
+  const rt = runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost);
+  await rt.start();
+  rt.stop();
+  assert.equal(jsHost.instances[0].stopped, true);
+});
+
+await scenario("javascript startup failure marks broken", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  jsHost.fail = true;
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: [] }, jsManifest());
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  assert.match(store.getRecord("plug")?.brokenReason ?? "", /host failed/);
+});
+
+await scenario("javascript early crash marks broken", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  jsHost.breakBeforeReturn = true;
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: [] }, jsManifest());
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  assert.match(store.getRecord("plug")?.brokenReason ?? "", /early crash/);
+});
+
+await scenario("disabled and killed javascript plugins do not start", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", enabled: false, approvedPermissions: [] }, jsManifest());
+  addPlugin(store, { id: "killed", manifestVersion: 2, runtime: "javascript", catalogDisabled: true, approvedPermissions: [] }, jsManifest({ id: "killed" }));
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  assert.equal(jsHost.starts.length, 0);
+});
+
+await scenario("javascript reload replaces host", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: [] }, jsManifest());
+  const rt = runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost);
+  await rt.start();
+  await rt.reloadPlugin("plug");
+  assert.equal(jsHost.instances[0].stopped, true);
+  assert.equal(jsHost.instances[1].stopped, false);
 });
 
 await scenario("valid timer schedules and fires", async ({ store, scheduler, petApi }) => {
@@ -272,8 +397,8 @@ async function scenario(name: string, fn: (ctx: { root: string; store: PluginSta
   try { await fn({ root, store, scheduler, petApi }); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); }
 }
 
-function runtime(store: PluginStateStore, scheduler: FakeScheduler, petApi = new FakePetApi(), roots?: string[]): PluginRuntime {
-  return new PluginRuntime({ stateStore: store, petApi, scheduler, allowedPluginRoots: roots ?? [currentRoot] });
+function runtime(store: PluginStateStore, scheduler: FakeScheduler, petApi = new FakePetApi(), roots?: string[], jsHost?: PluginJsHost): PluginRuntime {
+  return new PluginRuntime({ stateStore: store, petApi, scheduler, allowedPluginRoots: roots ?? [currentRoot], jsHost });
 }
 
 function addPlugin(store: PluginStateStore, patch: Partial<PluginStateRecord> = {}, data: unknown = manifest()): PluginStateRecord {
@@ -281,17 +406,26 @@ function addPlugin(store: PluginStateStore, patch: Partial<PluginStateRecord> = 
   const id = patch.id ?? "plug";
   const installPath = patch.installPath ?? join(root, id);
   const manifestPath = patch.manifestPath ?? writeManifest(installPath, data);
+  if (isJsManifest(data)) writeFileSync(join(installPath, data.entry), "OpenPetsPlugin.register();", "utf8");
   const rec = record({ ...patch, id, installPath, manifestPath });
   store.upsertRecord(rec);
   return rec;
 }
 
 function record(patch: Partial<PluginStateRecord> = {}): PluginStateRecord {
-  return { id: patch.id ?? "plug", version: patch.version ?? "1.0.0", manifestPath: patch.manifestPath ?? "", installPath: patch.installPath ?? "", source: patch.source ?? "local", enabled: patch.enabled ?? true, approvedPermissions: patch.approvedPermissions ?? ["timer", "pet:speak", "pet:reaction"], config: patch.config ?? {}, brokenReason: patch.brokenReason };
+  return { id: patch.id ?? "plug", version: patch.version ?? "1.0.0", manifestPath: patch.manifestPath ?? "", installPath: patch.installPath ?? "", source: patch.source ?? "local", manifestVersion: patch.manifestVersion, runtime: patch.runtime, sdkVersion: patch.sdkVersion, enabled: patch.enabled ?? true, approvedPermissions: patch.approvedPermissions ?? ["timer", "pet:speak", "pet:reaction"], approvedNetworkHosts: patch.approvedNetworkHosts, config: patch.config ?? {}, brokenReason: patch.brokenReason, catalogDisabled: patch.catalogDisabled };
 }
 
-function manifest(patch: Partial<OpenPetsPluginManifest> & { everyMinutes?: OpenPetsPluginManifest["triggers"][number]["everyMinutes"]; actions?: OpenPetsPluginManifest["triggers"][number]["actions"] } = {}): OpenPetsPluginManifest {
+function manifest(patch: Partial<OpenPetsDeclarativePluginManifest> & { everyMinutes?: OpenPetsDeclarativePluginManifest["triggers"][number]["everyMinutes"]; actions?: OpenPetsDeclarativePluginManifest["triggers"][number]["actions"] } = {}): OpenPetsDeclarativePluginManifest {
   return { manifestVersion: 1, id: patch.id ?? "plug", name: "Plug", version: patch.version ?? "1.0.0", runtime: "declarative", permissions: patch.permissions ?? ["timer", "pet:speak"], configSchema: patch.configSchema, triggers: [{ on: "timer", everyMinutes: patch.everyMinutes ?? 5, actions: patch.actions ?? [{ type: "pet.speak", message: "Stretch" }] }] };
+}
+
+function jsManifest(patch: Partial<OpenPetsJavascriptPluginManifest> = {}): OpenPetsJavascriptPluginManifest {
+  return { manifestVersion: 2, id: patch.id ?? "plug", name: "Plug", version: patch.version ?? "1.0.0", runtime: "javascript", sdkVersion: patch.sdkVersion ?? "1.0.0", entry: patch.entry ?? "index.js", permissions: patch.permissions ?? [], network: patch.network };
+}
+
+function isJsManifest(data: unknown): data is OpenPetsJavascriptPluginManifest {
+  return typeof data === "object" && data !== null && "runtime" in data && data.runtime === "javascript" && "entry" in data && typeof data.entry === "string";
 }
 
 function writeManifest(dir: string, data: unknown): string {

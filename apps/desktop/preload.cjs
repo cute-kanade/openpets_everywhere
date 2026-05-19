@@ -38,6 +38,7 @@ const pluginsApi = {
   setEnabled: (id, enabled) => ipcRenderer.invoke("openpets:plugins-set-enabled", id, enabled),
   saveConfig: (id, config) => ipcRenderer.invoke("openpets:plugins-save-config", id, config),
   reload: (id) => ipcRenderer.invoke("openpets:plugins-reload", id),
+  executeCommand: (id, commandId) => ipcRenderer.invoke("openpets:plugins-execute-command", id, commandId),
   loadLocal: () => ipcRenderer.invoke("openpets:plugins-load-local"),
   catalogSnapshot: (refresh) => ipcRenderer.invoke("openpets:plugins-catalog-snapshot", refresh),
   installCatalog: (id) => ipcRenderer.invoke("openpets:plugins-install-catalog", id),
@@ -301,6 +302,14 @@ function renderPluginDetail(plugin) {
 
   renderPluginConfigForm(detail, plugin);
 
+  if (plugin.status || (Array.isArray(plugin.commands) && plugin.commands.length > 0)) {
+    const panel = document.createElement("div");
+    panel.className = "config-panel";
+    if (plugin.status) { const s = document.createElement("p"); s.className = `pill ${plugin.status.tone || ""}`; s.textContent = plugin.status.text; panel.append(s); }
+    for (const command of plugin.commands || []) { const b = document.createElement("button"); b.type = "button"; b.className = "secondary"; b.textContent = command.title || command.id; b.title = command.description || ""; b.onclick = () => runPluginAction(() => pluginsApi.executeCommand(plugin.id, command.id)); panel.append(b); }
+    detail.append(panel);
+  }
+
   const dangerZone = document.createElement("div");
   dangerZone.className = "danger-zone";
 
@@ -394,7 +403,9 @@ function renderPluginConfigForm(parent, plugin) {
 
   form.onsubmit = (event) => {
     event.preventDefault();
-    const nextConfig = collectPluginConfigForm(form, schema);
+    let nextConfig;
+    try { nextConfig = collectPluginConfigForm(form, schema); }
+    catch (error) { requireElement("plugins-status").textContent = error instanceof Error ? error.message : "Invalid plugin settings."; requireElement("plugins-status").className = "error"; return; }
     void runPluginAction(() => pluginsApi.saveConfig(plugin.id, nextConfig));
   };
 
@@ -417,6 +428,14 @@ function createPluginConfigInput(key, field, value) {
     if (typeof value === "string") select.value = value;
     return select;
   }
+  if (field.type === "multiSelect") {
+    const select = document.createElement("select"); select.id = `plugin-config-${key}`; select.name = key; select.dataset.configType = field.type; select.multiple = true;
+    for (const option of field.options || []) { const item = document.createElement("option"); item.value = option.value; item.textContent = option.label; item.selected = Array.isArray(value) && value.includes(option.value); select.append(item); }
+    return select;
+  }
+  if (field.type === "list") {
+    const textarea = document.createElement("textarea"); textarea.id = `plugin-config-${key}`; textarea.name = key; textarea.dataset.configType = field.type; textarea.value = JSON.stringify(Array.isArray(value) ? value : [], null, 2); return textarea;
+  }
   if (field.type === "textarea") {
     const textarea = document.createElement("textarea");
     textarea.id = `plugin-config-${key}`;
@@ -430,6 +449,11 @@ function createPluginConfigInput(key, field, value) {
   input.name = key;
   input.dataset.configType = field.type;
   input.type = field.type === "number" ? "number" : field.type === "boolean" ? "checkbox" : "text";
+  if (field.type === "time") input.type = "time";
+  if (field.min !== undefined) input.min = String(field.min);
+  if (field.max !== undefined) input.max = String(field.max);
+  if (field.step !== undefined) input.step = String(field.step);
+  if (field.maxLength !== undefined) input.maxLength = Number(field.maxLength);
   if (field.type === "boolean") input.checked = Boolean(value);
   else if (value !== undefined) input.value = String(value);
   return input;
@@ -443,6 +467,8 @@ function collectPluginConfigForm(form, schema) {
     if (!(input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLTextAreaElement)) continue;
     if (field.type === "boolean") config[key] = input instanceof HTMLInputElement ? input.checked : false;
     else if (field.type === "number") config[key] = Number(input.value);
+    else if (field.type === "multiSelect" && input instanceof HTMLSelectElement) config[key] = Array.from(input.selectedOptions).map((option) => option.value);
+    else if (field.type === "list") { try { config[key] = JSON.parse(input.value || "[]"); } catch { throw new Error(`Invalid JSON for ${field.label || key}.`); } }
     else config[key] = input.value;
   }
   return config;

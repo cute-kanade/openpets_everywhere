@@ -32,6 +32,10 @@ const validManifest = {
 };
 
 assertValid(validManifest);
+assertValid({ manifestVersion: 2, id: "js-plugin", name: "JS Plugin", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "dist/index.js", permissions: ["pet:speak", "network"], network: { hosts: ["api.example.com"] } });
+assertInvalid({ manifestVersion: 2, id: "js-plugin", name: "JS Plugin", version: "1.0.0", runtime: "declarative", sdkVersion: "1.0.0", entry: "dist/index.js", permissions: ["pet:speak"] }, "invalid_runtime");
+assertInvalid({ manifestVersion: 2, id: "js-plugin", name: "JS Plugin", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "../index.js", permissions: ["pet:speak"] }, "invalid_entry");
+assertInvalid({ manifestVersion: 2, id: "js-plugin", name: "JS Plugin", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "index.js", permissions: ["network"], network: { hosts: ["*.example.com"] } }, "invalid_network_host");
 assertValid({ ...validManifest, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.speak", message: { config: "message" } }, { type: "pet.react", reaction: { config: "mood" } }] }] });
 assertInvalid({ ...validManifest, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.speak", message: { config: "message", extra: true } }] }] }, "invalid_config_reference");
 assertInvalid({ ...validManifest, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.speak", message: { config: "missing" } }] }] }, "invalid_config_reference");
@@ -93,13 +97,7 @@ assertInvalid(
   },
   "invalid_action",
 );
-assertInvalid(
-  {
-    ...validManifest,
-    configSchema: { when: { type: "time" } },
-  },
-  "deferred_config_type",
-);
+assertValid({ ...validManifest, configSchema: { ...validManifest.configSchema, when: { type: "time", default: "09:00" } } });
 assertInvalid(
   {
     ...validManifest,
