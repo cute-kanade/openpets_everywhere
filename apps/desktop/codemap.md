@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-OpenPets desktop companion application. Tray-first Electron app providing animated desktop pets that react to coding agent events. Manages pet installations, agent integrations (Claude Code, OpenCode), and local IPC for CLI communication.
+OpenPets desktop companion application. Tray-first Electron app providing animated desktop pets that react to coding agent events. Manages pet installations, plugin automation, agent integrations (Claude Code, OpenCode), and local IPC for CLI communication.
 
 ## Design
 
@@ -23,6 +23,7 @@ OpenPets desktop companion application. Tray-first Electron app providing animat
   - User-configurable reaction-to-animation mapping
 - **Lease Manager**: 15s TTL leases for agent pet routing with heartbeat renewal
 - **Logging**: Structured logging with scopes, log rotation (2MB max), and sensitive data redaction
+- **Plugin Subsystem**: Manifest-only v1 plugin runtime for timer-triggered `pet.speak`/`pet.react` actions, permission approval, config schemas, catalog/local installs, and safe path/ZIP/manifest validation
 
 ## Flow
 
@@ -34,13 +35,17 @@ OpenPets desktop companion application. Tray-first Electron app providing animat
 
 **Agent Setup**: UI → `agent-setup.ts` → Claude/OpenCode/Cursor CLI detection → MCP config modification → hooks installation → memory file management
 
+**Plugins**: Plugins window → `plugin-service.ts` → catalog or local manifest loader → permission approval/state update → `plugin-runtime.ts` schedules declarative timers → `plugin-pet-api.ts` applies speech/reactions to the default pet
+
 ## Integration Points
 
 - **Workspace Packages**: `@open-pets/agent-events`, `@open-pets/claude`, `@open-pets/cli`, `@open-pets/cursor`, `@open-pets/mcp`, `@open-pets/opencode`
 - **External Services**: 
   - `https://openpets.dev/pets/catalog.v2.json` (pet catalog V2)
   - `https://openpets.dev/pets/catalog.v3.json` (pet catalog V3 with pagination)
+  - `https://openpets.dev/plugins/catalog.v1.json` (plugin catalog V1)
   - `https://zip.openpets.dev/pets/{id}.zip` (pet downloads)
+  - `https://zip.openpets.dev/plugins/{id}.zip` (plugin downloads)
   - GitHub API (release checks)
 - **System Integration**:
   - Claude Code: `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `claude mcp` commands
@@ -55,13 +60,24 @@ OpenPets desktop companion application. Tray-first Electron app providing animat
 
 - `main.ts`: Entry point, lifecycle coordination
 - `tray.ts`: System tray icon and menu
-- `windows.ts`: Task window management (pet-manager, agent-setup, settings, onboarding)
+- `windows.ts`: Task window management (pet-manager, agent-setup, plugins, settings, onboarding)
+- `plugins-window.ts`: Sandboxed plugins task-window HTML for installed/discover/developer plugin management
 - `local-ipc.ts`: TCP/Unix socket server for CLI communication
 - `lease-manager.ts`: Pet routing lease lifecycle
 - `pet-window.ts`: Pet rendering (transparent frameless windows, CSS sprite animation, speech bubbles, status badges)
 - `default-pet-controller.ts`/`agent-pet-controller.ts`: Pet visibility/state management with transient displays
 - `app-state.ts`: Persistent state management (JSON file)
 - `agent-setup.ts`: Claude/OpenCode/Cursor integration logic
+- `plugin-service.ts`: Plugin orchestration for snapshots, enable/config/reload, catalog install/update/uninstall, local loading, permission approval, and runtime reloads
+- `plugin-manifest.ts`: `openpets.plugin.json` v1 schema/types/validator for declarative timer plugins, config fields, permissions, and actions
+- `plugin-runtime.ts`: Safe declarative runtime that compiles enabled plugin timers and runs approved pet speech/reaction actions
+- `plugin-state.ts`: Atomic JSON state store for installed plugins, enabled flag, approved permissions, config, broken state, and update metadata
+- `plugin-config.ts`: Plugin default/effective config validation and config reference resolution
+- `plugin-catalog.ts`/`plugin-catalog-validation.ts`: Plugin catalog fetch/cache and strict catalog entry validation
+- `plugin-package.ts`: Catalog plugin ZIP download, SHA-256 verification, manifest extraction, install, and safe uninstall path resolution
+- `plugin-local-loader.ts`: Local developer plugin folder validation and manifest snapshotting into app data
+- `plugin-manifest-reader.ts`: Safe installed-manifest reader enforcing allowed roots, size limits, path containment, and expected id/version
+- `plugin-pet-api.ts`: Runtime bridge from plugin actions to default pet speech/reaction APIs
 - `pet-installation.ts`: Catalog ZIP download and extraction
 - `codex-pets.ts`: Local Codex pet import
 - `catalog.ts`: Remote catalog fetching with V3 pagination and fixture fallback
@@ -73,10 +89,11 @@ OpenPets desktop companion application. Tray-first Electron app providing animat
 - `scripts/release-local.mjs`: macOS-local release automation with GitHub draft creation
 - `contracts/catalog-fixture.contract.ts`: Catalog V2 validation contract tests against fixture data
 - `contracts/local-ipc-protocol.contract.ts`: IPC protocol validation contract tests for request/response parsing
+- `contracts/plugin-manifest.contract.ts`: Plugin manifest boundary contract for v1 schema, config references, permissions, deferred features, and action validation
 
 ## Test Structure
 
 - **Behavior tests** (`tests/*.test.ts`): Unit tests for lease manager, state management, version checking, ZIP safety, Codex pets, Claude memory, and reaction animation mapping. Compiled to `.test-dist/tests/`.
-- **Contract tests** (`contracts/*.contract.ts`): Public API boundary validation for catalog fixtures and IPC protocol. Compiled to `.test-dist/contracts/`.
+- **Contract tests** (`contracts/*.contract.ts`): Public API boundary validation for catalog fixtures, IPC protocol, and plugin manifest schema. Compiled to `.test-dist/contracts/`.
 - **Runtime checks** (`src/check-*.ts`): Remaining runtime validation checks compiled to `dist/`.
 - **Test runner** (`scripts/run-tests.mjs`): Orchestrates preload syntax checks → test compilation → behavior tests → contract tests → dist checks.

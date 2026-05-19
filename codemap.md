@@ -19,10 +19,10 @@ OpenPets is a pnpm/TypeScript monorepo for an Electron desktop companion app plu
 
 | Directory | Responsibility Summary | Detailed Map |
 |-----------|------------------------|--------------|
-| `apps/` | Deployable application workspace, currently the tray-first Electron desktop app that consumes shared packages. | [View Map](apps/codemap.md) |
-| `apps/desktop/` | User-facing Electron companion app: tray UX, pet windows, pet installation, agent setup, update checks, and local IPC server. | [View Map](apps/desktop/codemap.md) |
-| `apps/desktop/contracts/` | Desktop public-boundary contract tests for catalog fixtures and local IPC protocol behavior. | [View Map](apps/desktop/contracts/codemap.md) |
-| `apps/desktop/src/` | Main-process service layer for app lifecycle, state, tray/windows, IPC routing, lease-managed agent pets, catalog installation, and editor integration. | [View Map](apps/desktop/src/codemap.md) |
+| `apps/` | Deployable application workspace, currently the tray-first Electron desktop app that consumes shared packages, local IPC, pet windows, and desktop plugin support. | [View Map](apps/codemap.md) |
+| `apps/desktop/` | User-facing Electron companion app: tray UX, pet windows, pet installation, plugin automation/runtime, agent setup, update checks, and local IPC server. | [View Map](apps/desktop/codemap.md) |
+| `apps/desktop/contracts/` | Desktop public-boundary contract tests for catalog fixtures, local IPC protocol behavior, and plugin manifest schema validation. | [View Map](apps/desktop/contracts/codemap.md) |
+| `apps/desktop/src/` | Main-process service layer for app lifecycle, state, tray/windows, IPC routing, lease-managed agent pets, catalog installation, plugin subsystem, and editor integration. | [View Map](apps/desktop/src/codemap.md) |
 | `apps/desktop/scripts/` | Desktop package cleanup and local release automation scripts. | [View Map](apps/desktop/scripts/codemap.md) |
 | `packages/` | Publishable npm package workspace for shared protocol, CLI, MCP, and coding-agent integrations. | [View Map](packages/codemap.md) |
 | `packages/agent-events/` | Shared agent speech/event message pools and validation utilities. | [View Map](packages/agent-events/codemap.md) |
@@ -53,9 +53,10 @@ OpenPets is a pnpm/TypeScript monorepo for an Electron desktop companion app plu
 2. Agent integrations (`packages/claude`, `packages/opencode`, `packages/cursor`, `packages/pi`, and `packages/mcp`) configure agents or emit pet commands through `@open-pets/client`.
 3. The client discovers Unix sockets, Windows named pipes, or TCP endpoints for WSL cross-platform access.
 4. The desktop IPC server routes commands through lease-managed controllers so default and agent pets can coexist safely.
-5. Pet windows render reaction-driven animations, speech bubbles, and status badges using desktop state plus reaction mapping metadata.
-6. Pet assets are resolved from built-in assets, locally developed Codex pets, or remotely downloaded catalog ZIPs.
-7. Workspace packages share TypeScript/ESM build conventions and are wired together through pnpm `workspace:*` dependencies.
+5. The plugin service loads approved catalog or local `openpets.plugin.json` manifests, persists plugin state/config, schedules declarative timers, and bridges allowed actions into the default pet API.
+6. Pet windows render reaction-driven animations, speech bubbles, and status badges using desktop state plus reaction mapping metadata.
+7. Pet assets are resolved from built-in assets, locally developed Codex pets, or remotely downloaded catalog ZIPs.
+8. Workspace packages share TypeScript/ESM build conventions and are wired together through pnpm `workspace:*` dependencies.
 
 ## Working Notes
 

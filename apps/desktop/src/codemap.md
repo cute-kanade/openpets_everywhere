@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Core TypeScript source for the OpenPets desktop application. Organized into: lifecycle management, state persistence, UI windows, pet rendering, IPC server, agent integrations, and pet installation/management.
+Core TypeScript source for the OpenPets desktop application. Organized into: lifecycle management, state persistence, UI windows, pet rendering, IPC server, agent integrations, pet installation/management, and the manifest-only plugin subsystem.
 
 ## Design
 
@@ -14,6 +14,7 @@ Core TypeScript source for the OpenPets desktop application. Organized into: lif
 - **Sandboxed HTML**: All UI is data-URL or file-URL HTML with inline CSS, no external resources
 - **Structured Logging**: Scoped logging (app, ipc, lease, pet.*, state, tray, ui) with log rotation and redaction
 - **Reaction Animation Mapping**: User-configurable mapping from reaction types to sprite animation states
+- **Manifest-Only Plugins**: Plugins are declarative `openpets.plugin.json` manifests with approved permissions, persisted config, safe path checks, and timer-triggered pet actions; JavaScript runtime is recognized but unsupported.
 
 ## Flow
 
@@ -23,6 +24,7 @@ main.ts
 ├── lifecycle.ts (app events, cleanup)
 ├── logger.ts (structured logging init)
 ├── app-state.ts (state init)
+├── plugin-service.ts (plugin state/runtime init)
 ├── tray.ts (tray creation)
 ├── local-ipc.ts (IPC server start)
 └── windows.ts (UI handlers)
@@ -76,14 +78,37 @@ pet-installation.ts
 └── importCodexPet() → codex-pets.ts
 ```
 
+**Plugin Flow**:
+```
+main.ts → initializePluginService(userData, defaultPluginPetApi).start()
+├── plugin-state.ts reads/writes userData/openpets-plugin-state.json
+├── plugin-runtime.ts reloads enabled manifests and schedules timer triggers
+│   └── plugin-pet-api.ts → default-pet-controller external say/react APIs
+├── plugin-service.ts orchestrates UI actions, permission confirmation, config validation, install/update/uninstall/load-local, and runtime reloads
+└── lifecycle.ts → stopPluginService() on quit
+
+Plugins window:
+tray.ts → openTaskWindow("plugins") → windows.ts → plugins-window.ts
+└── openpets:plugins-* IPC handlers call PluginService methods
+
+Catalog install/update:
+plugin-catalog.ts → plugin-catalog-validation.ts
+└── plugin-package.ts downloads HTTPS ZIP, validates SHA-256, extracts root manifest only, and installs to userData/plugins/{id}
+
+Local development load:
+plugin-local-loader.ts validates selected folder manifest and snapshots only openpets.plugin.json to userData/plugins-dev/{id}
+```
+
 ## Integration Points
 
 - **Within src/**:
   - `main.ts` → all modules (orchestrator)
   - `local-ipc.ts` ↔ `lease-manager.ts` ↔ `agent-pet-controller.ts`
   - `windows.ts` ↔ `app-state.ts`, `agent-setup.ts`, `catalog.ts`, `codex-pets.ts`
+  - `windows.ts` ↔ `plugin-service.ts`, `plugins-window.ts` for plugin UI IPC and HTML
   - `pet-window.ts` ↔ `default-pet-controller.ts`, `agent-pet-controller.ts`
   - `pet-installation.ts` ↔ `app-state.ts`, `catalog.ts`, `zip-safety.ts`
+  - `plugin-service.ts` ↔ `plugin-state.ts`, `plugin-runtime.ts`, `plugin-catalog.ts`, `plugin-package.ts`, `plugin-local-loader.ts`
 
 - **To packages/**:
   - `@open-pets/claude`: `buildClaudeMcpPreview`, `installClaudeHooks`, `doctorClaudeHooks`, etc.
@@ -92,25 +117,26 @@ pet-installation.ts
   - `@open-pets/cli`: Version lookup for bundled mode
 
 - **To System**:
-  - File system: `app.getPath("userData")`, `~/.codex/pets/`, `~/.claude/`, `~/.opencode/`
-  - Network: `fetch()` to openpets.dev, GitHub API
+  - File system: `app.getPath("userData")`, `userData/plugins/`, `userData/plugins-dev/`, `~/.codex/pets/`, `~/.claude/`, `~/.opencode/`
+  - Network: `fetch()` to openpets.dev, GitHub API, plugin catalog at `https://openpets.dev/plugins/catalog.v1.json`, plugin ZIPs restricted to `https://zip.openpets.dev/plugins/`
   - Processes: `spawn()` for `claude`, `opencode`, `node`
 
 ## Key Modules
 
 **Core**:
 - `main.ts`: Entry, single-instance lock, bootstrap sequence
-- `lifecycle.ts`: App event handlers (quit, window-all-closed, second-instance) with logging
+- `lifecycle.ts`: App event handlers (quit, window-all-closed, second-instance) with logging; stops plugin service, IPC, and pet windows on quit
 - `state.ts`: Simple shell pause state
 - `app-state.ts`: Persistent JSON state with V1 schema, atomic writes, reaction animation overrides
 - `app-state-core.ts`: Pet scale options, onboarding normalization
 - `logger.ts`: Structured logging with scopes (app, ipc, lease, pet.default, pet.agent, pet.window, state, tray, ui), log rotation, redaction
 
 **UI**:
-- `tray.ts`: Tray icon (nativeImage), context menu builder, update status integration, logs folder
-- `windows.ts`: BrowserWindow factory, IPC handler registration, HTML generators for task windows, reaction animation settings
+- `tray.ts`: Tray icon (nativeImage), context menu builder, update status integration, plugins entry, logs folder
+- `windows.ts`: BrowserWindow factory, IPC handler registration, HTML generators for task windows, reaction animation settings, plugin UI IPC endpoints
 - `assets.ts`: Tray icon loading with generated fallback
 - `display.ts`: Screen geometry helpers, pet window positioning
+- `plugins-window.ts`: Sandboxed data-URL HTML/CSS shell for Installed/Discover/Developer plugin management.
 
 **Pets**:
 - `pet-window.ts`: Window creation (transparent, frameless, always-on-top), HTML/CSS generation, sprite animation states, speech bubbles, status badges, transient displays
@@ -135,6 +161,19 @@ pet-installation.ts
 - `catalog-validation.ts`: CatalogV2/V3 schema validation
 - `zip-safety.ts`: ZIP entry path validation (traversal prevention, case collision detection)
 
+**Plugins**:
+- `plugin-manifest.ts`: Manifest V1 schema/types and validation for declarative runtime, permissions (`timer`, `pet:speak`, `pet:reaction`), config schema, timer triggers, and pet actions.
+- `plugin-manifest-reader.ts`: Safe manifest reader with realpath/allowed-root checks, root filename enforcement, size limit, and expected id/version matching.
+- `plugin-config.ts`: Config defaulting, replacement validation, and runtime resolution for string/number config references.
+- `plugin-state.ts`: Persistent plugin state store (`openpets-plugin-state.json`) with atomic temp+rename writes, normalized records, approved permissions, config, source, and broken reason.
+- `plugin-runtime.ts`: Declarative runtime that compiles enabled plugin timer triggers, verifies approved permissions, validates say/react payloads, schedules cancellable timers, and marks broken plugins on validation/action failure.
+- `plugin-pet-api.ts`: Narrow adapter from plugin actions to default pet external `say`/`react` controller calls.
+- `plugin-service.ts`: Application-facing plugin orchestrator for snapshots, enable/disable, config save, reload, catalog install/update, local load, uninstall, permission prompts, compatibility checks, and runtime reloads.
+- `plugin-catalog.ts`: Remote plugin catalog fetch with timeout, redirect rejection, response size cap, cache, and refresh support.
+- `plugin-catalog-validation.ts`: Catalog V1 schema validation, duplicate id checks, semver/SHA fields, permissions canonicalization, and optional minimum OpenPets version.
+- `plugin-package.ts`: Catalog plugin package download/install with HTTPS host/path allowlist, SHA-256 verification, ZIP size/entry restrictions, manifest/catalog consistency checks, and safe uninstall path resolution.
+- `plugin-local-loader.ts`: Developer loader that validates a selected local folder and snapshots only the manifest into `plugins-dev` with symlink/path/size protections.
+
 **Agent Integration**:
 - `agent-setup.ts`: Claude/OpenCode/Cursor detection, MCP configuration, hooks management, action journaling
 - `claude-memory.ts`: Claude instructions file management (`~/.claude/openpets.md`)
@@ -158,3 +197,8 @@ pet-installation.ts
 | `windows.ts` | Renderer | State snapshots via IPC invoke |
 | `agent-setup.ts` | Claude/OpenCode/Cursor CLI | MCP add/remove, config writes |
 | All modules | `logger.ts` | Structured logs to `userData/logs/openpets.log` |
+| Plugin catalog | `plugin-catalog.ts`/`plugin-service.ts` | Discoverable plugin metadata filtered by app version and install state |
+| Plugin ZIP/local folder | `plugin-package.ts`/`plugin-local-loader.ts` | Validated manifest snapshot installed under `userData/plugins*` |
+| `plugin-state.ts` | `userData/openpets-plugin-state.json` | Installed plugins, enabled flag, approved permissions, config, broken status |
+| `plugin-runtime.ts` | `plugin-pet-api.ts` | Timer-triggered pet speech/reactions on the default pet |
+| Plugins renderer | `windows.ts`/`plugin-service.ts` | Snapshot, enable, config, reload, install/update/uninstall, local-load operations |

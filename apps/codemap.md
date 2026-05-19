@@ -2,24 +2,27 @@
 
 ## Responsibility
 
-Container for deployable application packages. Currently hosts the OpenPets desktop Electron application. Acts as the integration layer between workspace packages (`packages/`) and user-facing applications.
+Container for deployable application packages selected by the pnpm workspace `apps/*` glob. Currently hosts the OpenPets desktop Electron application, which integrates shared packages, local IPC, pet windows, and desktop plugin support into the user-facing app.
 
-## Design
+## Design Patterns
 
-- **Monorepo App Pattern**: Each subdirectory is an independently buildable/deployable application
-- **Workspace Dependencies**: Apps consume shared packages via `workspace:*` protocol (pnpm)
-- **Electron-First Architecture**: Desktop app uses Electron with tray-centric UX (no traditional main window)
-- **Security-First**: CSP headers, sandboxed renderers, context isolation, no nodeIntegration
+- **Workspace App Boundary**: `pnpm-workspace.yaml` includes `apps/*`, so each app directory is an independently buildable workspace package.
+- **Workspace Dependencies**: apps consume shared `packages/` modules through `workspace:*` dependencies.
+- **Electron-First Architecture**: the desktop app uses an Electron main process, tray-centric UX, and isolated renderer windows rather than a traditional main window.
+- **Service-Oriented Desktop Modules**: desktop features are split into main-process services for state, IPC, pet controllers, catalog installation, setup flows, and plugin management/runtime.
+- **Security-First Renderers**: CSP headers, sandboxed renderers, context isolation, and disabled `nodeIntegration` protect UI surfaces including plugin-related windows.
 
-## Flow
+## Data & Control Flow
 
-1. Apps bootstrap from `main.ts` entry points
-2. State flows: User Data → App State → UI Windows → Tray Menu
-3. IPC flows: Agent Tools → Local IPC Server → Lease Manager → Pet Controllers → Window Updates
-4. Pet display flows: Catalog/Codex → Installation → State → Window Rendering
+1. Workspace tooling discovers application packages via the `apps/*` pnpm workspace glob.
+2. The desktop app bootstraps from `apps/desktop/src/main.ts`, initializes user data and app state, then creates tray and renderer windows.
+3. Agent commands flow through the local IPC server into lease-managed pet controllers and window updates.
+4. Pet assets flow from built-in assets, local development sources, or downloaded catalog packages into installation/state services and renderer windows.
+5. Desktop plugin manifests/configuration flow through plugin loader, package, catalog, state, service, and runtime modules before exposing controlled pet APIs and plugin UI.
 
 ## Integration Points
 
-- **packages/**: Consumes `@open-pets/agent-events`, `@open-pets/claude`, `@open-pets/cli`, `@open-pets/cursor`, `@open-pets/mcp`, `@open-pets/opencode`
-- **External**: GitHub Releases API (update checks), openpets.dev (catalog), zip.openpets.dev (pet downloads)
-- **System**: Claude Code CLI, OpenCode CLI, OS tray/dock, file system (userData, ~/.codex, ~/.claude)
+- **Workspace packages**: consumes `@open-pets/agent-events`, `@open-pets/claude`, `@open-pets/cli`, `@open-pets/cursor`, `@open-pets/mcp`, `@open-pets/opencode`, and IPC/client-facing shared APIs.
+- **Desktop submodules**: `apps/desktop/src/` provides lifecycle, state, tray/windows, setup integrations, pet installation, local IPC, and plugin runtime services.
+- **External services**: GitHub Releases API for update checks, `openpets.dev` for catalog data, and `zip.openpets.dev` for pet downloads.
+- **System surfaces**: Claude Code CLI, OpenCode CLI, OS tray/dock, renderer windows, and filesystem locations such as `userData`, `~/.codex`, and `~/.claude`.
