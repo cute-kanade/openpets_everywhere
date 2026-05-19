@@ -23,7 +23,8 @@ export function getEffectivePluginConfig(manifest: OpenPetsPluginManifest, persi
 }
 
 export function resolvePluginNumericConfig(manifest: OpenPetsPluginManifest, persisted: unknown, fieldName: string, options: { min?: number } = {}): number {
-  const field = manifest.configSchema?.[fieldName];
+  const schema = manifest.configSchema;
+  const field = schema && Object.prototype.hasOwnProperty.call(schema, fieldName) ? schema[fieldName] : undefined;
   if (!field || field.type !== "number") throw new Error(`Plugin numeric config ${fieldName} must reference a number config field.`);
   const result = getEffectivePluginConfig(manifest, persisted);
   if (!result.ok) throw new Error(`Plugin numeric config ${fieldName} is invalid: ${result.errors.map((error) => error.message).join("; ")}`);
@@ -34,6 +35,18 @@ export function resolvePluginNumericConfig(manifest: OpenPetsPluginManifest, per
   return value;
 }
 
+export function resolvePluginStringConfig(manifest: OpenPetsPluginManifest, persisted: unknown, fieldName: string, allowedType: "text" | "select"): string {
+  const schema = manifest.configSchema;
+  const field = schema && Object.prototype.hasOwnProperty.call(schema, fieldName) ? schema[fieldName] : undefined;
+  if (!field || field.type !== allowedType) throw new Error(`Plugin string config reference must point to a ${allowedType} config field.`);
+  const result = getEffectivePluginConfig(manifest, persisted);
+  if (!result.ok) throw new Error("Plugin string config is invalid.");
+  if (!Object.prototype.hasOwnProperty.call(result.config, fieldName)) throw new Error("Plugin string config must resolve to a value.");
+  const value = result.config[fieldName];
+  if (typeof value !== "string") throw new Error("Plugin string config must resolve to a string.");
+  return value;
+}
+
 function validateConfigObject(manifest: OpenPetsPluginManifest, value: unknown, options: { rejectUnknown: boolean; applyDefaults: boolean }): PluginConfigValidationResult {
   const errors: PluginConfigValidationError[] = [];
   if (!isPlainRecord(value)) return { ok: false, errors: [{ path: "$", code: "invalid_config", message: "Plugin config must be a plain object." }] };
@@ -41,7 +54,7 @@ function validateConfigObject(manifest: OpenPetsPluginManifest, value: unknown, 
   const schema = manifest.configSchema ?? {};
 
   for (const key of Object.keys(value).sort((a, b) => a.localeCompare(b))) {
-    const field = schema[key];
+    const field = Object.prototype.hasOwnProperty.call(schema, key) ? schema[key] : undefined;
     if (!field) {
       if (options.rejectUnknown) errors.push({ path: `$.${key}`, code: "unknown_config_key", message: `Unknown config key ${key}.` });
       continue;

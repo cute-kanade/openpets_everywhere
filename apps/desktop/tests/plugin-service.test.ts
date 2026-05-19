@@ -202,7 +202,7 @@ await localScenario("loadLocal rejects destination symlink before write", async 
 });
 
 await localScenario("loadLocal permission change disables", async ({ service, store, source, userData }) => {
-  writeManifest(source, manifest({ id: "perm-plug", permissions: ["timer", "pet:speak", "pet:reaction"], triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.react", reaction: "celebrate" }] }] }));
+  writeManifest(source, manifest({ id: "perm-plug", permissions: ["timer", "pet:speak", "pet:reaction"], triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.react", reaction: "celebrating" }] }] }));
   const install = join(userData, "plugins-dev", "perm-plug");
   const manifestPath = writeManifest(install, manifest({ id: "perm-plug", permissions: ["timer", "pet:speak"] }));
   store.upsertRecord({ id: "perm-plug", version: "1.0.0", installPath: install, manifestPath, source: "local", enabled: true, approvedPermissions: ["timer", "pet:speak"], config: {} });
@@ -273,6 +273,14 @@ await catalogRollbackScenario("catalog update rolls back manifest if state write
   assert.deepEqual(runtime.reloads, []);
 });
 
+await catalogCompatibilityScenario("catalog filters and blocks incompatible plugins", async ({ service }) => {
+  const snapshot = await service.getCatalogSnapshot(true);
+  assert.deepEqual(snapshot.plugins.map((plugin) => plugin.id), ["compatible-plug"]);
+  const result = await service.installCatalog("future-plug");
+  assert.equal(result.ok, false);
+  assert.match(result.error, /newer OpenPets/);
+});
+
 console.error("Plugin service validation passed.");
 
 async function scenario(name: string, fn: (ctx: { root: string; userData: string; store: PluginStateStore; service: PluginService; runtime: FakeRuntime }) => Promise<void>): Promise<void> {
@@ -322,6 +330,20 @@ async function catalogRollbackScenario(name: string, fn: (ctx: { root: string; u
   };
   const service = new PluginService({ userDataPath: userData, stateStore: store, runtime: runtime as never, fetchImpl, confirmPermissions: async () => true });
   try { await fn({ root, userData, store, service, runtime }); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); }
+}
+
+async function catalogCompatibilityScenario(name: string, fn: (ctx: { service: PluginService }) => Promise<void>): Promise<void> {
+  const userData = mkdtempSync(join(tmpdir(), "openpets-plugin-compat-user-"));
+  const store = new PluginStateStore({ statePath: join(userData, "state.json") });
+  store.initialize();
+  const catalog = { version: 1, generatedAt: new Date().toISOString(), plugins: [catalogEntry("compatible-plug", "1.0.0"), catalogEntry("future-plug", "9.0.0")] };
+  const fetchImpl = async (): Promise<Response> => new Response(JSON.stringify(catalog), { status: 200 });
+  const service = new PluginService({ userDataPath: userData, stateStore: store, runtime: new FakeRuntime() as never, fetchImpl, currentAppVersion: "2.0.0", confirmPermissions: async () => true });
+  try { await fn({ service }); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); }
+}
+
+function catalogEntry(id: string, minOpenPetsVersion: string): object {
+  return { id, name: id, version: "1.0.0", description: "Test", runtime: "declarative", permissions: ["timer", "pet:speak"], downloadUrl: `https://zip.openpets.dev/plugins/${id}.zip`, sha256: "0".repeat(64), minOpenPetsVersion };
 }
 
 function addPlugin(store: PluginStateStore, patch: Partial<PluginStateRecord> = {}, data: unknown = manifest()): void {

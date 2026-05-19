@@ -1,5 +1,5 @@
 import { validateReaction, validateSayMessage, type OpenPetsReaction } from "./local-ipc-protocol.js";
-import { resolvePluginNumericConfig } from "./plugin-config.js";
+import { resolvePluginNumericConfig, resolvePluginStringConfig } from "./plugin-config.js";
 import { defaultMaxPluginManifestBytes, readSafePluginManifest } from "./plugin-manifest-reader.js";
 import { type OpenPetsPluginManifest, type PluginAction } from "./plugin-manifest.js";
 import type { PluginPetApi } from "./plugin-pet-api.js";
@@ -94,7 +94,7 @@ export class PluginRuntime {
     return manifest.triggers.map((trigger, index) => {
       if (!approved.has("timer")) throw new Error("Plugin timer permission is not approved.");
       const interval = resolveTimerInterval(record, manifest, trigger.everyMinutes, index);
-      const actions = trigger.actions.map((action) => compileAction(action, approved));
+      const actions = trigger.actions.map((action) => compileAction(record, manifest, action, approved));
       return { intervalMs: interval * 60_000, actions };
     });
   }
@@ -145,13 +145,15 @@ export class PluginRuntime {
   }
 }
 
-function compileAction(action: PluginAction, approved: Set<string>): CompiledAction {
+function compileAction(record: PluginStateRecord, manifest: OpenPetsPluginManifest, action: PluginAction, approved: Set<string>): CompiledAction {
   if (action.type === "pet.speak") {
     if (!approved.has("pet:speak")) throw new Error("Plugin speak permission is not approved.");
-    return { type: "pet.speak", message: validateSayMessage(action.message) };
+    const message = typeof action.message === "string" ? action.message : resolvePluginStringConfig(manifest, record.config, action.message.config, "text");
+    return { type: "pet.speak", message: validateSayMessage(message) };
   }
   if (!approved.has("pet:reaction")) throw new Error("Plugin reaction permission is not approved.");
-  return { type: "pet.react", reaction: validateReaction(action.reaction) };
+  const reaction = typeof action.reaction === "string" ? action.reaction : resolvePluginStringConfig(manifest, record.config, action.reaction.config, "select");
+  return { type: "pet.react", reaction: validateReaction(reaction) };
 }
 
 function resolveTimerInterval(record: PluginStateRecord, manifest: OpenPetsPluginManifest, value: number | { config: string }, triggerIndex: number): number {

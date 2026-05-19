@@ -12,5 +12,8 @@ supportedArchitectures:
   libc:
     - glibc
 allowBuilds:
+  '@google/genai': true
   electron-winstaller: false
+  koffi: true
+  protobufjs: true
   sharp: true

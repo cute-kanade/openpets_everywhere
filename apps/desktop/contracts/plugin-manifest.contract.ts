@@ -15,7 +15,8 @@ const validManifest = {
     mood: {
       type: "select",
       label: "Mood",
-      options: [{ label: "Celebrate", value: "celebrate" }],
+      default: "celebrating",
+      options: [{ label: "Celebrate", value: "celebrating" }],
     },
   },
   triggers: [
@@ -24,13 +25,20 @@ const validManifest = {
       everyMinutes: { config: "intervalMinutes" },
       actions: [
         { type: "pet.speak", message: "Time to stretch!" },
-        { type: "pet.react", reaction: "celebrate" },
+        { type: "pet.react", reaction: "celebrating" },
       ],
     },
   ],
 };
 
 assertValid(validManifest);
+assertValid({ ...validManifest, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.speak", message: { config: "message" } }, { type: "pet.react", reaction: { config: "mood" } }] }] });
+assertInvalid({ ...validManifest, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.speak", message: { config: "message", extra: true } }] }] }, "invalid_config_reference");
+assertInvalid({ ...validManifest, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.speak", message: { config: "missing" } }] }] }, "invalid_config_reference");
+assertInvalid({ ...validManifest, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.speak", message: { config: "mood" } }] }] }, "invalid_config_reference");
+assertInvalid({ ...validManifest, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.react", reaction: { config: "message" } }] }] }, "invalid_config_reference");
+assertInvalid({ ...validManifest, configSchema: { mood: { type: "select", default: "celebrate", options: [{ label: "Celebrate", value: "celebrate" }] } }, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.react", reaction: { config: "mood" } }] }] }, "invalid_reaction_config_reference");
+assertInvalid({ ...validManifest, configSchema: { mood: { type: "select", options: [{ label: "Celebrate", value: "celebrating" }] } }, triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.react", reaction: { config: "mood" } }] }] }, "invalid_reaction_config_reference");
 assertInvalid({ ...validManifest, extra: true }, "unknown_field");
 assertInvalid(
   {

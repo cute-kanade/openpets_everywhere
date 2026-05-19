@@ -43,6 +43,7 @@ export type PluginServiceOptions = {
   readonly confirmPermissions?: PluginPermissionDialog;
   readonly catalogOptions?: PluginCatalogOptions;
   readonly fetchImpl?: typeof fetch;
+  readonly currentAppVersion?: string;
 };
 
 export class PluginService {
@@ -55,6 +56,7 @@ export class PluginService {
   readonly #confirmPermissions?: PluginPermissionDialog;
   readonly #catalogOptions?: PluginCatalogOptions;
   readonly #fetchImpl?: typeof fetch;
+  readonly #currentAppVersion: string;
 
   constructor(options: PluginServiceOptions) {
     if (!options.stateStore && !options.userDataPath) throw new Error("Plugin service requires userDataPath or stateStore.");
@@ -65,6 +67,7 @@ export class PluginService {
     this.#confirmPermissions = options.confirmPermissions;
     this.#catalogOptions = options.catalogOptions;
     this.#fetchImpl = options.fetchImpl;
+    this.#currentAppVersion = options.currentAppVersion ?? "0.0.0";
     this.stateStore = options.stateStore ?? new PluginStateStore({ userDataPath: options.userDataPath ?? "" });
     if (options.runtime) {
       this.runtime = options.runtime;
@@ -123,7 +126,7 @@ export class PluginService {
   async getCatalogSnapshot(refresh = false): Promise<PluginCatalogSnapshot> {
     try {
       const catalog = await getPluginCatalog({ ...this.#catalogOptions, fetchImpl: this.#fetchImpl ?? this.#catalogOptions?.fetchImpl, refresh });
-      return { plugins: catalog.plugins.map((entry) => ({ id: entry.id, name: entry.name, version: entry.version, description: entry.description, runtime: entry.runtime, permissions: entry.permissions, installed: this.stateStore.getRecord(entry.id)?.source === "catalog" })) };
+      return { plugins: catalog.plugins.filter((entry) => isCatalogEntryCompatible(entry.minOpenPetsVersion, this.#currentAppVersion)).map((entry) => ({ id: entry.id, name: entry.name, version: entry.version, description: entry.description, runtime: entry.runtime, permissions: entry.permissions, installed: this.stateStore.getRecord(entry.id)?.source === "catalog" })) };
     } catch {
       return { plugins: [] };
     }
@@ -201,6 +204,7 @@ export class PluginService {
     const confirm = this.#confirmPermissions ?? defaultConfirmPermissions;
     try {
       const entry = await getCatalogPlugin(id, { ...this.#catalogOptions, fetchImpl: this.#fetchImpl ?? this.#catalogOptions?.fetchImpl, refresh: update });
+      if (!isCatalogEntryCompatible(entry.minOpenPetsVersion, this.#currentAppVersion)) throw new Error("Plugin requires a newer OpenPets version.");
       const zip = await downloadCatalogPluginZip(entry, this.#fetchImpl ?? this.#catalogOptions?.fetchImpl ?? fetch);
       const preview = await readCatalogPluginManifestFromZip({ catalogEntry: entry, zip, maxManifestBytes: this.#maxManifestBytes });
       const permissionsChanged = existing ? !isPermissionSubset(preview.manifest.permissions, existing.approvedPermissions) : true;
@@ -246,8 +250,8 @@ export class PluginService {
 
 let appPluginService: PluginService | null = null;
 
-export function initializePluginService(userDataPath: string, petApi: PluginPetApi): PluginService {
-  appPluginService = new PluginService({ userDataPath, petApi });
+export function initializePluginService(userDataPath: string, petApi: PluginPetApi, currentAppVersion = "0.0.0"): PluginService {
+  appPluginService = new PluginService({ userDataPath, petApi, currentAppVersion });
   return appPluginService;
 }
 
@@ -268,6 +272,7 @@ function safeError(error: unknown): string {
   if (/outside install/i.test(message)) return "Plugin manifest path is outside install path.";
   if (/path is invalid/i.test(message)) return "Plugin manifest path is invalid.";
   if (/id\/version/i.test(message)) return "Plugin manifest id/version does not match installed state.";
+  if (/newer OpenPets version/i.test(message)) return "Plugin requires a newer OpenPets version.";
   return "Plugin manifest is unavailable.";
 }
 
@@ -284,6 +289,22 @@ function looksPathLike(value: string): boolean {
 function isPermissionSubset(next: readonly PluginPermission[], approved: readonly PluginPermission[]): boolean {
   const approvedSet = new Set(approved);
   return next.every((permission) => approvedSet.has(permission));
+}
+
+function isCatalogEntryCompatible(minOpenPetsVersion: string | undefined, currentAppVersion: string): boolean {
+  if (!minOpenPetsVersion) return true;
+  return compareSemver(currentAppVersion, minOpenPetsVersion) >= 0;
+}
+
+function compareSemver(a: string, b: string): number {
+  const pa = parseCoreVersion(a); const pb = parseCoreVersion(b);
+  for (let i = 0; i < 3; i += 1) if (pa[i] !== pb[i]) return pa[i] > pb[i] ? 1 : -1;
+  return 0;
+}
+
+function parseCoreVersion(version: string): [number, number, number] {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [0, 0, 0];
 }
 
 async function defaultOpenDialog(): Promise<{ canceled: boolean; filePaths: string[] }> {

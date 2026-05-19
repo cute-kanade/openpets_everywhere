@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { getEffectivePluginConfig, getPluginDefaultConfig, resolvePluginNumericConfig, validatePluginConfigReplacement } from "../src/plugin-config.js";
+import { getEffectivePluginConfig, getPluginDefaultConfig, resolvePluginNumericConfig, resolvePluginStringConfig, validatePluginConfigReplacement } from "../src/plugin-config.js";
 import type { OpenPetsPluginManifest } from "../src/plugin-manifest.js";
 
 const base = manifest();
@@ -36,6 +36,13 @@ assert.equal(resolvePluginNumericConfig(base, { intervalMinutes: 7, stale: true 
 assert.throws(() => resolvePluginNumericConfig(base, { intervalMinutes: 4 }, "intervalMinutes", { min: 5 }), /at least 5/);
 assert.throws(() => resolvePluginNumericConfig(manifest({ configSchema: { intervalMinutes: { type: "number" } } }), {}, "intervalMinutes", { min: 5 }), /must resolve to an integer/);
 assert.throws(() => resolvePluginNumericConfig(base, { intervalMinutes: 6.5 }, "intervalMinutes", { min: 5 }), /must resolve to an integer/);
+
+assert.equal(resolvePluginStringConfig(base, {}, "message", "text"), "Stretch");
+assert.equal(resolvePluginStringConfig(base, { message: "Move" }, "message", "text"), "Move");
+assert.equal(resolvePluginStringConfig(base, {}, "mood", "select"), "calm");
+assert.throws(() => resolvePluginStringConfig(base, { message: 1 }, "message", "text"), /invalid/);
+assert.throws(() => resolvePluginStringConfig(manifest({ configSchema: { message: { type: "text" } } }), {}, "message", "text"), /resolve to a value/);
+assert.throws(() => resolvePluginStringConfig(base, {}, "intervalMinutes", "text"), /text config field/);
 
 console.error("Plugin config validation passed.");
 

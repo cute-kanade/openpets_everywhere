@@ -43,7 +43,7 @@ if (!gotSingleInstanceLock) {
     }
 
     initializeAppState();
-    await initializePluginService(app.getPath("userData"), defaultPluginPetApi).start();
+    await initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion()).start();
     installInternalUiProtocol();
     installInternalUiHandlers();
     createAppTray();

@@ -60,6 +60,28 @@ await scenario("valid timer schedules and fires", async ({ store, scheduler, pet
   assert.deepEqual(petApi.events, ["speak:Stretch", "react:celebrating"]);
 });
 
+await scenario("config speak and reaction refs execute", async ({ store, scheduler, petApi }) => {
+  addPlugin(store, { config: { message: "Hello", reaction: "celebrating" } }, manifest({ permissions: ["timer", "pet:speak", "pet:reaction"], configSchema: { message: { type: "text", default: "Stretch" }, reaction: { type: "select", default: "idle", options: [{ label: "Idle", value: "idle" }, { label: "Celebrate", value: "celebrating" }] } }, actions: [{ type: "pet.speak", message: { config: "message" } }, { type: "pet.react", reaction: { config: "reaction" } }] }));
+  await runtime(store, scheduler, petApi).start();
+  scheduler.fire(0);
+  await Promise.resolve();
+  assert.deepEqual(petApi.events, ["speak:Hello", "react:celebrating"]);
+});
+
+await scenario("invalid persisted config refs mark broken without api call", async ({ store, scheduler, petApi }) => {
+  addPlugin(store, { config: { message: 42 } }, manifest({ configSchema: { message: { type: "text", default: "Stretch" } }, actions: [{ type: "pet.speak", message: { config: "message" } }] }));
+  await runtime(store, scheduler, petApi).start();
+  assert.match(store.getRecord("plug")?.brokenReason ?? "", /invalid/);
+  assert.equal(scheduler.activeCount(), 0);
+  assert.deepEqual(petApi.events, []);
+});
+
+await scenario("final config message and reaction validation applies", async ({ store }) => {
+  addPlugin(store, { config: { message: "https://example.test" } }, manifest({ configSchema: { message: { type: "text", default: "Stretch" } }, actions: [{ type: "pet.speak", message: { config: "message" } }] }));
+  await runtime(store, new FakeScheduler()).start();
+  assert.match(store.getRecord("plug")?.brokenReason ?? "", /URL/);
+});
+
 await scenario("unapproved permission broken", async ({ store, scheduler }) => {
   addPlugin(store, { approvedPermissions: ["timer"] }, manifest({ permissions: ["timer", "pet:speak"] }));
   await runtime(store, scheduler).start();

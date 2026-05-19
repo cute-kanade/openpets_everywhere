@@ -1,3 +1,5 @@
+import { allowedReactions } from "./local-ipc-protocol.js";
+
 export const OPENPETS_PLUGIN_MANIFEST_FILENAME = "openpets.plugin.json";
 export const openPetsPluginManifestFilename = OPENPETS_PLUGIN_MANIFEST_FILENAME;
 
@@ -14,7 +16,8 @@ export type PluginConfigField = {
   options?: Array<{ label: string; value: string }>;
 };
 
-export type PluginAction = { type: "pet.speak"; message: string } | { type: "pet.react"; reaction: string };
+export type PluginStringConfigRef = { config: string };
+export type PluginAction = { type: "pet.speak"; message: string | PluginStringConfigRef } | { type: "pet.react"; reaction: string | PluginStringConfigRef };
 export type PluginTimerEveryMinutes = number | { config: string };
 export type PluginTrigger = { on: "timer"; everyMinutes: PluginTimerEveryMinutes; actions: PluginAction[] };
 
@@ -81,8 +84,8 @@ export function validatePluginManifest(input: unknown): PluginManifestValidation
   }
 
   const permissions = validatePermissions(input.permissions, errors);
-  const numberConfigFields = validateConfigSchema(input.configSchema, errors);
-  validateTriggers(input.triggers, permissions, numberConfigFields, errors);
+  const configFields = validateConfigSchema(input.configSchema, errors);
+  validateTriggers(input.triggers, permissions, configFields, errors);
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, manifest: input as OpenPetsPluginManifest, errors: [] };
@@ -108,12 +111,14 @@ function validatePermissions(value: unknown, errors: PluginManifestValidationErr
   return permissions;
 }
 
-function validateConfigSchema(value: unknown, errors: PluginManifestValidationError[]): Set<string> {
-  const numberFields = new Set<string>();
-  if (value === undefined) return numberFields;
+type ConfigFieldSets = { text: Set<string>; select: Set<string>; number: Set<string>; schema: Record<string, unknown> };
+
+function validateConfigSchema(value: unknown, errors: PluginManifestValidationError[]): ConfigFieldSets {
+  const fields: ConfigFieldSets = { text: new Set(), select: new Set(), number: new Set(), schema: isRecord(value) ? value : {} };
+  if (value === undefined) return fields;
   if (!isRecord(value)) {
     addError(errors, "$.configSchema", "invalid_config_schema", "configSchema must be an object.");
-    return numberFields;
+    return fields;
   }
   for (const [key, field] of Object.entries(value)) {
     const path = `$.configSchema.${key}`;
@@ -124,17 +129,19 @@ function validateConfigSchema(value: unknown, errors: PluginManifestValidationEr
     }
     rejectUnknownFields(field, configFieldFields, path, errors);
     for (const feature of deferredConfigFeatures) {
-      if (feature in field) addError(errors, `${path}.${feature}`, "deferred_config_feature", `${feature} is deferred and unsupported in v1.`);
+      if (Object.prototype.hasOwnProperty.call(field, feature)) addError(errors, `${path}.${feature}`, "deferred_config_feature", `${feature} is deferred and unsupported in v1.`);
     }
     if (typeof field.type !== "string" || !supportedConfigTypes.has(field.type)) {
       const code = typeof field.type === "string" && deferredConfigTypes.has(field.type) ? "deferred_config_type" : "invalid_config_type";
       addError(errors, `${path}.type`, code, "Config field type must be text, textarea, number, boolean, or select.");
     } else {
       validateConfigFieldSemantics(field, path, errors);
-      if (field.type === "number") numberFields.add(key);
+      if (field.type === "number") fields.number.add(key);
+      if (field.type === "text") fields.text.add(key);
+      if (field.type === "select") fields.select.add(key);
     }
   }
-  return numberFields;
+  return fields;
 }
 
 function validateConfigFieldSemantics(field: Record<string, unknown>, path: string, errors: PluginManifestValidationError[]): void {
@@ -179,7 +186,7 @@ function validateOptions(value: unknown, path: string, errors: PluginManifestVal
   return values;
 }
 
-function validateTriggers(value: unknown, permissions: Set<string>, numberConfigFields: Set<string>, errors: PluginManifestValidationError[]): void {
+function validateTriggers(value: unknown, permissions: Set<string>, configFields: ConfigFieldSets, errors: PluginManifestValidationError[]): void {
   if (!Array.isArray(value)) return addError(errors, "$.triggers", "invalid_triggers", "triggers must be an array.");
   value.forEach((trigger, index) => {
     const path = `$.triggers[${index}]`;
@@ -187,9 +194,9 @@ function validateTriggers(value: unknown, permissions: Set<string>, numberConfig
     rejectUnknownFields(trigger, triggerFields, path, errors);
     if (trigger.on !== "timer") addError(errors, `${path}.on`, "invalid_trigger", 'Only timer triggers are supported in v1.');
     requirePermission(permissions, "timer", path, errors);
-    validateEveryMinutes(trigger.everyMinutes, numberConfigFields, `${path}.everyMinutes`, errors);
+    validateEveryMinutes(trigger.everyMinutes, configFields.number, `${path}.everyMinutes`, errors);
     if (!Array.isArray(trigger.actions)) return addError(errors, `${path}.actions`, "invalid_actions", "actions must be an array.");
-    trigger.actions.forEach((action, actionIndex) => validateAction(action, permissions, `${path}.actions[${actionIndex}]`, errors));
+    trigger.actions.forEach((action, actionIndex) => validateAction(action, permissions, configFields, `${path}.actions[${actionIndex}]`, errors));
   });
 }
 
@@ -198,22 +205,47 @@ function validateEveryMinutes(value: unknown, numberConfigFields: Set<string>, p
     if (!Number.isInteger(value) || value < 5) addError(errors, path, "invalid_timer_interval", "Timer interval must be an integer of at least 5 minutes.");
     return;
   }
-  if (!isRecord(value) || Object.keys(value).length !== 1 || typeof value.config !== "string") {
+  if (!isRecord(value) || Object.keys(value).length !== 1 || !Object.prototype.hasOwnProperty.call(value, "config") || typeof value.config !== "string") {
     addError(errors, path, "invalid_timer_interval", "Timer interval must be an integer or { config: string }.");
     return;
   }
   if (!numberConfigFields.has(value.config)) addError(errors, `${path}.config`, "invalid_timer_config_reference", "Timer config reference must point to a number config field.");
 }
 
-function validateAction(value: unknown, permissions: Set<string>, path: string, errors: PluginManifestValidationError[]): void {
+function validateStringOrConfigRef(value: unknown, allowedFields: Set<string>, path: string, label: string, fieldType: string, errors: PluginManifestValidationError[]): void {
+  if (typeof value === "string") return validateString(value, path, label, errors);
+  if (!isRecord(value) || Object.keys(value).length !== 1 || !Object.prototype.hasOwnProperty.call(value, "config") || typeof value.config !== "string") {
+    addError(errors, path, "invalid_config_reference", `${label} must be a non-empty string or { config: string }.`);
+    return;
+  }
+  if (!allowedFields.has(value.config)) addError(errors, `${path}.config`, "invalid_config_reference", `${label} config reference must point to a ${fieldType} config field.`);
+}
+
+function validateReactionSelectReference(schema: Record<string, unknown>, fieldName: string, path: string, errors: PluginManifestValidationError[]): void {
+  if (!Object.prototype.hasOwnProperty.call(schema, fieldName)) return;
+  const field = schema[fieldName];
+  if (!isRecord(field) || field.type !== "select") return;
+  const reactions = new Set<string>(allowedReactions);
+  if (!Object.prototype.hasOwnProperty.call(field, "default") || typeof field.default !== "string" || !reactions.has(field.default)) {
+    addError(errors, `${path}.config`, "invalid_reaction_config_reference", "Reaction select config must have a valid OpenPets reaction default.");
+  }
+  if (Array.isArray(field.options)) {
+    for (const option of field.options) {
+      if (isRecord(option) && typeof option.value === "string" && !reactions.has(option.value)) addError(errors, `${path}.config`, "invalid_reaction_config_reference", "Reaction select options must be valid OpenPets reactions.");
+    }
+  }
+}
+
+function validateAction(value: unknown, permissions: Set<string>, configFields: ConfigFieldSets, path: string, errors: PluginManifestValidationError[]): void {
   if (!isRecord(value)) return addError(errors, path, "invalid_action", "Action must be an object.");
   if (value.type === "pet.speak") {
     rejectUnknownFields(value, speakActionFields, path, errors);
-    validateString(value.message, `${path}.message`, "message", errors);
+    validateStringOrConfigRef(value.message, configFields.text, `${path}.message`, "message", "text", errors);
     requirePermission(permissions, "pet:speak", path, errors);
   } else if (value.type === "pet.react") {
     rejectUnknownFields(value, reactActionFields, path, errors);
-    validateString(value.reaction, `${path}.reaction`, "reaction", errors);
+    validateStringOrConfigRef(value.reaction, configFields.select, `${path}.reaction`, "reaction", "select", errors);
+    if (isRecord(value.reaction) && typeof value.reaction.config === "string" && configFields.select.has(value.reaction.config)) validateReactionSelectReference(configFields.schema, value.reaction.config, `${path}.reaction`, errors);
     requirePermission(permissions, "pet:reaction", path, errors);
   } else {
     addError(errors, `${path}.type`, "invalid_action", "Action type must be pet.speak or pet.react.");

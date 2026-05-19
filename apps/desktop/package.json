@@ -1,6 +1,6 @@
 {
   "name": "@open-pets/desktop",
-  "version": "2.0.9",
+  "version": "2.0.10",
   "private": true,
   "description": "OpenPets tray-first desktop companion app.",
   "license": "MIT",
@@ -18,10 +18,11 @@
     "package": "pnpm build && node scripts/clean-package-output.cjs && electron-builder",
     "package:dir": "pnpm build && node scripts/clean-package-output.cjs && electron-builder --dir && node dist/check-packaging-contract.js --output",
     "test": "node scripts/run-tests.mjs",
-    "test:build": "tsc -p tsconfig.tests.json",
+    "build:deps": "pnpm --filter @open-pets/desktop^... build",
+    "test:build": "pnpm build:deps && tsc -p tsconfig.tests.json",
     "check": "pnpm typecheck && pnpm build && pnpm test",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "typecheck": "pnpm build:deps && tsc --noEmit",
+    "build": "pnpm build:deps && tsc"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",
