@@ -227,9 +227,6 @@ function defaultReleaseNotes() {
     "- GitHub Notifications supports public repositories only in this release.",
     "- macOS artifacts are ad-hoc signed but not Developer ID notarized yet, so Gatekeeper may still require a first-open confirmation.",
     "- Windows artifacts are unsigned, so SmartScreen warnings may appear.",
-    "",
-    "After publishing:",
-    "- Smoke test macOS DMG/ZIP, Windows installer/portable, and Linux artifacts.",
   ].join("\n");
 }
 
