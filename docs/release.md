@@ -10,7 +10,33 @@ This guide is for an AI agent creating a new OpenPets desktop release from a loc
 - Root command: `pnpm release:desktop`
 - Update checker expects GitHub release tags like `v2.0.0`.
 
-## Current plugin platform release plan
+## Current desktop patch release plan
+
+The next end-user release is a **desktop-only macOS packaging patch** for issue #30. Do **not** publish npm packages for this patch.
+
+Release goals:
+
+1. Ship a new desktop GitHub Release with `apps/desktop/package.json` bumped to the next patch version.
+2. Build with optional desktop artifacts included via `pnpm release:desktop -- --yes --include-optional`.
+3. Keep npm packages unchanged because this is an Electron packaging/release artifact fix only.
+4. Confirm the macOS app bundle passes local `codesign --verify --deep --strict` before publishing.
+
+Suggested patch release notes:
+
+```md
+## Fixed
+
+- Fixed macOS release packaging so app bundles are ad-hoc signed when a Developer ID certificate is unavailable.
+- This addresses the misleading macOS Gatekeeper dialog that can say OpenPets is damaged and can't be opened on Apple Silicon/Sequoia.
+- Rebuilt desktop artifacts with optional packages included: macOS ZIP, Windows portable, Linux DEB/RPM, and Linux tar.gz.
+
+## Known limitations
+
+- macOS artifacts are ad-hoc signed but not Developer ID notarized yet, so Gatekeeper may still require a first-open confirmation.
+- Windows artifacts are unsigned, so SmartScreen warnings may appear.
+```
+
+## Previous plugin platform release plan
 
 The next end-user release is a **desktop + web plugin catalog release**, not an npm package release by default.
 

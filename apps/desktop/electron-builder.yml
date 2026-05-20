@@ -31,7 +31,10 @@ mac:
   target:
     - dmg
     - zip
-  identity: null
+  # Ad-hoc sign macOS bundles when a Developer ID certificate is unavailable.
+  # Leaving the app bundle fully unsigned can produce Gatekeeper's misleading
+  # "damaged and can't be opened" dialog on Apple Silicon releases.
+  identity: "-"
   hardenedRuntime: false
   gatekeeperAssess: false
 
