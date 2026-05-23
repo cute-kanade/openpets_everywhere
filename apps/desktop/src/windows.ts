@@ -159,58 +159,58 @@ export function installInternalUiHandlers(): void {
   });
 
   ipcMain.handle("openpets:plugins-snapshot", async (event) => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     return getPluginService().getSnapshot();
   });
 
   ipcMain.handle("openpets:plugins-set-enabled", async (event, id: unknown, enabled: unknown): Promise<PluginServiceResult> => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id) || typeof enabled !== "boolean") return pluginUiError("Invalid plugin enable request.");
     return getPluginService().setEnabled(id, enabled);
   });
 
   ipcMain.handle("openpets:plugins-save-config", async (event, id: unknown, config: unknown): Promise<PluginServiceResult> => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id) || !isPlainObject(config)) return pluginUiError("Invalid plugin config request.");
     return getPluginService().saveConfig(id, config);
   });
 
   ipcMain.handle("openpets:plugins-reload", async (event, id: unknown): Promise<PluginServiceResult> => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id)) return pluginUiError("Invalid plugin reload request.");
     return getPluginService().reload(id);
   });
 
   ipcMain.handle("openpets:plugins-execute-command", async (event, id: unknown, commandId: unknown): Promise<PluginServiceResult> => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id) || typeof commandId !== "string" || !/^[A-Za-z0-9._:-]{1,64}$/.test(commandId)) return pluginUiError("Invalid plugin command request.");
     return getPluginService().executeCommand(id, commandId);
   });
 
   ipcMain.handle("openpets:plugins-load-local", async (event): Promise<PluginServiceResult> => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     return getPluginService().loadLocal();
   });
 
   ipcMain.handle("openpets:plugins-catalog-snapshot", async (event, refresh: unknown) => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     return getPluginService().getCatalogSnapshot(refresh === true);
   });
 
   ipcMain.handle("openpets:plugins-install-catalog", async (event, id: unknown): Promise<PluginServiceResult> => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id)) return pluginUiError("Invalid plugin install request.");
     return getPluginService().installCatalog(id);
   });
 
   ipcMain.handle("openpets:plugins-update-catalog", async (event, id: unknown): Promise<PluginServiceResult> => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id)) return pluginUiError("Invalid plugin update request.");
     return getPluginService().updateCatalog(id);
   });
 
   ipcMain.handle("openpets:plugins-uninstall", async (event, id: unknown): Promise<PluginServiceResult> => {
-    assertAllowedSender(event, ["plugins"]);
+    assertAllowedSender(event, ["plugins", "control-center"]);
     if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id)) return pluginUiError("Invalid plugin uninstall request.");
     return getPluginService().uninstall(id);
   });

@@ -18,6 +18,20 @@ type SettingsState = { preferences: { openDefaultPetOnLaunch: boolean; petScale:
 type LaunchAtLoginState = { supported: boolean; enabled: boolean };
 type UpdateStatus = { state: "idle" | "checking" | "available" | "current" | "error"; currentVersion: string; latestVersion?: string; releaseUrl?: string; checkedAt?: number; error?: string };
 type ReactionAnimationSettings = { reactions: { id: string; label: string; description: string; defaultAnimation: UserSelectableAnimationState }[]; animations: { id: UserSelectableAnimationState; label: string; description: string }[]; sprite: { frameWidth: number; frameHeight: number; columns: number; rows: number; states: Record<UserSelectableAnimationState, { row: number; frames: number; durationMs: number; iterations?: number | "infinite" }> }; overrides: ReactionAnimationOverrides; previewSpriteUrl: string };
+type PluginFilter = "all" | "installed" | "catalog" | "local" | "broken";
+type PluginPermission = "pet:speak" | "pet:reaction" | "timer" | "schedule" | "storage" | "status" | "commands" | "network";
+type PluginConfigField = { type: "text" | "textarea" | "number" | "boolean" | "select" | "time" | "multiSelect" | "list"; label?: string; description?: string; default?: string | number | boolean | string[] | Array<Record<string, unknown>>; options?: Array<{ label: string; value: string }>; min?: number; max?: number; step?: number; maxLength?: number; maxItems?: number; itemSchema?: Record<string, PluginConfigField> };
+type PluginConfigSchema = Record<string, PluginConfigField>;
+type PluginConfig = Record<string, unknown>;
+type PluginCommand = { id: string; title: string; description?: string };
+type PluginStatus = { text: string; tone?: "info" | "success" | "warning" | "error" };
+type PluginConfigError = { path?: string; code?: string; message?: string };
+type SafePluginRecord = { id: string; name?: string; version: string; source: "catalog" | "local"; enabled: boolean; brokenReason?: string; approvedPermissions: PluginPermission[]; runtime?: "declarative" | "javascript"; sdkVersion?: string; catalogDisabled?: boolean; catalogDeprecated?: boolean; catalogStatusReason?: string; configSchema?: PluginConfigSchema; effectiveConfig?: PluginConfig; configErrors?: PluginConfigError[]; commands?: PluginCommand[]; status?: PluginStatus };
+type SafeCatalogPluginRecord = { id: string; name: string; version: string; description: string; runtime: "declarative" | "javascript"; sdkVersion?: string; permissions: PluginPermission[]; installed: boolean; deprecated?: boolean; statusReason?: string };
+type PluginServiceSnapshot = { plugins: SafePluginRecord[] };
+type PluginCatalogSnapshot = { plugins: SafeCatalogPluginRecord[] };
+type PluginServiceResult = { ok: true; snapshot: PluginServiceSnapshot } | { ok: false; error: string; snapshot: PluginServiceSnapshot };
+type PluginEntry = { id: string; installed?: SafePluginRecord; catalog?: SafeCatalogPluginRecord };
 type ControlCenterApi = {
   getPetsState(): Promise<StateSnapshot>;
   getSettingsState(): Promise<SettingsState>;
@@ -29,6 +43,16 @@ type ControlCenterApi = {
   checkForUpdates(): Promise<UpdateStatus>;
   openUpdateReleasePage(): Promise<void>;
   resetDefaultPetPosition(): Promise<SettingsState>;
+  getPluginsSnapshot(): Promise<PluginServiceSnapshot>;
+  getPluginCatalogSnapshot(refresh?: boolean): Promise<PluginCatalogSnapshot>;
+  setPluginEnabled(id: string, enabled: boolean): Promise<PluginServiceResult>;
+  savePluginConfig(id: string, config: PluginConfig): Promise<PluginServiceResult>;
+  reloadPlugin(id: string): Promise<PluginServiceResult>;
+  executePluginCommand(id: string, commandId: string): Promise<PluginServiceResult>;
+  loadLocalPlugin(): Promise<PluginServiceResult>;
+  installCatalogPlugin(id: string): Promise<PluginServiceResult>;
+  updateCatalogPlugin(id: string): Promise<PluginServiceResult>;
+  uninstallPlugin(id: string): Promise<PluginServiceResult>;
   getCatalog(): Promise<CatalogState>;
   getCatalogPage(page: number): Promise<CatalogState>;
   getCatalogSearch(): Promise<{ pets: SearchPetEntry[]; error?: string }>;
@@ -82,6 +106,43 @@ const RefreshIcon = () => (
     <path d="M21 3v5h-5" />
     <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
     <path d="M3 21v-5h5" />
+  </svg>
+);
+
+const ConfigureIcon = () => (
+  <svg className="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="21" x2="14" y1="4" y2="4" />
+    <line x1="10" x2="3" y1="4" y2="4" />
+    <line x1="21" x2="12" y1="12" y2="12" />
+    <line x1="8" x2="3" y1="12" y2="12" />
+    <line x1="21" x2="16" y1="20" y2="20" />
+    <line x1="12" x2="3" y1="20" y2="20" />
+    <line x1="14" x2="14" y1="2" y2="6" />
+    <line x1="8" x2="8" y1="10" y2="14" />
+    <line x1="16" x2="16" y1="18" y2="22" />
+  </svg>
+);
+
+const FolderPlusIcon = () => (
+  <svg className="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 10v6" />
+    <path d="M9 13h6" />
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  </svg>
+);
+
+const SaveIcon = () => (
+  <svg className="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8A2 2 0 0 1 21 8.8V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+    <path d="M17 21v-7H7v7" />
+    <path d="M7 3v5h8" />
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg className="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
   </svg>
 );
 
@@ -640,6 +701,365 @@ function SettingsView() {
   </div>;
 }
 
+const pluginFilterLabels: Record<PluginFilter, string> = {
+  all: "All",
+  installed: "Installed",
+  catalog: "Catalog",
+  local: "Local / Dev",
+  broken: "Broken",
+};
+
+const pluginPermissionLabels: Record<PluginPermission, string> = {
+  "pet:speak": "Speech",
+  "pet:reaction": "Reactions",
+  timer: "Timers",
+  schedule: "Schedule",
+  storage: "Storage",
+  status: "Status",
+  commands: "Commands",
+  network: "Network",
+};
+
+const pluginStatusTone: Record<NonNullable<PluginStatus["tone"]>, keyof typeof statusPillToneClass> = {
+  info: "blue",
+  success: "green",
+  warning: "orange",
+  error: "red",
+};
+
+function PluginGlyph({ className = "plugin-glyph" }: { className?: string }) {
+  return <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2 3 6.5l9 4.5 9-4.5z" />
+    <path d="m3 12 9 4.5 9-4.5" />
+    <path d="m3 17.5 9 4.5 9-4.5" />
+  </svg>;
+}
+
+function pluginName(entry: PluginEntry): string {
+  return entry.installed?.name || entry.catalog?.name || entry.id;
+}
+
+function pluginDescription(entry: PluginEntry): string {
+  if (entry.installed?.brokenReason) return entry.installed.brokenReason;
+  return entry.catalog?.description || (entry.installed ? "Installed plugin ready for configuration." : "Available from the plugin catalog.");
+}
+
+function pluginPrimaryTone(entry: PluginEntry): keyof typeof statusPillToneClass {
+  if (entry.installed?.brokenReason) return "red";
+  if (entry.installed?.catalogDisabled) return "orange";
+  if (entry.installed?.enabled) return "green";
+  if (entry.installed) return "slate";
+  return "blue";
+}
+
+function pluginPrimaryLabel(entry: PluginEntry): string {
+  if (entry.installed?.brokenReason) return "Broken";
+  if (entry.installed?.catalogDisabled) return "Catalog disabled";
+  if (entry.installed?.enabled) return "Active";
+  if (entry.installed) return "Disabled";
+  return "Available";
+}
+
+function mergePluginEntries(snapshot: PluginServiceSnapshot | null, catalog: PluginCatalogSnapshot | null): PluginEntry[] {
+  const merged = new Map<string, PluginEntry>();
+  for (const installed of snapshot?.plugins ?? []) merged.set(installed.id, { id: installed.id, installed });
+  for (const catalogPlugin of catalog?.plugins ?? []) {
+    const current = merged.get(catalogPlugin.id) ?? { id: catalogPlugin.id };
+    merged.set(catalogPlugin.id, { ...current, catalog: catalogPlugin });
+  }
+  return [...merged.values()].sort((a, b) => {
+    const installedDelta = Number(Boolean(b.installed)) - Number(Boolean(a.installed));
+    if (installedDelta) return installedDelta;
+    return pluginName(a).localeCompare(pluginName(b));
+  });
+}
+
+function initialConfigValue(field: PluginConfigField): unknown {
+  if (field.default !== undefined) return field.default;
+  if (field.type === "boolean") return false;
+  if (field.type === "number") return field.min ?? 0;
+  if (field.type === "multiSelect" || field.type === "list") return [];
+  return "";
+}
+
+function materializeListItemDefaults(schema: PluginConfigSchema, value: Record<string, unknown> = {}): Record<string, unknown> {
+  const next: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(schema)) next[key] = materializeConfigValue(field, value[key]);
+  return next;
+}
+
+function materializeConfigValue(field: PluginConfigField, value: unknown): unknown {
+  if (field.type === "list" && field.itemSchema) {
+    const items = Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => item !== null && typeof item === "object" && !Array.isArray(item)) : [];
+    return items.map((item) => materializeListItemDefaults(field.itemSchema ?? {}, item));
+  }
+  return value ?? initialConfigValue(field);
+}
+
+function materializeConfigDraft(schema: PluginConfigSchema | undefined, config: PluginConfig | undefined): PluginConfig {
+  const next: PluginConfig = {};
+  for (const [key, field] of Object.entries(schema ?? {})) next[key] = materializeConfigValue(field, config?.[key]);
+  return next;
+}
+
+function ConfigFieldEditor({ fieldKey, field, value, onChange }: { fieldKey: string; field: PluginConfigField; value: unknown; onChange: (value: unknown) => void }) {
+  const label = field.label || fieldKey;
+  const description = field.description;
+  const textValue = typeof value === "string" ? value : typeof field.default === "string" ? field.default : "";
+
+  if (field.type === "boolean") {
+    return <label className="plugin-config-row plugin-config-row-boolean">
+      <span><strong>{label}</strong>{description && <small>{description}</small>}</span>
+      <input className="settings-toggle" type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
+    </label>;
+  }
+
+  if (field.type === "list" && field.itemSchema) {
+    const items = Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => item !== null && typeof item === "object" && !Array.isArray(item)) : [];
+    const maxed = typeof field.maxItems === "number" && items.length >= field.maxItems;
+    return <div className="plugin-config-row">
+      <span><strong>{label}</strong>{description && <small>{description}</small>}</span>
+      <div className="plugin-list-editor">
+        {items.map((item, index) => (
+          <div className="plugin-list-item" key={index}>
+            <div className="plugin-list-item-header"><span>Item {index + 1}</span><Button variant="danger" size="compact" onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))}>Remove</Button></div>
+            {Object.entries(field.itemSchema ?? {}).map(([childKey, childField]) => (
+              <ConfigFieldEditor key={childKey} fieldKey={childKey} field={childField} value={item[childKey] ?? initialConfigValue(childField)} onChange={(nextValue) => onChange(items.map((existing, itemIndex) => itemIndex === index ? { ...existing, [childKey]: nextValue } : existing))} />
+            ))}
+          </div>
+        ))}
+        <Button variant="secondary" size="compact" disabled={maxed} onClick={() => onChange([...items, materializeListItemDefaults(field.itemSchema ?? {})])}>Add Item</Button>
+      </div>
+    </div>;
+  }
+
+  return <label className="plugin-config-row">
+    <span><strong>{label}</strong>{description && <small>{description}</small>}</span>
+    {field.type === "textarea" ? (
+      <textarea className="plugin-input plugin-textarea" value={textValue} maxLength={field.maxLength} onChange={(event) => onChange(event.target.value)} />
+    ) : field.type === "select" ? (
+      <select className="settings-select plugin-select" value={textValue} onChange={(event) => onChange(event.target.value)}>
+        {(field.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label || option.value}</option>)}
+      </select>
+    ) : field.type === "multiSelect" ? (
+      <span className="plugin-chip-list">
+        {(field.options ?? []).map((option) => {
+          const selected = Array.isArray(value) && value.includes(option.value);
+          return <button type="button" key={option.value} className={`plugin-chip ${selected ? "active" : ""}`} onClick={() => {
+            const current = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+            onChange(selected ? current.filter((item) => item !== option.value) : [...current, option.value]);
+          }}>{option.label || option.value}</button>;
+        })}
+      </span>
+    ) : (
+      <input className="plugin-input" type={field.type === "number" ? "number" : field.type === "time" ? "time" : "text"} value={field.type === "number" && typeof value === "number" ? String(value) : textValue} min={field.min} max={field.max} step={field.step} maxLength={field.maxLength} onChange={(event) => onChange(field.type === "number" ? Number(event.target.value) : event.target.value)} />
+    )}
+  </label>;
+}
+
+function PluginsView() {
+  const [snapshot, setSnapshot] = useState<PluginServiceSnapshot | null>(null);
+  const [catalog, setCatalog] = useState<PluginCatalogSnapshot | null>(null);
+  const [selectedId, setSelectedId] = useState("");
+  const [filter, setFilter] = useState<PluginFilter>("all");
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [configDraft, setConfigDraft] = useState<PluginConfig>({});
+
+  async function load(refreshCatalog = false, clearMessages = true) {
+    if (clearMessages) setError("");
+    const [nextSnapshot, nextCatalog] = await Promise.all([
+      api.getPluginsSnapshot(),
+      api.getPluginCatalogSnapshot(refreshCatalog).catch(() => ({ plugins: [] } as PluginCatalogSnapshot)),
+    ]);
+    setSnapshot(nextSnapshot);
+    setCatalog(nextCatalog);
+    const entries = mergePluginEntries(nextSnapshot, nextCatalog);
+    setSelectedId((current) => entries.some((entry) => entry.id === current) ? current : "");
+  }
+
+  useEffect(() => { void load().catch((err) => setError(String(err?.message ?? err))); }, []);
+  useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(() => setMessage(""), 2200);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
+  const entries = useMemo(() => mergePluginEntries(snapshot, catalog), [snapshot, catalog]);
+  const selected = entries.find((entry) => entry.id === selectedId);
+  const installed = selected?.installed;
+  const catalogPlugin = selected?.catalog;
+
+  useEffect(() => { setConfigDraft(materializeConfigDraft(installed?.configSchema, installed?.effectiveConfig)); }, [installed?.id, installed?.configSchema, installed?.effectiveConfig]);
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) => {
+      if (filter === "installed" && !entry.installed) return false;
+      if (filter === "catalog" && entry.installed) return false;
+      if (filter === "local" && entry.installed?.source !== "local") return false;
+      if (filter === "broken" && !entry.installed?.brokenReason) return false;
+      return true;
+    });
+  }, [entries, filter]);
+
+  async function run(label: string, fn: () => Promise<void>) {
+    try { setBusy(label); setError(""); setMessage(""); await fn(); }
+    catch (err) { setError(String((err as Error)?.message ?? err)); }
+    finally { setBusy(""); }
+  }
+
+  function applyResult(result: PluginServiceResult, success?: string) {
+    setSnapshot(result.snapshot);
+    if (!result.ok) { setError(result.error); return false; }
+    if (success) setMessage(success);
+    return true;
+  }
+
+  function updateDraft(key: string, value: unknown) {
+    setConfigDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function installCatalogEntry(entry: PluginEntry) {
+    const result = await api.installCatalogPlugin(entry.id);
+    if (!applyResult(result)) return;
+    const installedPlugin = result.snapshot.plugins.find((plugin) => plugin.id === entry.id);
+    if (!installedPlugin) { setMessage("No plugin installed."); return; }
+    await load(false, false);
+    setMessage("Plugin installed.");
+  }
+
+  async function updateCatalogEntry(plugin: SafePluginRecord) {
+    const previousVersion = plugin.version;
+    const result = await api.updateCatalogPlugin(plugin.id);
+    if (!applyResult(result)) return;
+    const updatedPlugin = result.snapshot.plugins.find((nextPlugin) => nextPlugin.id === plugin.id);
+    setMessage(updatedPlugin && updatedPlugin.version !== previousVersion ? "Plugin updated." : "No plugin update applied.");
+  }
+
+  return <div className="plugins-layout">
+    {error && <div className="error settings-message">{error}</div>}
+    {message && <div className="settings-success settings-message">{message}</div>}
+    <GlassCard className="plugins-hub">
+      <div className="filters">
+        {(["all", "installed", "catalog", "local", "broken"] as PluginFilter[]).map((nextFilter) => (
+          <button key={nextFilter} className={`filter ${filter === nextFilter ? "active" : ""}`} onClick={() => setFilter(nextFilter)}>{pluginFilterLabels[nextFilter]}</button>
+        ))}
+      </div>
+      <div className="plugin-grid">
+        {filteredEntries.map((entry) => (
+          <article key={entry.id} className={`plugin-card ${entry.installed?.brokenReason ? "broken" : ""}`}>
+            <div className="plugin-card-body">
+              <span className="plugin-card-icon"><PluginGlyph /></span>
+              <div className="plugin-card-content">
+                <strong>{pluginName(entry)}</strong>
+                <small>{pluginDescription(entry)}</small>
+                <div className="badges mt-1">
+                  <StatusPill tone={pluginPrimaryTone(entry)}>{pluginPrimaryLabel(entry)}</StatusPill>
+                  {entry.installed?.source === "local" && <StatusPill tone="orange">Local</StatusPill>}
+                  {entry.installed?.runtime === "javascript" || entry.catalog?.runtime === "javascript" ? <StatusPill tone="purple">JS</StatusPill> : <StatusPill tone="slate">Declarative</StatusPill>}
+                </div>
+              </div>
+            </div>
+
+            <div className="plugin-card-footer">
+              <div className="plugin-card-meta">
+                <span className="text-[10px] font-bold text-slatecopy/50 uppercase tracking-tight">v{entry.installed?.version || entry.catalog?.version}</span>
+              </div>
+
+              <div className="plugin-card-actions">
+                {entry.installed && (
+                  <div className="plugin-card-toggle-zone">
+                    <span className="plugin-card-toggle-label">{entry.installed.enabled ? "Active" : "Off"}</span>
+                    <input
+                      className="settings-toggle plugin-card-toggle"
+                      type="checkbox"
+                      checked={entry.installed.enabled}
+                      disabled={!!busy || entry.installed.catalogDisabled || Boolean(entry.installed.brokenReason)}
+                      onChange={(event) => void run("Saving", async () => {
+                        applyResult(await api.setPluginEnabled(entry.id, event.target.checked), event.target.checked ? "Plugin enabled." : "Plugin disabled.");
+                      })}
+                    />
+                  </div>
+                )}
+
+                {entry.installed ? (
+                  <Button variant="secondary" size="compact" icon={<ConfigureIcon />} disabled={!!busy} onClick={() => setSelectedId(entry.id)}>Configure</Button>
+                ) : (
+                  <Button variant="primary" size="compact" icon={<InstallIcon />} disabled={!!busy || entry.catalog?.deprecated} onClick={() => void run("Installing", async () => { await installCatalogEntry(entry); })}>Install Plugin</Button>
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+        {!filteredEntries.length && <div className="plugin-empty"><PluginGlyph /><strong>No plugins found</strong><small>Try a different filter, refresh the catalog, or load a local plugin folder.</small></div>}
+      </div>
+      <div className="plugin-hub-footer">
+        <span><strong>{snapshot?.plugins.length ?? 0}</strong> installed · <strong>{catalog?.plugins.length ?? 0}</strong> catalog</span>
+        <span className="plugin-hub-actions">
+          <Button variant="secondary" size="compact" disabled={!!busy} icon={<RefreshIcon />} onClick={() => void run("Refreshing", async () => { await load(true); setMessage("Plugin catalog refreshed."); })}>Refresh</Button>
+          <Button variant="secondary" size="compact" icon={<FolderPlusIcon />} disabled={!!busy} onClick={() => void run("Loading", async () => {
+            const beforeIds = new Set(snapshot?.plugins.map((plugin) => plugin.id) ?? []);
+            const result = await api.loadLocalPlugin();
+            if (!applyResult(result)) return;
+            const loadedPlugin = result.snapshot.plugins.find((plugin) => plugin.source === "local" && !beforeIds.has(plugin.id));
+            setMessage(loadedPlugin ? "Local plugin loaded." : "No local plugin loaded.");
+          })}>Load Local Plugin</Button>
+        </span>
+      </div>
+    </GlassCard>
+    {selected && <div className="plugin-config-overlay" role="dialog" aria-modal="true" aria-label={`${pluginName(selected)} configuration`}>
+      <button className="plugin-config-backdrop" type="button" aria-label="Close plugin configuration" onClick={() => setSelectedId("")} />
+      <GlassCard className="plugin-inspector">
+      {selected ? <>
+        <div className="plugin-inspector-head">
+          <span className="plugin-inspector-icon"><PluginGlyph /></span>
+          <div className="flex-1 min-w-0"><p className="eyebrow">Plugin Configuration</p><h2>{pluginName(selected)}</h2><p className="desc">{pluginDescription(selected)}</p></div>
+          <Button variant="secondary" size="compact" icon={<CloseIcon />} onClick={() => setSelectedId("")}>Close</Button>
+        </div>
+        <div className="meta">
+          <StatusPill tone={pluginPrimaryTone(selected)}>{pluginPrimaryLabel(selected)}</StatusPill>
+          <StatusPill tone="slate">v{installed?.version ?? catalogPlugin?.version}</StatusPill>
+          {installed?.source === "local" && <StatusPill tone="orange">Local</StatusPill>}
+          {(installed?.catalogDeprecated || catalogPlugin?.deprecated) && <StatusPill tone="orange">Deprecated</StatusPill>}
+        </div>
+        {(installed?.catalogStatusReason || catalogPlugin?.statusReason || installed?.status?.text) && <div className="plugin-status-strip">
+          {installed?.status?.text && <StatusPill tone={installed.status.tone ? pluginStatusTone[installed.status.tone] : "blue"}>{installed.status.text}</StatusPill>}
+          <span>{installed?.catalogStatusReason || catalogPlugin?.statusReason}</span>
+        </div>}
+        {installed ? <>
+          <section className="plugin-section">
+            <div className="plugin-section-title"><small>Runtime</small><strong>State & permissions</strong></div>
+            <label className="settings-row plugin-toggle-row">
+              <div className="settings-row-info"><strong>{installed.enabled ? "Enabled" : "Disabled"}</strong><small>{installed.brokenReason || (installed.catalogDisabled ? "This plugin is disabled by the catalog." : "Toggle this plugin without leaving the Control Center.")}</small></div>
+              <input className="settings-toggle" type="checkbox" checked={installed.enabled} disabled={!!busy || installed.catalogDisabled} onChange={(event) => void run("Saving", async () => { applyResult(await api.setPluginEnabled(installed.id, event.target.checked), event.target.checked ? "Plugin enabled." : "Plugin disabled."); })} />
+            </label>
+            <div className="badges plugin-permissions">{installed.approvedPermissions.length ? installed.approvedPermissions.map((permission) => <StatusPill key={permission} tone={permission === "network" ? "orange" : "blue"}>{pluginPermissionLabels[permission]}</StatusPill>) : <StatusPill tone="slate">No permissions</StatusPill>}</div>
+          </section>
+          {!!installed.configErrors?.length && <section className="plugin-section plugin-section-danger"><div className="plugin-section-title"><small>Configuration</small><strong>Needs attention</strong></div><ul>{installed.configErrors.map((configError, index) => <li key={index}>{configError.message || String(configError)}</li>)}</ul></section>}
+          {installed.configSchema && <section className="plugin-section">
+            <div className="plugin-section-title"><small>Settings</small><strong>Configuration</strong></div>
+            <div className="plugin-config-form">{Object.entries(installed.configSchema).map(([key, field]) => <ConfigFieldEditor key={key} fieldKey={key} field={field} value={configDraft[key] ?? initialConfigValue(field)} onChange={(value) => updateDraft(key, value)} />)}</div>
+            <Button variant="primary" fullWidth icon={<SaveIcon />} disabled={!!busy} onClick={() => void run("Saving", async () => { applyResult(await api.savePluginConfig(installed.id, configDraft), "Plugin configuration saved."); })}>Save Configuration</Button>
+          </section>}
+          {!!installed.commands?.length && <section className="plugin-section"><div className="plugin-section-title"><small>Commands</small><strong>Quick actions</strong></div><div className="plugin-command-list">{installed.commands.map((command) => <Button key={command.id} variant="secondary" size="compact" disabled={!!busy} onClick={() => void run("Running", async () => { applyResult(await api.executePluginCommand(installed.id, command.id), "Plugin command ran."); })}>{command.title}</Button>)}</div></section>}
+          <section className="plugin-section plugin-actions-section">
+            <Button variant="secondary" disabled={!!busy} icon={<RefreshIcon />} onClick={() => void run("Reloading", async () => { applyResult(await api.reloadPlugin(installed.id), "Plugin reloaded."); })}>Reload</Button>
+            {installed.source === "catalog" && catalogPlugin && catalogPlugin.version !== installed.version && <Button variant="primary" icon={<InstallIcon />} disabled={!!busy} onClick={() => void run("Updating", async () => { await updateCatalogEntry(installed); })}>Update</Button>}
+            <Button variant="danger" icon={<RemoveIcon />} disabled={!!busy} onClick={() => { if (window.confirm(`Uninstall ${pluginName(selected)}?`)) void run("Uninstalling", async () => { if (applyResult(await api.uninstallPlugin(installed.id), "Plugin uninstalled.")) setSelectedId(""); }); }}>Uninstall</Button>
+          </section>
+        </> : <section className="plugin-section">
+          <div className="plugin-section-title"><small>Catalog</small><strong>Ready to install</strong></div>
+          <p className="desc">Install this plugin to approve its permissions and make it available in your desktop companion.</p>
+          <div className="badges plugin-permissions">{catalogPlugin?.permissions.map((permission) => <StatusPill key={permission} tone={permission === "network" ? "orange" : "blue"}>{pluginPermissionLabels[permission]}</StatusPill>)}</div>
+          <Button variant="primary" fullWidth icon={<InstallIcon />} disabled={!!busy || catalogPlugin?.deprecated} onClick={() => void run("Installing", async () => { await installCatalogEntry(selected); })}>Install Plugin</Button>
+        </section>}
+      </> : <div className="plugin-empty plugin-empty-detail"><PluginGlyph /><strong>No plugin selected</strong><small>Install a catalog plugin or load a local folder to begin.</small></div>}
+      </GlassCard>
+    </div>}
+  </div>;
+}
+
 function App() {
   const [currentRoute, setCurrentRoute] = useState<Route>("pets");
   const [state, setState] = useState<StateSnapshot | null>(null);
@@ -850,6 +1270,8 @@ function App() {
 
     {currentRoute === "settings" ? (
       <SettingsView />
+    ) : currentRoute === "plugins" ? (
+      <PluginsView />
     ) : currentRoute !== "pets" ? (
       <PlaceholderView route={currentRoute} />
     ) : (
