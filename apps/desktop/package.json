@@ -22,15 +22,25 @@
     "build:deps": "pnpm --filter @open-pets/desktop^... build",
     "test:build": "pnpm build:deps && tsc -p tsconfig.tests.json",
     "check": "pnpm typecheck && pnpm build && pnpm test",
-    "typecheck": "pnpm build:deps && tsc --noEmit",
-    "build": "pnpm build:deps && tsc"
+    "typecheck": "pnpm build:deps && tsc --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "build:main": "pnpm build:deps && tsc",
+    "build:renderer": "vite build",
+    "dev:renderer": "vite --host 127.0.0.1",
+    "build": "pnpm build:main && pnpm build:renderer"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
     "@types/yauzl": "2.10.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "autoprefixer": "^10.5.0",
     "electron": "^42.0.0",
     "electron-builder": "^26.10.0",
-    "typescript": "^6.0.3"
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14"
   },
   "dependencies": {
     "@open-pets/agent-events": "workspace:*",
@@ -39,6 +49,8 @@
     "@open-pets/cursor": "workspace:*",
     "@open-pets/mcp": "workspace:*",
     "@open-pets/opencode": "workspace:*",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "sharp": "^0.34.5",
     "yauzl": "3.3.0"
   }

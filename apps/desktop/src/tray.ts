@@ -7,7 +7,7 @@ import { quitOpenPets } from "./lifecycle.js";
 import { info, openLogsFolder } from "./logger.js";
 import { shellState, togglePaused } from "./state.js";
 import { getUpdateStatus, openUpdateReleasePage } from "./update-checker.js";
-import { openTaskWindow } from "./windows.js";
+import { openControlCenterWindow, openTaskWindow } from "./windows.js";
 
 let tray: Tray | null = null;
 
@@ -82,6 +82,10 @@ export function refreshTrayMenu(): void {
     {
       label: "Manage Pets...",
       click: () => openTaskWindow("pet-manager"),
+    },
+    {
+      label: "Control Center Preview...",
+      click: () => openControlCenterWindow(),
     },
     {
       label: "Integrations...",

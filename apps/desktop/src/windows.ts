@@ -18,6 +18,7 @@ import { defaultPetSprite, reactionAnimationMetadata, selectableAnimationMetadat
 import { checkForGitHubReleaseUpdate, getUpdateStatus, openUpdateReleasePage } from "./update-checker.js";
 
 type TaskWindowKind = "pet-manager" | "agent-setup" | "settings" | "onboarding" | "plugins";
+type InternalUiWindowKind = TaskWindowKind | "control-center";
 
 interface TaskWindowDefinition {
   readonly title: string;
@@ -54,6 +55,7 @@ const taskWindowDefinitions: Record<TaskWindowKind, TaskWindowDefinition> = {
 };
 
 const taskWindows = new Map<TaskWindowKind, BrowserWindow>();
+let controlCenterWindow: BrowserWindow | null = null;
 let internalUiHandlersInstalled = false;
 const taskWindowWidth = 900;
 const taskWindowHeight = 760;
@@ -62,6 +64,11 @@ const petManagerWindowHeight = 780;
 const agentSetupWindowWidth = 1160;
 const agentSetupWindowHeight = 780;
 const assetDataUrlCache = new Map<string, string>();
+
+function getPetsStateSnapshot(): { preferences: { defaultPetId: string }; pets: ReturnType<typeof getAppStateSnapshot>["pets"] } {
+  const state = getAppStateSnapshot();
+  return { preferences: { defaultPetId: state.preferences.defaultPetId }, pets: state.pets };
+}
 
 export function installInternalUiHandlers(): void {
   if (internalUiHandlersInstalled) {
@@ -73,6 +80,11 @@ export function installInternalUiHandlers(): void {
   ipcMain.handle("openpets:get-state", (event) => {
     assertAllowedSender(event, ["pet-manager", "settings", "agent-setup"]);
     return getAppStateSnapshot();
+  });
+
+  ipcMain.handle("openpets:get-pets-state", (event) => {
+    assertAllowedSender(event, ["control-center"]);
+    return getPetsStateSnapshot();
   });
 
   ipcMain.handle("openpets:get-reaction-animation-settings", async (event) => {
@@ -167,23 +179,23 @@ export function installInternalUiHandlers(): void {
   });
 
   ipcMain.handle("openpets:get-catalog", async (event) => {
-    assertAllowedSender(event, ["pet-manager"]);
+    assertAllowedSender(event, ["pet-manager", "control-center"]);
     return getCatalogUiState();
   });
 
   ipcMain.handle("openpets:get-catalog-page", async (event, page: unknown) => {
-    assertAllowedSender(event, ["pet-manager"]);
+    assertAllowedSender(event, ["pet-manager", "control-center"]);
     if (typeof page !== "number" || !Number.isInteger(page) || page < 0) throw new Error("Invalid catalog page.");
     return getCatalogPageUiState(page);
   });
 
   ipcMain.handle("openpets:get-catalog-search", async (event) => {
-    assertAllowedSender(event, ["pet-manager"]);
+    assertAllowedSender(event, ["pet-manager", "control-center"]);
     return getCatalogSearchUiState();
   });
 
   ipcMain.handle("openpets:get-codex-pets", async (event) => {
-    assertAllowedSender(event, ["pet-manager"]);
+    assertAllowedSender(event, ["pet-manager", "control-center"]);
     return getCodexPetsUiState();
   });
 
@@ -232,7 +244,7 @@ export function installInternalUiHandlers(): void {
   });
 
   ipcMain.handle("openpets:set-default-pet", async (event, petId: unknown) => {
-    assertAllowedSender(event, ["pet-manager"]);
+    assertAllowedSender(event, ["pet-manager", "control-center"]);
     if (typeof petId !== "string") {
       throw new Error("Invalid pet id.");
     }
@@ -241,36 +253,38 @@ export function installInternalUiHandlers(): void {
     refreshDefaultPetContent();
     recoverDefaultPetMouseInterop("default-pet-changed");
     setTimeout(() => recoverDefaultPetMouseInterop("default-pet-changed+500ms"), 500).unref?.();
-    return state;
+    return getInternalUiWindowKindForWebContents(event.sender.id) === "control-center" ? getPetsStateSnapshot() : state;
   });
 
   ipcMain.handle("openpets:install-pet", async (event, petId: unknown) => {
-    assertAllowedSender(event, ["pet-manager"]);
+    assertAllowedSender(event, ["pet-manager", "control-center"]);
     if (typeof petId !== "string") {
       throw new Error("Invalid pet id.");
     }
 
-    return installPet(petId);
+    const state = await installPet(petId);
+    return getInternalUiWindowKindForWebContents(event.sender.id) === "control-center" ? getPetsStateSnapshot() : state;
   });
 
   ipcMain.handle("openpets:import-codex-pet", async (event, petId: unknown) => {
-    assertAllowedSender(event, ["pet-manager"]);
+    assertAllowedSender(event, ["pet-manager", "control-center"]);
     if (typeof petId !== "string") {
       throw new Error("Invalid pet id.");
     }
 
-    return importCodexPet(petId);
+    const state = await importCodexPet(petId);
+    return getInternalUiWindowKindForWebContents(event.sender.id) === "control-center" ? getPetsStateSnapshot() : state;
   });
 
   ipcMain.handle("openpets:remove-pet", async (event, petId: unknown) => {
-    assertAllowedSender(event, ["pet-manager"]);
+    assertAllowedSender(event, ["pet-manager", "control-center"]);
     if (typeof petId !== "string") {
       throw new Error("Invalid pet id.");
     }
 
     const state = await removePet(petId);
     refreshDefaultPetContent();
-    return state;
+    return getInternalUiWindowKindForWebContents(event.sender.id) === "control-center" ? getPetsStateSnapshot() : state;
   });
 
   ipcMain.handle("openpets:reset-default-pet-position", (event) => {
@@ -405,6 +419,49 @@ export function openTaskWindow(kind: TaskWindowKind): void {
   });
 
   console.log(`Opened ${kind} window.`);
+}
+
+export function openControlCenterWindow(): void {
+  if (controlCenterWindow && !controlCenterWindow.isDestroyed()) {
+    if (controlCenterWindow.isMinimized()) controlCenterWindow.restore();
+    controlCenterWindow.show();
+    controlCenterWindow.focus();
+    return;
+  }
+
+  const window = new BrowserWindow({
+    title: "OpenPets — Control Center Preview",
+    width: 1180,
+    height: 820,
+    minWidth: 820,
+    minHeight: 620,
+    show: false,
+    backgroundColor: "#f8fbff",
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      preload: getControlCenterPreloadPath(),
+    },
+  });
+
+  controlCenterWindow = window;
+  window.setMenu(null);
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  window.webContents.on("will-redirect", (event) => event.preventDefault());
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
+    console.error("Failed to load Control Center renderer.", { errorCode, errorDescription });
+  });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    console.error("Control Center renderer process gone.", details);
+  });
+  window.on("closed", () => { controlCenterWindow = null; });
+  window.once("ready-to-show", () => { window.show(); window.focus(); });
+
+  const devUrl = getSafeControlCenterDevUrl();
+  const load = devUrl ? window.loadURL(devUrl) : window.loadFile(join(app.getAppPath(), "dist", "renderer", "index.html"));
+  load.catch((error: unknown) => console.error("Failed to load Control Center.", error));
 }
 
 export function closeTaskWindow(kind: TaskWindowKind): void {
@@ -1349,15 +1406,37 @@ function getPreloadPath(): string {
   return join(app.getAppPath(), "preload.cjs");
 }
 
-function assertAllowedSender(event: IpcMainInvokeEvent, allowedKinds: readonly TaskWindowKind[]): void {
-  const actualKind = getTaskWindowKindForWebContents(event.sender.id);
+function getControlCenterPreloadPath(): string {
+  return join(app.getAppPath(), "control-center-preload.cjs");
+}
+
+function getSafeControlCenterDevUrl(): string | null {
+  if (app.isPackaged) return null;
+  const raw = process.env.OPENPETS_RENDERER_URL;
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if ((url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname)) {
+      return url.toString();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function assertAllowedSender(event: IpcMainInvokeEvent, allowedKinds: readonly InternalUiWindowKind[]): void {
+  const actualKind = getInternalUiWindowKindForWebContents(event.sender.id);
 
   if (!actualKind || !allowedKinds.includes(actualKind)) {
     throw new Error("OpenPets internal UI request came from an unexpected window.");
   }
 }
 
-function getTaskWindowKindForWebContents(webContentsId: number): TaskWindowKind | null {
+function getInternalUiWindowKindForWebContents(webContentsId: number): InternalUiWindowKind | null {
+  if (controlCenterWindow && !controlCenterWindow.isDestroyed() && controlCenterWindow.webContents.id === webContentsId) {
+    return "control-center";
+  }
   for (const [kind, window] of taskWindows) {
     if (!window.isDestroyed() && window.webContents.id === webContentsId) {
       return kind;
