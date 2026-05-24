@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import net from "node:net";
 
 import { applyAgentPetReaction, applyAgentPetSay, clearAgentPetLeaseState, showAgentPet } from "./agent-pet-controller.js";
-import { getAppStateSnapshot } from "./app-state.js";
+import { getAppStateSnapshot, recordOpenPetsActivity } from "./app-state.js";
 import { builtInPet } from "./built-in-pet.js";
 import { applyExternalPetReaction, applyExternalPetSay, getDefaultPetPaused, isDefaultPetVisible } from "./default-pet-controller.js";
 import { createStaleLeaseStatus, LeaseManager } from "./lease-manager.js";
@@ -306,13 +306,16 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     const params = isRecord(request.params) ? request.params : {};
     const reaction = validateReaction(params.reaction);
     const lease = getLeaseTarget(params.leaseId);
+    const petId = lease?.actualTargetPetId ?? getCurrentDefaultPet().id;
     debug("ipc", "pet react requested", { requestId: request.id, reaction, leaseId: lease?.leaseId, targetKind: lease?.targetKind, actualPetId: lease?.actualTargetPetId });
     if (lease?.targetKind === "explicit") {
       if (getDefaultPetPaused()) return { ok: true, reaction, shown: false, reason: "paused", leaseId: lease.leaseId };
       const applied = applyAgentPetReaction(lease.actualTargetPetId, reaction);
+      safeRecordOpenPetsActivity({ kind: "react", reaction, petId });
       return { ok: true, reaction, shown: applied.shown, reason: applied.reason, leaseId: lease.leaseId };
     }
     const applied = applyExternalPetReaction(reaction);
+    safeRecordOpenPetsActivity({ kind: "react", reaction, petId });
     return { ok: true, reaction, shown: applied.shown, reason: applied.reason };
   }
 
@@ -320,14 +323,25 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
   const message = validateSayMessage(params.message);
   const reaction = params.reaction === undefined ? undefined : validateReaction(params.reaction);
   const lease = getLeaseTarget(params.leaseId);
+  const petId = lease?.actualTargetPetId ?? getCurrentDefaultPet().id;
   debug("ipc", "pet say requested", { requestId: request.id, reaction, messageLength: message.length, leaseId: lease?.leaseId, targetKind: lease?.targetKind, actualPetId: lease?.actualTargetPetId });
   if (lease?.targetKind === "explicit") {
     if (getDefaultPetPaused()) return { ok: true, shown: false, reason: "paused", reaction, leaseId: lease.leaseId };
     const applied = applyAgentPetSay(lease.actualTargetPetId, message, reaction);
+    safeRecordOpenPetsActivity({ kind: "say", reaction, petId });
     return { ok: true, shown: applied.shown, reason: applied.reason, reaction, leaseId: lease.leaseId };
   }
   const applied = applyExternalPetSay(message, reaction);
+  safeRecordOpenPetsActivity({ kind: "say", reaction, petId });
   return { ok: true, shown: applied.shown, reason: applied.reason, reaction };
+}
+
+function safeRecordOpenPetsActivity(activity: Parameters<typeof recordOpenPetsActivity>[0]): void {
+  try {
+    recordOpenPetsActivity(activity);
+  } catch (error) {
+    debug("ipc", "activity record failed", { error: error instanceof Error ? error.message : String(error), kind: activity.kind, reaction: activity.reaction, petId: activity.petId });
+  }
 }
 
 function validateRequiredLeaseId(value: unknown): string {

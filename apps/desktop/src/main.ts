@@ -1,7 +1,7 @@
 import { app } from "electron";
 import { delimiter, resolve } from "node:path";
 
-import { initializeAppState, isOnboardingCompleted, releaseStartupInstallLock } from "./app-state.js";
+import { initializeAppState, releaseStartupInstallLock } from "./app-state.js";
 import { installDefaultPetDisplayHandlers, shouldOpenDefaultPetOnLaunch, showDefaultPet } from "./default-pet-controller.js";
 import { installAppLifecycle } from "./lifecycle.js";
 import { debug, error as logError, getLogFilePath, info, initializeLogger, warn } from "./logger.js";
@@ -11,7 +11,7 @@ import { ElectronPluginJsHost } from "./plugin-js-host.js";
 import { initializePluginService } from "./plugin-service.js";
 import { createAppTray, refreshTrayMenu } from "./tray.js";
 import { checkForGitHubReleaseUpdate } from "./update-checker.js";
-import { installInternalUiHandlers, installInternalUiProtocol, openTaskWindow } from "./windows.js";
+import { installInternalUiHandlers, installInternalUiProtocol } from "./windows.js";
 
 // OpenPets does not store browser passwords, cookies, or encrypted app secrets.
 // Keep Chromium/Electron from prompting for macOS Keychain or Linux keyring access
@@ -51,22 +51,16 @@ if (!gotSingleInstanceLock) {
     installDefaultPetDisplayHandlers();
     await startLocalIpcServer();
     releaseStartupInstallLock();
+    const roots = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_ROOTS);
+    const paths = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_PATHS);
+    const devPluginMode = roots.length > 0 || paths.length > 0;
+    const pluginService = initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion(), new ElectronPluginJsHost(), writePluginRuntimeLog, process.env.OPENPETS_DISABLE_PLUGIN_CATALOG === "1" || devPluginMode);
     if (shouldOpenDefaultPetOnLaunch()) {
       showDefaultPet();
     }
-    if (!isOnboardingCompleted()) {
-      try {
-        openTaskWindow("onboarding");
-      } catch (error) {
-        console.error("Failed to open OpenPets onboarding; continuing with tray app.", error);
-      }
-    }
     refreshTrayMenu();
     void (async () => {
-      const roots = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_ROOTS);
-      const paths = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_PATHS);
-      const devPluginMode = roots.length > 0 || paths.length > 0;
-      const service = initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion(), new ElectronPluginJsHost(), writePluginRuntimeLog, process.env.OPENPETS_DISABLE_PLUGIN_CATALOG === "1" || devPluginMode);
+      const service = pluginService;
       await service.start();
       for (const path of paths) {
         const result = await service.loadLocalPath(path, { autoApprove: true });
@@ -78,7 +72,7 @@ if (!gotSingleInstanceLock) {
       }
     })().catch((error) => logError("app", "plugin service startup failed", error));
     void checkForGitHubReleaseUpdate().then(() => refreshTrayMenu());
-    info("app", "startup complete", { logFile: getLogFilePath(), openDefaultPetOnLaunch: shouldOpenDefaultPetOnLaunch(), onboardingCompleted: isOnboardingCompleted() });
+    info("app", "startup complete", { logFile: getLogFilePath(), openDefaultPetOnLaunch: shouldOpenDefaultPetOnLaunch() });
     console.log("OpenPets desktop shell ready.");
   }).catch((error: unknown) => {
     releaseStartupInstallLock();

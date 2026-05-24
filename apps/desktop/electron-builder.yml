@@ -10,7 +10,7 @@ artifactName: OpenPets-${version}-${os}-${arch}.${ext}
 
 files:
   - dist/**
-  - preload.cjs
+  - control-center-preload.cjs
   - pet-preload.cjs
   - plugin-sdk-preload.cjs
   - assets/**

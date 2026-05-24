@@ -13,6 +13,7 @@ Provides modular, reusable components for the OpenPets ecosystem:
 - **opencode**: OpenCode editor integration (plugin, config management)
 - **claude**: Claude Code integration (hooks, MCP config)
 - **cursor**: Cursor editor integration (MCP config, project rules)
+- **pi**: Pi coding-agent extension integration (event hooks, slash commands)
 - **install-pet**: Standalone pet installer from gallery catalog
 
 ## Design/Patterns
@@ -28,7 +29,7 @@ Provides modular, reusable components for the OpenPets ecosystem:
 
 **ESM-First**: All packages are ESM (`"type": "module"`) with dual exports for types.
 
-**Versioning**: Independent versioning per package (all currently 2.0.x).
+**Versioning**: Independent versioning per package (currently 2.1.x for active integrations).
 
 ## Flow
 
@@ -52,6 +53,9 @@ Claude Hooks (packages/claude/src/hooks.ts)
 
 Cursor Setup (packages/cursor/src/cursor-project-setup.ts)
     └── Writes MCP config + rules → @open-pets/client
+
+Pi Extension (packages/pi/src/extension.ts)
+    └── Registers Pi extension hooks/commands → @open-pets/client
 ```
 
 ## Integration Points
@@ -62,6 +66,7 @@ Cursor Setup (packages/cursor/src/cursor-project-setup.ts)
 - `claude` depends on: `client`, `agent-events`
 - `opencode` depends on: `client`, `agent-events`
 - `cursor` depends on: `client`
+- `pi` depends on: `client`, `agent-events` and declares optional `@earendil-works/pi-coding-agent` peer support
 - `install-pet` depends on: `client`
 
 **External Integrations**:

@@ -6,6 +6,7 @@ import { app } from "electron";
 import { defaultPetScale, markOnboardingCompleted, normalizeOnboardingCompleted, normalizePetScale, petScaleOptions, type PetScaleValue } from "./app-state-core.js";
 import { builtInPet } from "./built-in-pet.js";
 import type { Point } from "./display.js";
+import { allowedReactions, type OpenPetsReaction } from "./local-ipc-protocol.js";
 import { assertSafePetId, getInstalledPetDir } from "./pet-paths.js";
 import { normalizeReactionAnimationOverrides, type ReactionAnimationOverrides } from "./reaction-animation-mapping.js";
 
@@ -48,7 +49,20 @@ export interface OpenPetsStateV1 {
   readonly defaultPet: {
     readonly position?: Point;
   };
+  readonly analytics: OpenPetsAnalyticsState;
 }
+
+export interface OpenPetsAnalyticsState {
+  readonly messagesSent: number;
+  readonly reactionsSent: number;
+  readonly reactionCounts: Record<OpenPetsReaction, number>;
+  readonly perPetActivityCounts: Record<string, number>;
+  readonly lastActivityAt?: number;
+}
+
+export type OpenPetsActivityRecord =
+  | { readonly kind: "say"; readonly reaction?: OpenPetsReaction; readonly petId?: string }
+  | { readonly kind: "react"; readonly reaction: OpenPetsReaction; readonly petId?: string };
 
 export { defaultPetScale, normalizePetScale, petScaleOptions, type PetScaleValue };
 
@@ -149,6 +163,30 @@ export function resetDefaultPetPosition(position: Point): OpenPetsStateV1 {
 
 export function getDefaultPetPosition(): Point | undefined {
   return getInitializedState().defaultPet.position;
+}
+
+export function recordOpenPetsActivity(activity: OpenPetsActivityRecord, now: number = Date.now()): OpenPetsStateV1 {
+  const state = getInitializedState();
+  const analytics = state.analytics;
+  const reaction = activity.kind === "react" ? activity.reaction : activity.reaction;
+  const petId = activity.petId;
+  const nextState = normalizeState({
+    ...state,
+    analytics: {
+      messagesSent: analytics.messagesSent + (activity.kind === "say" ? 1 : 0),
+      reactionsSent: analytics.reactionsSent + (reaction ? 1 : 0),
+      reactionCounts: reaction
+        ? { ...analytics.reactionCounts, [reaction]: (analytics.reactionCounts[reaction] ?? 0) + 1 }
+        : analytics.reactionCounts,
+      perPetActivityCounts: petId
+        ? { ...analytics.perPetActivityCounts, [petId]: (analytics.perPetActivityCounts[petId] ?? 0) + 1 }
+        : analytics.perPetActivityCounts,
+      lastActivityAt: normalizeTimestamp(now) ?? Date.now(),
+    },
+  });
+
+  commitState(nextState);
+  return getAppStateSnapshot();
 }
 
 export function installPetState(pet: Omit<InstalledPetState, "builtIn" | "protected" | "installed">): OpenPetsStateV1 {
@@ -280,7 +318,53 @@ function normalizeState(value: unknown): OpenPetsStateV1 {
       installed: installedPets,
     },
     defaultPet: position ? { position } : {},
+    analytics: normalizeAnalytics(record.analytics),
   };
+}
+
+function normalizeAnalytics(value: unknown): OpenPetsAnalyticsState {
+  const record = isRecord(value) ? value : {};
+  return {
+    messagesSent: normalizeCount(record.messagesSent),
+    reactionsSent: normalizeCount(record.reactionsSent),
+    reactionCounts: normalizeReactionCounts(record.reactionCounts),
+    perPetActivityCounts: normalizePerPetActivityCounts(record.perPetActivityCounts),
+    lastActivityAt: normalizeTimestamp(record.lastActivityAt),
+  };
+}
+
+function normalizeReactionCounts(value: unknown): Record<OpenPetsReaction, number> {
+  const record = isRecord(value) ? value : {};
+  const counts = {} as Record<OpenPetsReaction, number>;
+  for (const reaction of allowedReactions) {
+    counts[reaction] = normalizeCount(record[reaction]);
+  }
+  return counts;
+}
+
+function normalizePerPetActivityCounts(value: unknown): Record<string, number> {
+  const record = isRecord(value) ? value : {};
+  const counts: Record<string, number> = {};
+  for (const [petId, rawCount] of Object.entries(record)) {
+    if (petId !== builtInPet.id) {
+      try {
+        assertSafePetId(petId);
+      } catch {
+        continue;
+      }
+    }
+    const count = normalizeCount(rawCount);
+    if (count > 0) counts[petId] = count;
+  }
+  return counts;
+}
+
+function normalizeCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+function normalizeTimestamp(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
 }
 
 function normalizePreferences(value: Partial<OpenPetsStateV1["preferences"]>): OpenPetsStateV1["preferences"] {
@@ -370,6 +454,13 @@ function createDefaultState(): OpenPetsStateV1 {
       installed: [builtInPet],
     },
     defaultPet: {},
+    analytics: {
+      messagesSent: 0,
+      reactionsSent: 0,
+      reactionCounts: normalizeReactionCounts(undefined),
+      perPetActivityCounts: {},
+      lastActivityAt: undefined,
+    },
   };
 }
 

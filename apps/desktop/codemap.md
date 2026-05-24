@@ -2,11 +2,11 @@
 
 ## Responsibility
 
-OpenPets desktop companion application. Tray-first Electron app providing animated desktop pets that react to coding agent events. Manages pet installations, plugin automation, agent integrations (Claude Code, OpenCode), and local IPC for CLI communication.
+OpenPets desktop companion application. Tray-first Electron app providing animated desktop pets that react to coding agent events. Manages pet installations, the React/Tailwind Control Center, plugin automation/runtime, agent integrations (Claude Code, OpenCode, Cursor, Pi guidance), and local IPC for CLI communication.
 
 ## Design
 
-- **Tray-First UX**: No main window; all interaction via tray menu or task windows (pet-manager, agent-setup, settings, onboarding)
+- **Tray-First UX**: No default main window; tray actions open the singleton React/Tailwind Control Center and route directly to Dashboard, Pets, Integrations, Plugins, and Settings.
 - **Single Instance**: Uses `app.requestSingleInstanceLock()` with second-instance focusing
 - **Security Model**: 
   - Sandboxed renderers with contextIsolation
@@ -23,11 +23,11 @@ OpenPets desktop companion application. Tray-first Electron app providing animat
   - User-configurable reaction-to-animation mapping
 - **Lease Manager**: 15s TTL leases for agent pet routing with heartbeat renewal
 - **Logging**: Structured logging with scopes, log rotation (2MB max), and sensitive data redaction
-- **Plugin Subsystem**: Manifest-only v1 plugin runtime for timer-triggered `pet.speak`/`pet.react` actions, permission approval, config schemas, catalog/local installs, and safe path/ZIP/manifest validation
+- **Plugin Subsystem**: Declarative manifest plugins and JavaScript plugin hosting with permission approval, config schemas, command/status surfaces, catalog/local installs, SDK bridge quotas, storage, schedules, restricted HTTPS fetch, and safe path/ZIP/manifest validation
 
 ## Flow
 
-**Startup**: `main.ts` → `installAppLifecycle()` → `initializeAppState()` → `initializeLogger()` → `createAppTray()` → `startLocalIpcServer()` → optionally `showDefaultPet()`/`openTaskWindow("onboarding")`
+**Startup**: `main.ts` → `installAppLifecycle()` → `initializeAppState()` → `initializeLogger()` → `createAppTray()` → `startLocalIpcServer()` → initialize plugin service with JavaScript host/SDK bridge → optionally `showDefaultPet()`
 
 **Pet Display**: IPC Request → `local-ipc.ts` → `LeaseManager.acquire()` → `agent-pet-controller.ts` → `pet-window.ts` → HTML/CSS spritesheet animation with reaction-to-animation mapping
 
@@ -35,7 +35,9 @@ OpenPets desktop companion application. Tray-first Electron app providing animat
 
 **Agent Setup**: UI → `agent-setup.ts` → Claude/OpenCode/Cursor CLI detection → MCP config modification → hooks installation → memory file management
 
-**Plugins**: Plugins window → `plugin-service.ts` → catalog or local manifest loader → permission approval/state update → `plugin-runtime.ts` schedules declarative timers → `plugin-pet-api.ts` applies speech/reactions to the default pet
+**Control Center**: Tray route → `openControlCenterWindow(route)` → `windows.ts` loads Vite renderer and sends route events → `control-center-preload.cjs` exposes narrow page APIs → React Dashboard/Pets/Integrations/Plugins/Settings routes render snapshots and invoke actions.
+
+**Plugins**: Control Center plugins route → `plugin-service.ts` → catalog or local manifest/entry loader → permission approval/state update → `plugin-runtime.ts` schedules declarative timers or starts `plugin-js-host.ts` → `plugin-sdk-bridge.ts` applies approved SDK calls to pet/schedule/storage/command/status/network APIs
 
 ## Integration Points
 
@@ -60,17 +62,17 @@ OpenPets desktop companion application. Tray-first Electron app providing animat
 
 - `main.ts`: Entry point, lifecycle coordination
 - `tray.ts`: System tray icon and menu
-- `windows.ts`: Task window management (pet-manager, agent-setup, plugins, settings, onboarding)
-- `plugins-window.ts`: Sandboxed plugins task-window HTML for installed/discover/developer plugin management
+- `windows.ts`: Control Center BrowserWindow management, Dashboard snapshot, route targeting, IPC handlers, and internal protocols
+- `renderer/`: React/Tailwind Control Center for Dashboard, Pets, Integrations, Plugins, and Settings
 - `local-ipc.ts`: TCP/Unix socket server for CLI communication
 - `lease-manager.ts`: Pet routing lease lifecycle
 - `pet-window.ts`: Pet rendering (transparent frameless windows, CSS sprite animation, speech bubbles, status badges)
 - `default-pet-controller.ts`/`agent-pet-controller.ts`: Pet visibility/state management with transient displays
 - `app-state.ts`: Persistent state management (JSON file)
 - `agent-setup.ts`: Claude/OpenCode/Cursor integration logic
-- `plugin-service.ts`: Plugin orchestration for snapshots, enable/config/reload, catalog install/update/uninstall, local loading, permission approval, and runtime reloads
-- `plugin-manifest.ts`: `openpets.plugin.json` v1 schema/types/validator for declarative timer plugins, config fields, permissions, and actions
-- `plugin-runtime.ts`: Safe declarative runtime that compiles enabled plugin timers and runs approved pet speech/reaction actions
+- `plugin-service.ts`: Plugin orchestration for snapshots, enable/config/reload, command execution, catalog install/update/uninstall, local loading, permission approval, JavaScript host wiring, and runtime reloads
+- `plugin-manifest.ts`: `openpets.plugin.json` v1/v2 schema/types/validator for declarative timer plugins and JavaScript SDK plugins, config fields, permissions, commands/status/network, and actions
+- `plugin-runtime.ts`: Runtime that compiles enabled declarative timers and starts JavaScript plugin hosts for approved pet/schedule/storage/command/status/network actions
 - `plugin-state.ts`: Atomic JSON state store for installed plugins, enabled flag, approved permissions, config, broken state, and update metadata
 - `plugin-config.ts`: Plugin default/effective config validation and config reference resolution
 - `plugin-catalog.ts`/`plugin-catalog-validation.ts`: Plugin catalog fetch/cache and strict catalog entry validation
@@ -78,13 +80,15 @@ OpenPets desktop companion application. Tray-first Electron app providing animat
 - `plugin-local-loader.ts`: Local developer plugin folder validation and manifest snapshotting into app data
 - `plugin-manifest-reader.ts`: Safe installed-manifest reader enforcing allowed roots, size limits, path containment, and expected id/version
 - `plugin-pet-api.ts`: Runtime bridge from plugin actions to default pet speech/reaction APIs
+- `plugin-js-host.ts`: Hidden sandboxed BrowserWindow host for JavaScript plugin entry modules, SDK IPC tokening, session hardening, startup handshake, and teardown
+- `plugin-sdk-bridge.ts`: Permission-checked SDK API for JavaScript plugins with quotas, plugin storage, schedules, config listeners, commands/status, logs, and restricted HTTPS fetch
 - `pet-installation.ts`: Catalog ZIP download and extraction
 - `codex-pets.ts`: Local Codex pet import
 - `catalog.ts`: Remote catalog fetching with V3 pagination and fixture fallback
 - `logger.ts`: Structured logging with scopes (app, ipc, lease, pet, state, tray, ui)
 - `reaction-animation-mapping.ts`: Reaction-to-animation state mapping with user overrides
 - `reaction-messages.ts`: Message pools for each reaction type
-- `preload.cjs`/`pet-preload.cjs`: Renderer preload scripts (contextBridge APIs)
+- `control-center-preload.cjs`/`pet-preload.cjs`/`plugin-sdk-preload.cjs`: Narrow contextBridge APIs for the Control Center, pet windows, and plugin SDK host; the legacy `preload.cjs` task-window bridge and `plugins-window.ts` UI have been removed
 - `electron-builder.yml`: Packaging configuration
 - `scripts/release-local.mjs`: macOS-local release automation with GitHub draft creation
 - `contracts/catalog-fixture.contract.ts`: Catalog V2 validation contract tests against fixture data

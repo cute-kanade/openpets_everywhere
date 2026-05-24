@@ -1,0 +1,43 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+const api = {
+  getPetsState: () => ipcRenderer.invoke("openpets:get-pets-state"),
+  getDashboardSnapshot: () => ipcRenderer.invoke("openpets:get-dashboard-snapshot"),
+  getSettingsState: () => ipcRenderer.invoke("openpets:get-settings-state"),
+  updatePreferences: (patch) => ipcRenderer.invoke("openpets:update-preferences", patch),
+  getReactionAnimationSettings: () => ipcRenderer.invoke("openpets:get-reaction-animation-settings"),
+  getLaunchAtLogin: () => ipcRenderer.invoke("openpets:get-launch-at-login"),
+  setLaunchAtLogin: (enabled) => ipcRenderer.invoke("openpets:set-launch-at-login", enabled),
+  getUpdateStatus: () => ipcRenderer.invoke("openpets:get-update-status"),
+  checkForUpdates: () => ipcRenderer.invoke("openpets:check-for-updates"),
+  openUpdateReleasePage: () => ipcRenderer.invoke("openpets:open-update-release-page"),
+  resetDefaultPetPosition: () => ipcRenderer.invoke("openpets:reset-default-pet-position"),
+  getPluginsSnapshot: () => ipcRenderer.invoke("openpets:plugins-snapshot"),
+  getPluginCatalogSnapshot: (refresh) => ipcRenderer.invoke("openpets:plugins-catalog-snapshot", refresh),
+  setPluginEnabled: (id, enabled) => ipcRenderer.invoke("openpets:plugins-set-enabled", id, enabled),
+  savePluginConfig: (id, config) => ipcRenderer.invoke("openpets:plugins-save-config", id, config),
+  reloadPlugin: (id) => ipcRenderer.invoke("openpets:plugins-reload", id),
+  executePluginCommand: (id, commandId) => ipcRenderer.invoke("openpets:plugins-execute-command", id, commandId),
+  loadLocalPlugin: () => ipcRenderer.invoke("openpets:plugins-load-local"),
+  installCatalogPlugin: (id) => ipcRenderer.invoke("openpets:plugins-install-catalog", id),
+  updateCatalogPlugin: (id) => ipcRenderer.invoke("openpets:plugins-update-catalog", id),
+  uninstallPlugin: (id) => ipcRenderer.invoke("openpets:plugins-uninstall", id),
+  getCatalog: () => ipcRenderer.invoke("openpets:get-catalog"),
+  getCatalogPage: (page) => ipcRenderer.invoke("openpets:get-catalog-page", page),
+  getCatalogSearch: () => ipcRenderer.invoke("openpets:get-catalog-search"),
+  getCodexPets: () => ipcRenderer.invoke("openpets:get-codex-pets"),
+  setDefaultPet: (petId) => ipcRenderer.invoke("openpets:set-default-pet", petId),
+  installPet: (petId) => ipcRenderer.invoke("openpets:install-pet", petId),
+  importCodexPet: (petId) => ipcRenderer.invoke("openpets:import-codex-pet", petId),
+  removePet: (petId) => ipcRenderer.invoke("openpets:remove-pet", petId),
+  onRouteChange: (callback) => {
+    const listener = (_event, route) => callback(route);
+    ipcRenderer.on("openpets:control-center-route", listener);
+    return () => ipcRenderer.removeListener("openpets:control-center-route", listener);
+  },
+  getIntegrationsState: (selectedPetId, commandMode) => ipcRenderer.invoke("openpets:agent-setup-snapshot", selectedPetId, commandMode),
+  runIntegrationAction: (action, selectedPetId, commandMode) => ipcRenderer.invoke("openpets:agent-setup-action", action, selectedPetId, commandMode),
+  updateIntegrationCommandPaths: (patch) => ipcRenderer.invoke("openpets:agent-setup-command-paths", patch),
+};
+
+contextBridge.exposeInMainWorld("openPetsControlCenter", api);

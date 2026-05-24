@@ -114,6 +114,7 @@ export class PluginService {
     const record = this.stateStore.getRecord(id);
     if (!record) return this.#error("Plugin is not installed.");
     if (enabled && record.catalogDisabled) return this.#error("Plugin is disabled in the catalog.");
+    if (enabled && record.brokenReason) return this.#error(record.brokenReason);
     this.stateStore.setEnabled(id, enabled);
     await this.runtime.reloadPlugin(id);
     return { ok: true, snapshot: await this.getSnapshot() };

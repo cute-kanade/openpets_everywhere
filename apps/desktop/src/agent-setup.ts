@@ -351,7 +351,7 @@ async function getOpenCodeSetup(commandMode: OpenPetsCommandMode, selectedPetId:
       label: configured ? "Installed" : globalState.status === "custom" || globalState.status === "conflict" ? "Needs attention" : detected.ok ? "Ready" : "Not detected",
       details: globalState.status === "custom" || globalState.status === "conflict" || globalState.status === "error" ? globalState.message : configured ? globalState.message : detected.ok ? "OpenCode was detected. Desktop setup writes global OpenCode config." : getPreferredOpenCodeCommand() === (process.platform === "win32" ? "opencode.cmd" : "opencode") ? "OpenCode was not found on PATH. You can still preview setup, but OpenCode must be installed to use it." : "OpenCode did not run from the saved command path. You can still preview setup, but OpenCode must be installed to use it.",
       configDir: formatUserPath(configDir) ?? configDir,
-      canInstall: prepared.ok,
+      canInstall: prepared.ok && !configured,
       canRemove: configured,
     },
     preview: {
