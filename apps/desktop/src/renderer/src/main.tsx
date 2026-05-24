@@ -1813,6 +1813,8 @@ function App() {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const petDetailDialogRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => api.onRouteChange((route) => {
     if (isRoute(route)) setCurrentRoute(route);
@@ -1900,6 +1902,49 @@ function App() {
 
   const selected = selectedId ? pets.find((p) => p.id === selectedId) ?? null : null;
   const defaultId = state?.preferences.defaultPetId;
+
+  useEffect(() => {
+    if (!selected) return;
+
+    const dialog = petDetailDialogRef.current;
+    if (!dialog) return;
+
+    previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusableSelector = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+    requestAnimationFrame(() => {
+      dialog.querySelector<HTMLElement>(focusableSelector)?.focus();
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSelectedId("");
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => element.offsetParent !== null);
+      if (!focusable.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      previouslyFocusedElementRef.current?.focus();
+    };
+  }, [selected]);
 
   useEffect(() => {
     if (!selected) return;
@@ -2037,6 +2082,7 @@ function App() {
                   key={f}
                   className={`filter ${filter === f ? "active" : ""} ${f === "originals" ? "original" : ""} ${f === "featured" ? "featured" : ""}`}
                   onClick={() => setFilter(f)}
+                  aria-current={filter === f ? "page" : undefined}
                 >
                   <span className="filter-icon-wrapper">{filterIcons[f]}</span>
                   <span className="filter-text">{filterLabels[f]}</span>
@@ -2100,7 +2146,7 @@ function App() {
           </GlassCard>
 
           {selected ? (
-            <div className="plugin-config-overlay" role="dialog" aria-modal="true" aria-label={`${selected.displayName} pet details`}>
+            <div ref={petDetailDialogRef} className="plugin-config-overlay" role="dialog" aria-modal="true" aria-label={`${selected.displayName} pet details`}>
               <button className="plugin-config-backdrop" type="button" aria-label="Close pet details" onClick={() => setSelectedId("")} />
               <GlassCard className="plugin-inspector pet-detail-inspector">
                 <div className="plugin-inspector-head">

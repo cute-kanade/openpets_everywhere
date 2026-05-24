@@ -237,6 +237,19 @@ The Control Center Integrations page now supports:
 
 Integrations is now served by the Control Center route, including command-source selection for published, bundled, or local development CLI modes.
 
+### Dashboard UI
+
+The Control Center Dashboard now supports:
+
+- default companion overview with animated sprite preview
+- quick navigation into pet selection
+- message and reaction activity totals
+- top companion and top reaction summaries
+- last-interaction timestamp
+- compact system health for installed pets, plugins, catalog, updates, and app version
+
+Dashboard is now the default Control Center landing route.
+
 ### Build/test integration
 
 Updated desktop scripts/configs so the new renderer participates in normal validation.
@@ -299,7 +312,6 @@ Completed phases:
 
 Remaining follow-up:
 
-- Replace the placeholder Dashboard route with a real overview before using it as a default landing page.
 - Continue manual smoke coverage for tray route retargeting, plugin workflows, and integration setup flows.
 
 ## Validation Commands

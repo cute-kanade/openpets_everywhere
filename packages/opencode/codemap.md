@@ -4,7 +4,7 @@ OpenCode editor integration for OpenPets.
 
 ## Responsibility
 
-Provides comprehensive OpenCode editor integration including: MCP server configuration, plugin runtime with event hooks, project/global setup management, and instruction file generation.
+Provides comprehensive OpenCode editor integration including: MCP server configuration, plugin runtime with event hooks, project/global setup management/removal, and instruction file generation.
 
 ## Design
 
@@ -36,8 +36,10 @@ Provides comprehensive OpenCode editor integration including: MCP server configu
 
 **Global Setup** (`opencode-global-setup.ts`):
 - Similar to project setup but for `~/.config/opencode/`
-- Cleanup writes: Removes duplicate entries from other config files
+- Setup cleanup writes: Removes managed duplicate entries from other config files
+- Remove support: `prepareOpenCodeGlobalRemove()` / `writePreparedOpenCodeGlobalRemove()` remove managed MCP, instruction, and plugin entries plus the managed instruction block
 - Doctor command: `doctorOpenCodeGlobalSetup()` for status checking
+- Config precedence handling: chooses the effective config file across `config.json`, `opencode.json`, and `opencode.jsonc`, preserving existing user arrays when safe
 
 **Status Classification** (`opencode-status.ts`):
 - MCP entry detection: `isManagedOpenPetsMcpEntry()`
@@ -50,6 +52,7 @@ Provides comprehensive OpenCode editor integration including: MCP server configu
 - Plugin spec builder: `buildOpenCodePluginPreview()`
 - Instruction path builder: `buildOpenCodeInstructionPath()`
 - Pet ID validation: `validateOpenPetsPetArg()`
+- MCP config formatter: `formatOpenCodeMcpConfig()`
 
 ## Flow
 
@@ -80,6 +83,11 @@ writePreparedOpenCodeProjectSetup() → Execute writes atomically
 - `@open-pets/agent-events` - Speech pools and validation
 - `jsonc-parser` - JSONC config parsing and editing
 
+**Package Surface**:
+- Package version: `2.1.1`
+- Main export (`.`): setup, config, preview, status, and runtime APIs from `dist/index.js`
+- Server export (`./server`): OpenCode plugin default export from `dist/plugin.js`
+
 **Consumers**:
 - `@open-pets/cli` - `configure` command for OpenCode projects
 
@@ -87,4 +95,5 @@ writePreparedOpenCodeProjectSetup() → Execute writes atomically
 - `plugin.ts` - Default plugin export for OpenCode
 - `prepareOpenCodeProjectSetup()`, `writePreparedOpenCodeProjectSetup()`
 - `prepareOpenCodeGlobalSetup()`, `writePreparedOpenCodeGlobalSetup()`
+- `prepareOpenCodeGlobalRemove()`, `writePreparedOpenCodeGlobalRemove()`
 - Config management utilities
