@@ -16,14 +16,15 @@ The current implementation includes:
 - Catalog v2 support at `https://openpets.dev/plugins/catalog.v2.json`, with v1 fallback for older/declarative catalog support.
 - Local developer plugin loading through explicit environment variables.
 - Host-rendered plugin configuration and command UI in the desktop Plugins window.
-- Five launch-current first-party JavaScript plugins under `plugins/official`:
+- Six launch-current first-party JavaScript plugins under `plugins/official`:
   - `openpets.ambient-companion`
   - `openpets.break-buddy`
   - `openpets.pet-pal`
   - `openpets.focus-buddy`
+  - `openpets.wander-buddy`
   - `openpets.github-notifications`
 
-Ambient Companion, Break Buddy, Pet Pal, and Focus Buddy form the companion-first default bundle. GitHub Notifications remains available as a Developer/Advanced plugin and is not part of the regular-user default experience.
+Ambient Companion, Break Buddy, Pet Pal, Focus Buddy, and Wander Buddy form the companion-first default bundle. GitHub Notifications remains available as a Developer/Advanced plugin and is not part of the regular-user default experience.
 
 ## Non-goals for the current release
 
@@ -141,6 +142,7 @@ Current JavaScript plugin permissions:
 
 - `pet:speak`: show pet speech bubbles.
 - `pet:reaction`: trigger pet reactions.
+- `pet:move`: request bounded default-pet movement through the safe main-process movement API.
 - `schedule`: schedule one-shot, interval, or daily callbacks.
 - `storage`: use per-plugin persisted state.
 - `status`: show status text/tone in the Plugins UI.
@@ -158,6 +160,9 @@ type OpenPetsPluginContext = {
   pet: {
     speak(message: string): Promise<void>
     react(reaction: string): Promise<void>
+    moveBy(options: { x: number; y: number; durationMs?: number }): Promise<void>
+    wander(options: { distance?: number; durationMs?: number }): Promise<void>
+    moveToHome(): Promise<void>
   }
   schedule: {
     once(id: string, delayMs: number, handler: () => void | Promise<void>): Promise<void>
@@ -206,6 +211,7 @@ type OpenPetsPluginContext = {
 The main-process SDK bridge validates and limits plugin behavior:
 
 - Pet messages/reactions go through normal OpenPets validation.
+- Pet movement only affects the default pet, never resizes windows, clamps to the primary work area, caps each move to about 160px, uses 250-1500ms stepped animation, skips while hidden/paused/dragging/busy, and saves the final position.
 - Schedule ids and command ids must be short safe identifiers.
 - Interval schedules have a minimum delay.
 - Daily schedules require `HH:mm` and optional weekdays `0-6`.
@@ -365,6 +371,12 @@ Uses:
 - `pet:speak` and `pet:reaction` for start/complete feedback
 
 Config includes focus length, break lengths, long-break cadence, auto-start options, and custom messages/reactions. Focus Buddy is enabled by default in the bundled set but passive: it does not auto-start or interrupt until the user invokes a command.
+
+### Wander Buddy
+
+Purpose: quiet companion movement so the default pet occasionally takes small safe walks without speech spam.
+
+Uses `pet:move`, `schedule`, `storage`, `commands`, and `status`. It is bundled and enabled by default with conservative Subtle/Rare defaults, respects quiet hours, and exposes right-click commands for “Take a little walk”, “Return home”, and “Stay still for now”.
 
 ### GitHub Notifications
 

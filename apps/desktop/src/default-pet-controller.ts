@@ -4,7 +4,7 @@ import { getAppStateSnapshot, getDefaultPetPosition, resetDefaultPetPosition, se
 import { defaultPetWindowSize, getDefaultPetInitialPosition } from "./display.js";
 import { debug, info } from "./logger.js";
 import { transientDisplayMs, type OpenPetsReaction } from "./local-ipc-protocol.js";
-import { clearTransientReaction, createDefaultPetWindow, getSafeDefaultPetPosition, getTransientDisplayDurationMs, getTransientReactionAnimationMs, loadDefaultPetContent, mergePetTransientDisplay, readWindowPosition, recoverPetMouseInterop, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
+import { clearTransientReaction, createDefaultPetWindow, getSafeDefaultPetPosition, getTransientDisplayDurationMs, getTransientReactionAnimationMs, isPetWindowDragging, loadDefaultPetContent, mergePetTransientDisplay, readWindowPosition, recoverPetMouseInterop, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
 
 let defaultPetWindow: BrowserWindow | null = null;
 let paused = false;
@@ -15,6 +15,13 @@ let transientAnimationTimeout: NodeJS.Timeout | null = null;
 let statusBadgeTimeout: NodeJS.Timeout | null = null;
 let displayGeneration = 0;
 const busyStatusBadgeMs = 120_000;
+const maxPluginMoveDistance = 160;
+const minPluginMoveDurationMs = 250;
+const maxPluginMoveDurationMs = 1_500;
+let movementInProgress = false;
+
+export type PetMoveOptions = { readonly x: number; readonly y: number; readonly durationMs?: number };
+export type PetWanderOptions = { readonly distance?: number; readonly durationMs?: number };
 
 export function showDefaultPet(): void {
   updatePreferences({ openDefaultPetOnLaunch: true });
@@ -99,6 +106,23 @@ export function applyExternalPetSay(message: string, reaction?: OpenPetsReaction
   setTransientDisplay({ message, reaction });
   showDefaultPetForExternalEvent();
   return { shown: isDefaultPetVisible() };
+}
+
+export function applyExternalPetMoveBy(options: PetMoveOptions): Promise<{ readonly moved: boolean; readonly reason?: string }> {
+  return moveDefaultPetBy(Number(options.x), Number(options.y), options.durationMs);
+}
+
+export function applyExternalPetWander(options: PetWanderOptions): Promise<{ readonly moved: boolean; readonly reason?: string }> {
+  const distance = clampNumber(Number(options.distance ?? 80), 0, maxPluginMoveDistance);
+  const angle = Math.random() * Math.PI * 2;
+  return moveDefaultPetBy(Math.cos(angle) * distance, Math.sin(angle) * distance, options.durationMs);
+}
+
+export function applyExternalPetMoveToHome(): Promise<{ readonly moved: boolean; readonly reason?: string }> {
+  if (!defaultPetWindow || defaultPetWindow.isDestroyed()) return Promise.resolve({ moved: false, reason: "no-window" });
+  const current = readWindowPosition(defaultPetWindow);
+  const home = getSafeDefaultPetPosition(getDefaultPetInitialPosition(defaultPetWindowSize));
+  return moveDefaultPetBy(home.x - current.x, home.y - current.y, maxPluginMoveDurationMs, Number.POSITIVE_INFINITY);
 }
 
 export function destroyDefaultPet(): void {
@@ -207,6 +231,60 @@ function showDefaultPetForExternalEvent(): void {
   if (isDefaultPetVisible() || state.preferences.openDefaultPetOnLaunch) {
     showDefaultPet();
   }
+}
+
+async function moveDefaultPetBy(rawX: number, rawY: number, rawDurationMs: unknown, maxDistance = maxPluginMoveDistance): Promise<{ readonly moved: boolean; readonly reason?: string }> {
+  if (!defaultPetWindow || defaultPetWindow.isDestroyed()) return { moved: false, reason: "no-window" };
+  const window = defaultPetWindow;
+  const blockedReason = getMovementBlockedReason(window);
+  if (blockedReason) {
+    debug("pet.default", "move skipped", { reason: blockedReason });
+    return { moved: false, reason: blockedReason };
+  }
+  const current = readWindowPosition(window);
+  const distance = Math.min(Math.hypot(rawX, rawY), maxDistance);
+  if (!Number.isFinite(distance) || distance <= 0) return { moved: false, reason: "invalid-distance" };
+  const scale = distance / Math.hypot(rawX, rawY);
+  const target = getSafeDefaultPetPosition({ x: current.x + rawX * scale, y: current.y + rawY * scale });
+  const durationMs = clampNumber(Number(rawDurationMs ?? 700), minPluginMoveDurationMs, maxPluginMoveDurationMs);
+  const steps = Math.max(8, Math.min(16, Math.round(durationMs / 100)));
+  movementInProgress = true;
+  debug("pet.default", "move start", { windowId: window.id, from: current, target, durationMs, steps });
+  try {
+    for (let step = 1; step <= steps; step += 1) {
+      if (window.isDestroyed()) return { moved: false, reason: "destroyed" };
+      const blocked = getMovementBlockedReason(window, true);
+      if (blocked) return { moved: false, reason: blocked };
+      const t = step / steps;
+      window.setPosition(Math.round(current.x + (target.x - current.x) * t), Math.round(current.y + (target.y - current.y) * t), false);
+      await delay(durationMs / steps);
+    }
+    window.setPosition(target.x, target.y, false);
+    setDefaultPetPosition(target);
+    debug("pet.default", "move finished", { windowId: window.id, target });
+    return { moved: true };
+  } finally {
+    movementInProgress = false;
+  }
+}
+
+function getMovementBlockedReason(window: BrowserWindow, allowMoving = false): string | undefined {
+  if (movementInProgress && !allowMoving) return "already-moving";
+  if (!window.isVisible()) return "hidden";
+  if (paused) return "paused";
+  if (isPetWindowDragging(window)) return "dragging";
+  if (transientDisplay) return "transient-display";
+  if (statusBadge) return "status-active";
+  return undefined;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function setStatusBadge(reaction: OpenPetsReaction): void {

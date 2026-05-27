@@ -29,7 +29,7 @@ type DashboardActivity = { messagesSent: number; reactionsSent: number; reaction
 type DashboardSnapshot = { defaultPet: { id: string; displayName: string; previewSpriteUrl: string }; installedPetCount: number; catalog: { source: string; total?: number; page?: number; pageCount?: number; error?: string }; plugins: { installed: number; enabled: number; broken: number }; updateStatus: UpdateStatus; activity: DashboardActivity };
 type ReactionAnimationSettings = { reactions: { id: string; label: string; description: string; defaultAnimation: UserSelectableAnimationState }[]; animations: { id: UserSelectableAnimationState; label: string; description: string }[]; sprite: { frameWidth: number; frameHeight: number; columns: number; rows: number; states: Record<UserSelectableAnimationState, { row: number; frames: number; durationMs: number; iterations?: number | "infinite" }> }; overrides: ReactionAnimationOverrides; previewSpriteUrl: string };
 type PluginFilter = "all" | "installed" | "catalog" | "local" | "broken";
-type PluginPermission = "pet:speak" | "pet:reaction" | "timer" | "schedule" | "storage" | "status" | "commands" | "network";
+type PluginPermission = "pet:speak" | "pet:reaction" | "pet:move" | "timer" | "schedule" | "storage" | "status" | "commands" | "network";
 type PluginIconName = "plugin" | "bell" | "timer" | "github" | "heart" | "sparkles" | "coffee" | "focus";
 type PluginConfigField = { type: "text" | "textarea" | "number" | "boolean" | "select" | "time" | "multiSelect" | "list"; label?: string; description?: string; default?: string | number | boolean | string[] | Array<Record<string, unknown>>; options?: Array<{ label: string; value: string }>; min?: number; max?: number; step?: number; maxLength?: number; maxItems?: number; itemSchema?: Record<string, PluginConfigField> };
 type PluginConfigSchema = Record<string, PluginConfigField>;
@@ -1080,6 +1080,7 @@ const pluginFilterLabels: Record<PluginFilter, string> = {
 const pluginPermissionLabels: Record<PluginPermission, string> = {
   "pet:speak": "Speech",
   "pet:reaction": "Reactions",
+  "pet:move": "Movement",
   timer: "Timers",
   schedule: "Schedule",
   storage: "Storage",

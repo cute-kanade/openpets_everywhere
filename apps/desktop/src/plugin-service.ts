@@ -65,8 +65,8 @@ export type PluginServiceOptions = {
   readonly bundledPluginSourceDirs?: readonly string[];
 };
 
-export const bundledOfficialPluginIds = ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.github-notifications"] as const;
-const bundledEnabledByDefault = new Set<string>(["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy"]);
+export const bundledOfficialPluginIds = ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy", "openpets.github-notifications"] as const;
+const bundledEnabledByDefault = new Set<string>(["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy"]);
 const staleBundledPluginIds = ["openpets.daily-reminders", "openpets.pomodoro"] as const;
 
 export class PluginService {

@@ -354,7 +354,7 @@ function assertNonEmptyFile(path: string, message: string): void {
 }
 
 function assertBundledOfficialPlugins(resourceDir: string): void {
-  for (const id of ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.github-notifications"]) {
+  for (const id of ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy", "openpets.github-notifications"]) {
     const dir = join(resourceDir, "plugins", "official", id);
     const manifestPath = join(dir, "openpets.plugin.json");
     assertNonEmptyFile(manifestPath, `packaged bundled plugin manifest is missing: ${id}`);

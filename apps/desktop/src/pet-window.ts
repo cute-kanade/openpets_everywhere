@@ -55,6 +55,11 @@ const petWindowRenderCache = new WeakMap<BrowserWindow, string>();
 const windowLoadChains = new WeakMap<BrowserWindow, Promise<void>>();
 const windowLoadSequences = new WeakMap<BrowserWindow, number>();
 const petMouseInteropRecovery = new WeakMap<BrowserWindow, (reason: string) => void>();
+const petWindowDragging = new WeakMap<BrowserWindow, boolean>();
+
+export function isPetWindowDragging(window: BrowserWindow): boolean {
+  return petWindowDragging.get(window) === true;
+}
 
 export function createDefaultPetWindow(options: DefaultPetWindowOptions, dismissToken?: string): BrowserWindow {
   const window = createBasePetWindow("OpenPets — Default Pet", options.position);
@@ -285,6 +290,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
     if (!isFromWindow(event) || !isScreenPoint(point) || window.isDestroyed()) return;
     const [startWindowX, startWindowY] = window.getPosition();
     dragging = { startScreenX: point.screenX, startScreenY: point.screenY, startWindowX, startWindowY };
+    petWindowDragging.set(window, true);
     debug("pet.window", "drag start", { windowId, point, startWindowX, startWindowY });
     clearWindowsForwardingWatch();
     setPassthrough(false);
@@ -298,6 +304,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
   const handleDragEnd = (event: IpcMainEvent): void => {
     if (!isFromWindow(event)) return;
     dragging = null;
+    petWindowDragging.set(window, false);
     debug("pet.window", "drag end", { windowId, position: window.isDestroyed() ? null : readWindowPosition(window) });
   };
 
@@ -309,6 +316,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
 
   const resetForNavigation = (): void => {
     dragging = null;
+    petWindowDragging.set(window, false);
     rendererReady = false;
     lastInteractive = false;
     clearRearmTimers();
@@ -318,6 +326,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
 
   const rearmAfterLoad = (): void => {
     dragging = null;
+    petWindowDragging.set(window, false);
     lastInteractive = false;
     debug("pet.window", "load rearm passthrough", { windowId });
     rearmPassthroughAfterLoad();
@@ -346,6 +355,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed
     clearRearmTimers();
     clearWindowsForwardingWatch();
     petMouseInteropRecovery.delete(window);
+    petWindowDragging.delete(window);
     if (!webContents.isDestroyed()) {
       webContents.off("did-start-navigation", resetForNavigation);
       webContents.off("did-start-loading", resetForNavigation);

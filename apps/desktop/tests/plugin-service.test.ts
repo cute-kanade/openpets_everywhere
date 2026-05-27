@@ -36,7 +36,7 @@ class ThrowingStateStore extends PluginStateStore {
 }
 
 await scenario("initializes store and roots", async ({ userData }) => {
-  const service = new PluginService({ userDataPath: userData, petApi: { speak() {}, react() {} } });
+  const service = new PluginService({ userDataPath: userData, petApi: { speak() {}, react() {}, moveBy() {}, wander() {}, moveToHome() {} } });
   await service.start();
   assert.equal(existsSync(join(userData, "plugins")), true);
   assert.equal(existsSync(join(userData, "plugins-dev")), true);

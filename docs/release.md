@@ -81,6 +81,7 @@ Release goals:
    - Break Buddy (`openpets.break-buddy`)
    - Pet Pal (`openpets.pet-pal`)
    - Focus Buddy (`openpets.focus-buddy`)
+   - Wander Buddy (`openpets.wander-buddy`)
    - GitHub Notifications (`openpets.github-notifications`)
 3. Remove legacy sample plugins from public discovery:
    - Break Reminder
@@ -118,9 +119,9 @@ Manual desktop QA:
 
 1. Run normal desktop dev startup or a packaged app (`pnpm dev:desktop` or the output from `pnpm --filter @open-pets/desktop package:dir`) so bundled seeding runs.
 2. Open tray → Plugins.
-3. Confirm Ambient Companion, Break Buddy, Pet Pal, Focus Buddy, and GitHub Notifications appear in dev mode.
+3. Confirm Ambient Companion, Break Buddy, Pet Pal, Focus Buddy, Wander Buddy, and GitHub Notifications appear in dev mode.
 4. Confirm old sample plugins do not appear.
-5. Confirm Ambient Companion, Break Buddy, Pet Pal, and Focus Buddy are bundled/default-enabled as intended; Focus Buddy should remain passive until a command starts a session.
+5. Confirm Ambient Companion, Break Buddy, Pet Pal, Focus Buddy, and Wander Buddy are bundled/default-enabled as intended; Focus Buddy should remain passive until a command starts a session, and Wander Buddy should use conservative movement defaults.
 6. Configure Break Buddy with break/reminder cards, not JSON.
 7. Run Pet Pal and Focus Buddy commands from the Plugins UI and pet right-click menu when available.
 8. Configure GitHub public repositories; verify no token/OAuth UI exists.
@@ -135,7 +136,7 @@ For explicit local plugin development, run `pnpm dev:desktop:plugins` separately
 Web release includes:
 
 - `plugins/official/**` source plugins.
-- `web/public/plugins/catalog.v2.json` with the five official plugins.
+- `web/public/plugins/catalog.v2.json` with the six official plugins.
 - `web/public/plugins/catalog.v1.json` with an empty plugin list.
 - Removal of legacy sample plugin manifests.
 - Updated `web/docs/plugin-publishing.md`.
@@ -157,7 +158,7 @@ Publishing sequence:
    pnpm plugins:check
    pnpm plugins:package
    ```
-2. Confirm `web/public/plugins/catalog.v2.json` has only the five launch-current official plugins.
+2. Confirm `web/public/plugins/catalog.v2.json` has only the six launch-current official plugins.
 3. Confirm `web/public/plugins/catalog.v1.json` has `plugins: []`.
 4. Upload plugin ZIPs to R2 and regenerate catalogs:
    ```bash

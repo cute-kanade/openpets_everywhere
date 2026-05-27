@@ -5,7 +5,7 @@ export const openPetsPluginManifestFilename = OPENPETS_PLUGIN_MANIFEST_FILENAME;
 
 export type PluginRuntime = "declarative";
 export type KnownPluginRuntime = PluginRuntime | "javascript";
-export type PluginPermission = "pet:speak" | "pet:reaction" | "timer" | "schedule" | "storage" | "status" | "commands" | "network";
+export type PluginPermission = "pet:speak" | "pet:reaction" | "pet:move" | "timer" | "schedule" | "storage" | "status" | "commands" | "network";
 export type PluginJavascriptPermission = Exclude<PluginPermission, "timer">;
 export type PluginIcon = "plugin" | "bell" | "timer" | "github" | "heart" | "sparkles" | "coffee" | "focus";
 export type PluginConfigFieldType = "text" | "textarea" | "number" | "boolean" | "select" | "time" | "multiSelect" | "list";
@@ -80,8 +80,8 @@ const supportedConfigTypes = new Set(["text", "textarea", "number", "boolean", "
 const deferredConfigTypes = new Set(["multi-select", "date", "schedule", "connection", "secret"]);
 const deferredConfigFeatures = new Set(["dynamicOptions"]);
 const supportedPluginIcons = new Set(["plugin", "bell", "timer", "github", "heart", "sparkles", "coffee", "focus"]);
-export const pluginPermissions = ["pet:speak", "pet:reaction", "timer", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginPermission[];
-const javascriptPluginPermissions = ["pet:speak", "pet:reaction", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginJavascriptPermission[];
+export const pluginPermissions = ["pet:speak", "pet:reaction", "pet:move", "timer", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginPermission[];
+const javascriptPluginPermissions = ["pet:speak", "pet:reaction", "pet:move", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginJavascriptPermission[];
 export const pluginPermissionSet: ReadonlySet<string> = new Set(pluginPermissions);
 const declarativePluginPermissionSet: ReadonlySet<string> = new Set(["pet:speak", "pet:reaction", "timer"]);
 
@@ -182,7 +182,7 @@ function validatePermissions(value: unknown, errors: PluginManifestValidationErr
   }
   value.forEach((permission, index) => {
     if (typeof permission !== "string" || !allowedPermissions.has(permission)) {
-      addError(errors, `$.permissions[${index}]`, "invalid_permission", "Permission must be one of pet:speak, pet:reaction, timer.");
+      addError(errors, `$.permissions[${index}]`, "invalid_permission", `Permission must be one of ${[...allowedPermissions].join(", ")}.`);
       return;
     }
     if (permissions.has(permission)) {

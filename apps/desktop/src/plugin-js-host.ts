@@ -98,6 +98,9 @@ async function dispatchSdkCall(contents: WebContents, sdk: PluginSdkApi, path: s
   switch (path) {
     case "pet.speak": return sdk.pet.speak(String(args[0]));
     case "pet.react": return sdk.pet.react(args[0] as never);
+    case "pet.moveBy": return sdk.pet.moveBy(args[0] as never);
+    case "pet.wander": return sdk.pet.wander(args[0] as never);
+    case "pet.moveToHome": return sdk.pet.moveToHome();
     case "schedule.once": return sdk.schedule.once(String(args[0]), Number(args[1]), runCallback(args[2]) ?? (() => undefined));
     case "schedule.every": return sdk.schedule.every(String(args[0]), Number(args[1]), runCallback(args[2]) ?? (() => undefined));
     case "schedule.daily": return sdk.schedule.daily(String(args[0]), args[1] as never, runCallback(args[2]) ?? (() => undefined));

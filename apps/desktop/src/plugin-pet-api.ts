@@ -1,11 +1,14 @@
 import { getAppStateSnapshot, recordOpenPetsActivity } from "./app-state.js";
-import { applyExternalPetReaction, applyExternalPetSay } from "./default-pet-controller.js";
+import { applyExternalPetMoveBy, applyExternalPetMoveToHome, applyExternalPetReaction, applyExternalPetSay, applyExternalPetWander, type PetMoveOptions, type PetWanderOptions } from "./default-pet-controller.js";
 import { debug } from "./logger.js";
 import type { OpenPetsReaction } from "./local-ipc-protocol.js";
 
 export interface PluginPetApi {
   speak(message: string): void | Promise<void>;
   react(reaction: OpenPetsReaction): void | Promise<void>;
+  moveBy(options: PetMoveOptions): void | Promise<void>;
+  wander(options: PetWanderOptions): void | Promise<void>;
+  moveToHome(): void | Promise<void>;
 }
 
 export const defaultPluginPetApi: PluginPetApi = {
@@ -17,6 +20,9 @@ export const defaultPluginPetApi: PluginPetApi = {
     applyExternalPetReaction(reaction);
     recordPluginPetActivity({ kind: "react", reaction });
   },
+  moveBy(options) { applyExternalPetMoveBy(options); },
+  wander(options) { applyExternalPetWander(options); },
+  moveToHome() { applyExternalPetMoveToHome(); },
 };
 
 function recordPluginPetActivity(activity: { readonly kind: "say"; readonly reaction?: undefined } | { readonly kind: "react"; readonly reaction: OpenPetsReaction }): void {

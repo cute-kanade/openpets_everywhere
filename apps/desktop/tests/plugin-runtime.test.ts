@@ -43,6 +43,9 @@ class FakePetApi implements PluginPetApi {
     if (this.fail) throw new Error("pet api failed");
     this.events.push(`react:${reaction}`);
   }
+  moveBy(options: { x: number; y: number; durationMs?: number }): void { this.events.push(`moveBy:${options.x},${options.y},${options.durationMs ?? ""}`); }
+  wander(options: { distance?: number; durationMs?: number }): void { this.events.push(`wander:${options.distance ?? ""},${options.durationMs ?? ""}`); }
+  moveToHome(): void { this.events.push("moveToHome"); }
 }
 
 class FakeJsHost implements PluginJsHost {
@@ -89,6 +92,16 @@ await scenario("javascript sdk permission rejection", async ({ store }) => {
   addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: ["commands"] }, jsManifest({ permissions: ["commands"] }));
   await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
   assert.throws(() => jsHost.starts[0].sdk?.storage.set("a", "b"), /not approved/);
+});
+
+await scenario("javascript sdk pet movement requires pet move permission", async ({ store, scheduler, petApi }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: ["pet:move"] }, jsManifest({ permissions: ["pet:move"] }));
+  await runtime(store, scheduler, petApi, undefined, jsHost).start();
+  await jsHost.starts[0].sdk?.pet.moveBy({ x: 20, y: -10, durationMs: 500 });
+  await jsHost.starts[0].sdk?.pet.wander({ distance: 40, durationMs: 700 });
+  await jsHost.starts[0].sdk?.pet.moveToHome();
+  assert.deepEqual(petApi.events, ["moveBy:20,-10,500", "wander:40,700", "moveToHome"]);
 });
 
 await scenario("javascript http fetch allows approved github host", async ({ store }) => {

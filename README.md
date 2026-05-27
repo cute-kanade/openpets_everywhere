@@ -70,7 +70,7 @@ Here is an extra GIF of me starring my own repo to encourage you to do the same.
 OpenPets is a tray-first desktop companion app. A pet appears on your desktop, keeps you company, and can use bundled abilities for ambient presence, breaks, playful actions, and focus sessions. Coding-agent integrations are still supported as an advanced developer layer.
 
 - **Desktop companion** - a small pet that idles, reacts, and gives OpenPets a friendly presence even before developer tools are configured.
-- **Bundled abilities** - first-party plugins can add ambient check-ins, break nudges, playful pet actions, focus timers, and optional developer notifications.
+- **Bundled abilities** - first-party plugins can add ambient check-ins, break nudges, playful pet actions, focus timers, safe little walks, and optional developer notifications.
 - **Developer integrations** - advanced setup for Claude Code, OpenCode, Cursor, Pi, and MCP-capable tools when you want coding activity to drive the pet.
 - **MCP ready** - any MCP-capable agent can send short safe speech bubbles and reactions through the OpenPets MCP server.
 - **Pet-pack friendly** - loads installed animated pet packs and can route a selected agent/project to its own pet window.

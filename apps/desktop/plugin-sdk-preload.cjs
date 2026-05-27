@@ -39,6 +39,9 @@ const sdk = {
   pet: {
     speak: (message) => call("pet.speak", [message]),
     react: (reaction) => call("pet.react", [reaction]),
+    moveBy: (options) => call("pet.moveBy", [options]),
+    wander: (options) => call("pet.wander", [options]),
+    moveToHome: () => call("pet.moveToHome", []),
   },
   schedule: {
     once: (id, delayMs, callback) => call("schedule.once", [id, delayMs, registerCallback(callback)]),

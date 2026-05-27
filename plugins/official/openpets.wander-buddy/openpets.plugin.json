@@ -1,0 +1,20 @@
+{
+  "manifestVersion": 2,
+  "id": "openpets.wander-buddy",
+  "name": "Wander Buddy",
+  "description": "Lets your default pet take occasional safe little walks while staying quiet and unobtrusive.",
+  "version": "1.0.0",
+  "runtime": "javascript",
+  "icon": "sparkles",
+  "sdkVersion": "1.0.0",
+  "entry": "index.js",
+  "permissions": ["pet:move", "schedule", "storage", "commands", "status"],
+  "configSchema": {
+    "movementStyle": { "type": "select", "label": "Movement style", "default": "subtle", "options": [{ "label": "Off", "value": "off" }, { "label": "Subtle", "value": "subtle" }, { "label": "Playful", "value": "playful" }] },
+    "frequency": { "type": "select", "label": "Frequency", "description": "How often Wander Buddy tries a safe movement. Often is limited to every 10 minutes.", "default": "rare", "options": [{ "label": "Rare", "value": "rare" }, { "label": "Normal", "value": "normal" }, { "label": "Often", "value": "often" }] },
+    "maxDistance": { "type": "select", "label": "Max distance", "default": "small", "options": [{ "label": "Small", "value": "small" }, { "label": "Medium", "value": "medium" }] },
+    "quietHoursEnabled": { "type": "boolean", "label": "Quiet hours", "default": true },
+    "quietStart": { "type": "time", "label": "Quiet start", "default": "22:00" },
+    "quietEnd": { "type": "time", "label": "Quiet end", "default": "08:00" }
+  }
+}
