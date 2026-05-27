@@ -13,6 +13,7 @@ files:
   - control-center-preload.cjs
   - pet-preload.cjs
   - plugin-sdk-preload.cjs
+  - plugin-command-form-preload.cjs
   - assets/**
   - package.json
 

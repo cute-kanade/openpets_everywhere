@@ -65,8 +65,8 @@ export type PluginServiceOptions = {
   readonly bundledPluginSourceDirs?: readonly string[];
 };
 
-export const bundledOfficialPluginIds = ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy", "openpets.github-notifications"] as const;
-const bundledEnabledByDefault = new Set<string>(["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy"]);
+export const bundledOfficialPluginIds = ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy", "openpets.quick-reminders", "openpets.github-notifications"] as const;
+const bundledEnabledByDefault = new Set<string>(["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy", "openpets.quick-reminders"]);
 const staleBundledPluginIds = ["openpets.daily-reminders", "openpets.pomodoro"] as const;
 
 export class PluginService {
@@ -180,10 +180,10 @@ export class PluginService {
     return { ok: true, snapshot: await this.getSnapshot() };
   }
 
-  async executeCommand(id: string, commandId: string): Promise<PluginServiceResult> {
+  async executeCommand(id: string, commandId: string, args?: Record<string, unknown>): Promise<PluginServiceResult> {
     const record = this.stateStore.getRecord(id);
     if (!record) return this.#error("Plugin is not installed.");
-    try { await this.runtime.executeCommand(id, commandId); }
+    try { await this.runtime.executeCommand(id, commandId, args); }
     catch (error) { return this.#error(safeError(error)); }
     return { ok: true, snapshot: await this.getSnapshot() };
   }
@@ -441,18 +441,18 @@ export function initializePluginService(userDataPath: string, petApi: PluginPetA
   return appPluginService;
 }
 
-export type PluginCommandMenuItem = { readonly pluginId: string; readonly pluginName: string; readonly commandId: string; readonly commandTitle: string };
+export type PluginCommandMenuItem = { readonly pluginId: string; readonly pluginName: string; readonly commandId: string; readonly commandTitle: string; readonly form?: PluginCommand["form"] };
 export async function getDefaultPetPluginCommands(maxPlugins = 8, maxCommandsPerPlugin = 8): Promise<PluginCommandMenuItem[]> {
   if (!appPluginService) return [];
   const snapshot = await appPluginService.getSnapshot();
   return snapshot.plugins.filter((plugin) => plugin.enabled && !plugin.brokenReason && plugin.commands && plugin.commands.length > 0)
     .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id) || a.id.localeCompare(b.id)).slice(0, maxPlugins)
-    .flatMap((plugin) => [...(plugin.commands ?? [])].sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id)).slice(0, maxCommandsPerPlugin).map((command) => ({ pluginId: plugin.id, pluginName: plugin.name ?? plugin.id, commandId: command.id, commandTitle: command.title })));
+    .flatMap((plugin) => [...(plugin.commands ?? [])].slice(0, maxCommandsPerPlugin).map((command) => ({ pluginId: plugin.id, pluginName: plugin.name ?? plugin.id, commandId: command.id, commandTitle: command.title, form: command.form })));
 }
 
-export async function executeDefaultPetPluginCommand(pluginId: string, commandId: string): Promise<void> {
+export async function executeDefaultPetPluginCommand(pluginId: string, commandId: string, args?: Record<string, unknown>): Promise<void> {
   if (!appPluginService) return;
-  await appPluginService.executeCommand(pluginId, commandId);
+  await appPluginService.executeCommand(pluginId, commandId, args);
 }
 
 export function stopPluginService(): void {

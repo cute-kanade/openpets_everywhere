@@ -82,6 +82,7 @@ Release goals:
    - Pet Pal (`openpets.pet-pal`)
    - Focus Buddy (`openpets.focus-buddy`)
    - Wander Buddy (`openpets.wander-buddy`)
+   - Quick Reminders (`openpets.quick-reminders`)
    - GitHub Notifications (`openpets.github-notifications`)
 3. Remove legacy sample plugins from public discovery:
    - Break Reminder
@@ -136,7 +137,7 @@ For explicit local plugin development, run `pnpm dev:desktop:plugins` separately
 Web release includes:
 
 - `plugins/official/**` source plugins.
-- `web/public/plugins/catalog.v2.json` with the six official plugins.
+- `web/public/plugins/catalog.v2.json` with the seven official plugins.
 - `web/public/plugins/catalog.v1.json` with an empty plugin list.
 - Removal of legacy sample plugin manifests.
 - Updated `web/docs/plugin-publishing.md`.
@@ -158,7 +159,7 @@ Publishing sequence:
    pnpm plugins:check
    pnpm plugins:package
    ```
-2. Confirm `web/public/plugins/catalog.v2.json` has only the six launch-current official plugins.
+2. Confirm `web/public/plugins/catalog.v2.json` has only the seven launch-current official plugins.
 3. Confirm `web/public/plugins/catalog.v1.json` has `plugins: []`.
 4. Upload plugin ZIPs to R2 and regenerate catalogs:
    ```bash

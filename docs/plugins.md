@@ -16,15 +16,16 @@ The current implementation includes:
 - Catalog v2 support at `https://openpets.dev/plugins/catalog.v2.json`, with v1 fallback for older/declarative catalog support.
 - Local developer plugin loading through explicit environment variables.
 - Host-rendered plugin configuration and command UI in the desktop Plugins window.
-- Six launch-current first-party JavaScript plugins under `plugins/official`:
+- Seven launch-current first-party JavaScript plugins under `plugins/official`:
   - `openpets.ambient-companion`
   - `openpets.break-buddy`
   - `openpets.pet-pal`
   - `openpets.focus-buddy`
   - `openpets.wander-buddy`
+  - `openpets.quick-reminders`
   - `openpets.github-notifications`
 
-Ambient Companion, Break Buddy, Pet Pal, Focus Buddy, and Wander Buddy form the companion-first default bundle. GitHub Notifications remains available as a Developer/Advanced plugin and is not part of the regular-user default experience.
+Ambient Companion, Break Buddy, Pet Pal, Focus Buddy, Wander Buddy, and Quick Reminders form the companion-first default bundle. GitHub Notifications remains available as a Developer/Advanced plugin and is not part of the regular-user default experience.
 
 ## Non-goals for the current release
 
@@ -181,7 +182,7 @@ type OpenPetsPluginContext = {
     onChange(handler: (config: T) => void | Promise<void>): () => void
   }
   commands: {
-    register(command: { id: string; title: string; description?: string }, handler: () => void | Promise<void>): Promise<void>
+    register(command: { id: string; title: string; description?: string; form?: { submitLabel?: string; fields: Array<{ id: string; type: "text" | "textarea" | "number"; label: string; default?: string | number; min?: number; max?: number; maxLength?: number; required?: boolean }> } }, handler: (values?: Record<string, unknown>) => void | Promise<void>): Promise<void>
     unregister(id: string): Promise<void>
   }
   status: {
@@ -213,6 +214,7 @@ The main-process SDK bridge validates and limits plugin behavior:
 - Pet messages/reactions go through normal OpenPets validation.
 - Pet movement only affects the default pet, never resizes windows, clamps to the primary work area, caps each move to about 160px, uses 250-1500ms stepped animation, skips while hidden/paused/dragging/busy, and saves the final position.
 - Schedule ids and command ids must be short safe identifiers.
+- Commands may include a tiny host-rendered form schema. The pet context menu opens these forms in a dedicated dialog and passes validated values to the command handler.
 - Interval schedules have a minimum delay.
 - Daily schedules require `HH:mm` and optional weekdays `0-6`.
 - Storage keys are restricted and plugin storage has a size quota.
@@ -377,6 +379,12 @@ Config includes focus length, break lengths, long-break cadence, auto-start opti
 Purpose: quiet companion movement so the default pet occasionally takes small safe walks without speech spam.
 
 Uses `pet:move`, `schedule`, `storage`, `commands`, and `status`. It is bundled and enabled by default with conservative Subtle/Rare defaults, respects quiet hours, and exposes right-click commands for “Take a little walk”, “Return home”, and “Stay still for now”.
+
+### Quick Reminders
+
+Purpose: local one-shot reminders set from the pet context menu.
+
+Uses `commands`, command forms, `schedule`, `storage`, `status`, `pet:speak`, and `pet:reaction`. It is bundled and enabled by default, but passive until the user sets a reminder.
 
 ### GitHub Notifications
 

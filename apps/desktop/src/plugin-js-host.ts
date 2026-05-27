@@ -94,7 +94,7 @@ function installSdkHandler(channel: string, contents: WebContents, sdk: PluginSd
 }
 
 async function dispatchSdkCall(contents: WebContents, sdk: PluginSdkApi, path: string, args: unknown[]): Promise<unknown> {
-  const runCallback = (id: unknown) => typeof id === "string" ? () => contents.executeJavaScript(`globalThis.__openPetsRunCallback(${JSON.stringify(id)}, [])`, true) : undefined;
+  const runCallback = (id: unknown) => typeof id === "string" ? (...callbackArgs: unknown[]) => contents.executeJavaScript(`globalThis.__openPetsRunCallback(${JSON.stringify(id)}, ${JSON.stringify(callbackArgs)})`, true) : undefined;
   switch (path) {
     case "pet.speak": return sdk.pet.speak(String(args[0]));
     case "pet.react": return sdk.pet.react(args[0] as never);

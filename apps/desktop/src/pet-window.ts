@@ -11,6 +11,7 @@ import type { OpenPetsReaction } from "./local-ipc-protocol.js";
 import { pickReactionMessage } from "./reaction-messages.js";
 import { debug, error as logError, info } from "./logger.js";
 import { executeDefaultPetPluginCommand, getDefaultPetPluginCommands } from "./plugin-service.js";
+import type { PluginCommandForm } from "./plugin-sdk-bridge.js";
 import { defaultPetSprite, motionToSpriteState, resolveReactionSpriteState, type PetMotionState, type UniversalSpriteState } from "./reaction-animation-mapping.js";
 
 export interface DefaultPetWindowOptions {
@@ -128,7 +129,7 @@ async function buildPetContextMenuTemplate(action: { readonly label: string; rea
   const plugins = new Map<string, { name: string; commands: Electron.MenuItemConstructorOptions[] }>();
   for (const command of commands) {
     const group = plugins.get(command.pluginId) ?? { name: command.pluginName, commands: [] };
-    group.commands.push({ label: command.commandTitle, click: () => { executeDefaultPetPluginCommand(command.pluginId, command.commandId).catch((error) => logError("pet.window", "plugin command failed", error)); } });
+    group.commands.push({ label: command.commandTitle, click: () => { if (command.form) openPluginCommandForm(command).catch((error) => logError("pet.window", "plugin command form failed", error)); else executeDefaultPetPluginCommand(command.pluginId, command.commandId).catch((error) => logError("pet.window", "plugin command failed", error)); } });
     plugins.set(command.pluginId, group);
   }
   const template: Electron.MenuItemConstructorOptions[] = [];
@@ -136,6 +137,50 @@ async function buildPetContextMenuTemplate(action: { readonly label: string; rea
   template.push({ label: "Open Control Center", click: () => { import("./windows.js").then(({ openControlCenterWindow }) => openControlCenterWindow()).catch((error) => logError("pet.window", "open control center failed", error)); } }, { label: action.label, click: action.click });
   return template;
 }
+
+async function openPluginCommandForm(command: { readonly pluginId: string; readonly commandId: string; readonly commandTitle: string; readonly form?: PluginCommandForm }): Promise<void> {
+  if (!command.form) return;
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()) ?? screen.getPrimaryDisplay();
+  const width = 380;
+  const height = Math.min(420, 150 + command.form.fields.length * 72);
+  const window = new BrowserWindow({
+    title: command.commandTitle,
+    width,
+    height,
+    x: Math.round(display.workArea.x + (display.workArea.width - width) / 2),
+    y: Math.round(display.workArea.y + (display.workArea.height - height) / 2),
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    parent: BrowserWindow.getFocusedWindow() ?? undefined,
+    modal: false,
+    show: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, preload: `${app.getAppPath()}/plugin-command-form-preload.cjs` },
+  });
+  window.setMenu(null);
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  const token = `plugin-command-form-${window.id}`;
+  ipcMain.handle(token, async (event, values: unknown) => {
+    if (event.sender !== window.webContents) throw new Error("Invalid command form sender.");
+    const result = await executeDefaultPetPluginCommand(command.pluginId, command.commandId, isRecord(values) ? values : {});
+    if (!window.isDestroyed()) window.close();
+    return result;
+  });
+  window.once("closed", () => ipcMain.removeHandler(token));
+  await window.loadURL(buildPluginCommandFormUrl(command.commandTitle, command.form, token));
+  window.show();
+}
+
+function buildPluginCommandFormUrl(title: string, form: PluginCommandForm, channel: string): string {
+  const csp = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'";
+  const data = JSON.stringify({ title, form, channel }).replace(/</g, "\\u003c");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>${escapeHtml(title)}</title><style>body{margin:0;font:13px system-ui,sans-serif;background:#fff;color:#161616}.wrap{padding:18px}h1{font-size:16px;margin:0 0 14px}label{display:block;font-weight:600;margin:10px 0 5px}input,textarea{box-sizing:border-box;width:100%;border:1px solid #bbb;border-radius:8px;padding:8px;font:inherit}textarea{min-height:74px;resize:vertical}.error{color:#b00020;min-height:18px;margin-top:8px}.buttons{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}button{border:0;border-radius:8px;padding:8px 12px;font:inherit}button.primary{background:#2563eb;color:white}</style></head><body><form class="wrap"><h1></h1><div id="fields"></div><div class="error" role="alert"></div><div class="buttons"><button type="button" id="cancel">Cancel</button><button class="primary" type="submit"></button></div></form><script>const data=${data};const api=window.openPetsCommandForm;const form=document.querySelector('form'),fields=document.getElementById('fields'),err=document.querySelector('.error');document.querySelector('h1').textContent=data.title;document.querySelector('.primary').textContent=data.form.submitLabel||'Set';for(const f of data.form.fields){const box=document.createElement('div');const label=document.createElement('label');label.textContent=f.label;label.htmlFor=f.id;let input=f.type==='textarea'?document.createElement('textarea'):document.createElement('input');input.id=f.id;input.name=f.id;if(f.type==='number')input.type='number';else input.type='text';if(f.default!==undefined)input.value=f.default;if(f.min!==undefined)input.min=f.min;if(f.max!==undefined)input.max=f.max;if(f.maxLength!==undefined)input.maxLength=f.maxLength;if(f.required)input.required=true;box.append(label,input);fields.append(box);}document.getElementById('cancel').onclick=()=>api.close();window.addEventListener('keydown',e=>{if(e.key==='Escape')api.close()});form.onsubmit=async e=>{e.preventDefault();err.textContent='';const values={};for(const f of data.form.fields){const el=form.elements[f.id];values[f.id]=f.type==='number'?Number(el.value):String(el.value||'').trim();}try{await api.submit(data.channel,values)}catch(error){err.textContent=(error&&error.message)||'Command failed.'}};</script></body></html>`;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 
 function installMousePassthroughAndDrag(window: BrowserWindow, onBubbleDismissed?: (dismissToken: string) => void): void {
   let dragging: { readonly startScreenX: number; readonly startScreenY: number; readonly startWindowX: number; readonly startWindowY: number } | null = null;

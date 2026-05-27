@@ -48,6 +48,7 @@ assert.match(builderConfig, /dist\/\*\*/);
 assert.match(builderConfig, /control-center-preload\.cjs/);
 assert.match(builderConfig, /pet-preload\.cjs/);
 assert.match(builderConfig, /plugin-sdk-preload\.cjs/);
+assert.match(builderConfig, /plugin-command-form-preload\.cjs/);
 assert.match(builderConfig, /assets\/\*\*/);
 assert.match(builderConfig, /extraResources:[\s\S]*from:\s*\.\.\/\.\.\/plugins\/official[\s\S]*to:\s*plugins\/official/, "desktop packages must include bundled official plugins as extra resources.");
 assert.match(builderConfig, /icon:\s*assets\/app-icon\.icns/);
@@ -55,6 +56,7 @@ assert.match(builderConfig, /icon:\s*assets\/app-icon\.icns/);
 assert.ok(existsSync(join(appDir, "control-center-preload.cjs")), "control-center-preload.cjs must exist for Control Center IPC.");
 assert.ok(existsSync(join(appDir, "pet-preload.cjs")), "pet-preload.cjs must exist for pet window motion state updates.");
 assert.ok(existsSync(join(appDir, "plugin-sdk-preload.cjs")), "plugin-sdk-preload.cjs must exist for JavaScript plugin SDK hosting.");
+assert.ok(existsSync(join(appDir, "plugin-command-form-preload.cjs")), "plugin-command-form-preload.cjs must exist for plugin command forms.");
 assert.ok(existsSync(join(appDir, "assets", "tray-icon.png")), "tray icon must exist for packaging.");
 assert.ok(existsSync(join(appDir, "assets", "app-icon.icns")), "app icon must exist for packaging.");
 assert.ok(existsSync(join(appDir, "assets", "app-icon.ico")), "Windows app icon must exist for packaging.");
@@ -354,7 +356,7 @@ function assertNonEmptyFile(path: string, message: string): void {
 }
 
 function assertBundledOfficialPlugins(resourceDir: string): void {
-  for (const id of ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy", "openpets.github-notifications"]) {
+  for (const id of ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy", "openpets.quick-reminders", "openpets.github-notifications"]) {
     const dir = join(resourceDir, "plugins", "official", id);
     const manifestPath = join(dir, "openpets.plugin.json");
     assertNonEmptyFile(manifestPath, `packaged bundled plugin manifest is missing: ${id}`);

@@ -70,7 +70,7 @@ export class PluginRuntime {
   }
 
   getPluginState(id: string): PluginRuntimePublicState { return this.#sdkBridge.getPublicState(id); }
-  executeCommand(id: string, commandId: string): Promise<void> { return this.#sdkBridge.executeCommand(id, commandId); }
+  executeCommand(id: string, commandId: string, args?: Record<string, unknown>): Promise<void> { return this.#sdkBridge.executeCommand(id, commandId, args); }
   notifyConfigChanged(id: string): void { this.#sdkBridge.notifyConfigChanged(id); }
 
   async reloadAll(): Promise<void> {

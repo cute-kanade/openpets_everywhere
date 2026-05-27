@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 2,
+  "id": "openpets.quick-reminders",
+  "name": "Quick Reminders",
+  "description": "Set short local reminders from the pet menu.",
+  "version": "1.0.0",
+  "runtime": "javascript",
+  "icon": "bell",
+  "sdkVersion": "1.0.0",
+  "entry": "index.js",
+  "permissions": ["pet:speak", "pet:reaction", "schedule", "storage", "commands", "status"]
+}
