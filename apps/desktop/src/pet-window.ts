@@ -653,8 +653,10 @@ async function createInstalledPetRender(petId: string, displayName: string, paus
 function createPetBodyMarkup(stageLabel: string, bubble: string, spriteMarkup: string): string {
   return `<div class="stage" aria-label="${stageLabel}">
     ${bubble}
-    <div class="pet-shell">
-      ${spriteMarkup}
+    <div class="pet-hitbox" aria-hidden="true">
+      <div class="pet-shell">
+        ${spriteMarkup}
+      </div>
     </div>
   </div>`;
 }
@@ -665,6 +667,7 @@ function createPetWindowCss(paused: boolean, scale: PetScaleValue): string {
   const scaledWidth = Math.ceil(defaultPetSprite.frameWidth * scale);
   const scaledHeight = Math.ceil(defaultPetSprite.frameHeight * scale);
   const petBottom = 22;
+  const hitPadding = 18;
   const bubbleBottom = Math.ceil(petBottom + scaledHeight + 8);
   const petShellFilter = process.platform === "win32" ? "none" : "drop-shadow(0 10px 12px rgba(15, 23, 42, 0.24)) drop-shadow(0 2px 3px rgba(15, 23, 42, 0.18))";
   const bubbleBackdropFilter = process.platform === "win32" ? "none" : "blur(10px)";
@@ -674,7 +677,8 @@ function createPetWindowCss(paused: boolean, scale: PetScaleValue): string {
     html { color: #172033; }
     body { -webkit-app-region: no-drag; pointer-events: none; }
     .stage { width: 100%; height: 100%; position: relative; box-sizing: border-box; overflow: visible; }
-    .pet-shell { position: absolute; left: 50%; bottom: ${petBottom}px; z-index: 1; width: ${scaledWidth}px; height: ${scaledHeight}px; display: block; opacity: var(--pet-opacity); filter: ${petShellFilter}; transform: translateX(-50%); transition-property: opacity, filter; transition-duration: 180ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); pointer-events: auto; -webkit-app-region: no-drag; cursor: grab; }
+    .pet-hitbox { position: absolute; left: 50%; bottom: ${Math.max(0, petBottom - hitPadding)}px; z-index: 1; width: ${scaledWidth + hitPadding * 2}px; height: ${scaledHeight + hitPadding * 2}px; display: grid; place-items: center; transform: translateX(-50%); pointer-events: auto; -webkit-app-region: no-drag; cursor: grab; }
+    .pet-shell { position: relative; width: ${scaledWidth}px; height: ${scaledHeight}px; display: block; opacity: var(--pet-opacity); filter: ${petShellFilter}; transition-property: opacity, filter; transition-duration: 180ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); pointer-events: auto; -webkit-app-region: no-drag; cursor: grab; }
     .bubble { position: absolute; left: 50%; bottom: ${bubbleBottom}px; z-index: 4; box-sizing: border-box; display: inline-flex; flex-direction: column; width: fit-content; min-width: 92px; max-width: min(220px, calc(100vw - 18px)); max-height: 128px; padding: 10px 12px; background: linear-gradient(135deg, rgba(239, 246, 255, 0.97), rgba(237, 233, 254, 0.96)); color: #172033; font: 760 11px/14px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: left; border: 1px solid rgba(255, 255, 255, 0.78); border-radius: 14px; box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16), 0 2px 5px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.82); white-space: normal; overflow-wrap: break-word; word-break: normal; overflow: visible; pointer-events: auto; -webkit-app-region: no-drag; opacity: 1; backdrop-filter: ${bubbleBackdropFilter}; transform: translateX(-50%); transform-origin: 64% 100%; animation: bubble-in 180ms cubic-bezier(0.2, 0, 0, 1); }
     .bubble[data-dismiss-token] { cursor: pointer; }
     .bubble::after { content: ""; position: absolute; left: 64%; bottom: -7px; width: 12px; height: 12px; background: inherit; border-right: 1px solid rgba(255, 255, 255, 0.56); border-bottom: 1px solid rgba(255, 255, 255, 0.56); border-bottom-right-radius: 3px; transform: translateX(-50%) rotate(45deg); box-shadow: 3px 3px 7px rgba(15, 23, 42, 0.08); }

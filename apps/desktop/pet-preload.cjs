@@ -23,7 +23,7 @@ const dismissBubble = (event) => {
   bubble.remove();
 
   const newTarget = document.elementFromPoint(event.clientX, event.clientY);
-  const stillInteractive = Boolean(newTarget && newTarget.closest(".pet-shell, .bubble")) || dragging;
+  const stillInteractive = Boolean(newTarget && newTarget.closest(".pet-hitbox, .pet-shell, .bubble")) || dragging;
   reportInteractiveHit(stillInteractive, "bubble-dismiss", true);
 
   ipcRenderer.send("openpets:bubble-dismissed", dismissToken);
@@ -80,7 +80,7 @@ ipcRenderer.on("openpets:pet-content-state", (_event, state) => {
 
 const getInteractiveTarget = (event) => {
   const target = document.elementFromPoint(event.clientX, event.clientY);
-  return target && target.closest(".pet-shell, .bubble");
+  return target && target.closest(".pet-hitbox, .pet-shell, .bubble");
 };
 
 const reportInteractiveHit = (interactive, source, force = false) => {
@@ -103,7 +103,7 @@ ipcRenderer.on("openpets:pet-probe-hit-test", (_event, point) => {
   const clientX = point.clientX;
   const clientY = point.clientY;
   const target = document.elementFromPoint(clientX, clientY);
-  reportInteractiveHit(Boolean(target && target.closest(".pet-shell, .bubble")) || dragging, typeof point.reason === "string" ? point.reason.slice(0, 80) : "probe", true);
+  reportInteractiveHit(Boolean(target && target.closest(".pet-hitbox, .pet-shell, .bubble")) || dragging, typeof point.reason === "string" ? point.reason.slice(0, 80) : "probe", true);
 });
 
 const installMouseInterop = () => {
@@ -120,7 +120,7 @@ const installMouseInterop = () => {
   document.addEventListener("mousedown", (event) => {
     const target = getInteractiveTarget(event);
     setInteractiveHit(Boolean(target));
-    if (event.button !== 0 || !target?.closest(".pet-shell")) return;
+    if (event.button !== 0 || !target?.closest(".pet-hitbox, .pet-shell")) return;
     event.preventDefault();
     dragging = true;
     setInteractiveHit(true);
