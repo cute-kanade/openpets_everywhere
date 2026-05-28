@@ -497,6 +497,144 @@ Artifacts are written to:
 apps/desktop/dist-electron/
 ```
 
+## Microsoft Store package quick actions
+
+Use this flow when Partner Center rejects the unsigned Win32 `.exe` installer under Store policy 10.2.9. GitHub Releases should still prefer the NSIS setup `.exe`; Microsoft Store submission should use the Store package artifact.
+
+Important Partner Center routing:
+
+- Do **not** paste an `.appx` URL into the standalone `.exe`/`.msi` package URL field. That field is only for signed Win32 installers.
+- Start a Microsoft Store **MSIX/AppX package** submission and upload the `.appx` package directly.
+- If reusing the same app name from a failed Win32 submission is blocked, delete/abandon the Win32 package flow and recreate the submission as MSIX/AppX.
+
+Electron Builder v26 uses the Windows Store target name `appx`. There is no separate `msix` target in this project setup; Partner Center accepts AppX/MSIX-family uploads.
+
+AppX tile assets are separate from `win.icon`/`app-icon.ico`. Keep branded tile assets in `apps/desktop/build/appx/`; if these files are missing, Electron Builder falls back to its bundled `SampleAppx.*.png` placeholders and Microsoft Store certification rejects the package as using default tile images.
+
+Required OpenPets AppX tile assets:
+
+```txt
+apps/desktop/build/appx/StoreLogo.png
+apps/desktop/build/appx/Square44x44Logo.png
+apps/desktop/build/appx/Square150x150Logo.png
+apps/desktop/build/appx/Wide310x150Logo.png
+```
+
+Additional branded assets currently included:
+
+```txt
+apps/desktop/build/appx/SmallTile.png
+apps/desktop/build/appx/LargeTile.png
+apps/desktop/build/appx/BadgeLogo.png
+apps/desktop/build/appx/SplashScreen.png
+```
+
+These assets are generated from `apps/desktop/assets/app-icon.png` plus OpenPets-branded tile art. Do not delete or rename them unless the AppX manifest/build config is updated at the same time.
+
+Build a Windows x64 AppX package:
+
+```bash
+pnpm --filter @open-pets/desktop build
+pnpm --filter @open-pets/desktop exec electron-builder --win appx --x64 \
+  -c.appx.identityName=AlvinUnreal.OpenPetsDesktopCompanion \
+  -c.appx.publisher=CN=5749BA4D-6A45-4111-8CAA-6B151AEDC238 \
+  -c.appx.publisherDisplayName=AlvinUnreal \
+  -c.appx.displayName="OpenPets: Desktop Companion" \
+  -c.appx.applicationId=OpenPetsDesktopCompanion
+```
+
+`publisherDisplayName` must match the exact publisher display name shown by Partner Center. For the current Store account this is:
+
+```txt
+AlvinUnreal
+```
+
+If Partner Center reports `The PublisherDisplayName element ... doesn't match your publisher display name`, rebuild the AppX with the correct `-c.appx.publisherDisplayName=<Partner Center publisher display name>` value.
+
+Partner Center validates AppX identity against the reserved Store product identity. For the current Store reservation, the expected values are:
+
+```txt
+identityName: AlvinUnreal.OpenPetsDesktopCompanion
+package family name: AlvinUnreal.OpenPetsDesktopCompanion_aq5mzr83863gr
+publisher: CN=5749BA4D-6A45-4111-8CAA-6B151AEDC238
+displayName: OpenPets: Desktop Companion
+applicationId: OpenPetsDesktopCompanion
+```
+
+If Partner Center reports `Invalid package identity name`, `Invalid package family name`, `Invalid package publisher name`, or an unreserved `Package/Properties/DisplayName`, rebuild using the exact values above. The package family name is derived from `identityName` and `publisher`, so do not set it manually.
+
+Expected artifact:
+
+```txt
+apps/desktop/dist-electron/OpenPets-<version>-win-x64.appx
+```
+
+On macOS, AppX packaging runs Windows `makeappx.exe` through Parallels. If the repo is on an external drive and the build fails with `prlctl process failed 2` or a `\\Mac\\Host\\Volumes\\...` path error, either enable Parallels shared folders for all Mac disks or copy the repo to a Parallels-accessible home-folder path and build there.
+
+If Electron Builder creates the AppX staging folder but fails only at the final `makeappx.exe` step because Parallels cannot resolve `\\Mac\\Host` paths, a manual fallback is:
+
+1. Copy the Electron Builder `winCodeSign` cache into the accessible build folder.
+2. Rewrite `dist-electron/__appx-x64/mapping.txt` paths from `\\Mac\\Host\\Users\\<user>` to `C:\\Mac\\Home`.
+3. Run `makeappx.exe pack` from the Windows VM against the rewritten mapping file.
+
+Known-good local workaround path from the May 2026 Store packaging session:
+
+```txt
+/Users/alvin/Downloads/openpets-msix-build/apps/desktop/dist-electron/OpenPets-2.5.0-win-x64.appx
+```
+
+Known-good corrected `2.5.0` AppX after rebuilding with Store identity values:
+
+```txt
+SHA256 4cc451a94d4be146b18ac59eb011ef3e89ff46e4e0836c8de0f36e68ad9b4a25
+```
+
+Verify the final AppX contains OpenPets tile assets, not Electron Builder sample defaults:
+
+```bash
+python3 - <<'PY'
+from zipfile import ZipFile
+appx = 'apps/desktop/dist-electron/OpenPets-<version>-win-x64.appx'
+with ZipFile(appx) as z:
+    for name in [
+        'assets/StoreLogo.png',
+        'assets/Square44x44Logo.png',
+        'assets/Square150x150Logo.png',
+        'assets/Wide310x150Logo.png',
+        'assets/SmallTile.png',
+        'assets/LargeTile.png',
+        'assets/BadgeLogo.png',
+        'assets/SplashScreen.png',
+    ]:
+        print(name, z.getinfo(name).file_size)
+PY
+```
+
+Partner Center may warn that the restricted capability `runFullTrust` requires approval. This is expected for Electron desktop bridge/AppX packages because the manifest uses `EntryPoint="Windows.FullTrustApplication"` and `rescap:Capability Name="runFullTrust"`. The warning must be acknowledged or approved in Partner Center; it is not fixed by changing the URL or repackaging as a standalone `.exe`.
+
+Upload the Store package to the public R2-backed download host:
+
+```bash
+bunx wrangler r2 object put \
+  "openpets/releases/OpenPets-<version>-win-x64.appx" \
+  --file "apps/desktop/dist-electron/OpenPets-<version>-win-x64.appx" \
+  --remote
+```
+
+Public URL shape:
+
+```txt
+https://zip.openpets.dev/releases/OpenPets-<version>-win-x64.appx
+```
+
+Verify before submitting to Partner Center:
+
+```bash
+curl -I "https://zip.openpets.dev/releases/OpenPets-<version>-win-x64.appx"
+```
+
+R2 upload is optional for Partner Center MSIX/AppX submissions because the Store package flow accepts direct file upload. Use R2 only as a backup/share URL or for internal handoff.
+
 ## NPM package release
 
 OpenPets publishes these public npm packages, in dependency order:
