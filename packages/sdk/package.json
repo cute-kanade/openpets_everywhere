@@ -1,0 +1,42 @@
+{
+  "name": "@open-pets/plugin-sdk",
+  "version": "2.1.1",
+  "description": "Type definitions for building OpenPets desktop pet plugins. Types only — the OpenPets runtime injects the SDK implementation at load time.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alvinunreal/openpets.git",
+    "directory": "packages/sdk"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "openpets",
+    "plugin",
+    "sdk",
+    "types",
+    "desktop-pet"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "test": "node dist/check-plugin-sdk.js",
+    "check": "pnpm typecheck && pnpm build && pnpm test",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 
-import { assertSafeProjectHookPath, cliPackageName, configureProject, createClaudeMcpAddJsonArgs, createLocalDevCliCommand, createVersionPinnedCliCommand, installProjectLocalHooks, parseConfigureArgs, parseInstallArgs, parseReactArgs, parseSayArgs, resolveConfiguredPet, runClaudeMcpAddJson } from "./index.js";
+import { assertSafeProjectHookPath, cliPackageName, configureProject, createClaudeMcpAddJsonArgs, createLocalDevCliCommand, createVersionPinnedCliCommand, installProjectLocalHooks, parseConfigureArgs, parseInstallArgs, parsePluginNewArgs, parseReactArgs, parseSayArgs, resolveConfiguredPet, runClaudeMcpAddJson, scaffoldPlugin } from "./index.js";
 
 const packageVersion = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { readonly version: string }).version;
 
@@ -39,6 +39,34 @@ assert.deepEqual(parseSayArgs(["--reaction=success", "Tests", "passed"]), { mess
 assert.throws(() => parseSayArgs([]));
 assert.throws(() => parseSayArgs(["Hello", "--reaction", "bad"]));
 assert.throws(() => parseSayArgs(["Hello", "--unknown"]));
+
+assert.deepEqual(parsePluginNewArgs(["My Plugin"]), { name: "My Plugin", id: "local.my-plugin", dir: "my-plugin", author: undefined });
+assert.equal(parsePluginNewArgs(["My Plugin", "--id", "acme.my-plugin"]).id, "acme.my-plugin");
+assert.equal(parsePluginNewArgs(["My Plugin", "--dir", "/tmp/p"]).dir, "/tmp/p");
+assert.equal(parsePluginNewArgs(["My Plugin", "--author=Jane"]).author, "Jane");
+assert.throws(() => parsePluginNewArgs([]));
+assert.throws(() => parsePluginNewArgs(["x", "--id", ".bad"]));
+assert.throws(() => parsePluginNewArgs(["x", "--unknown"]));
+assert.throws(() => parsePluginNewArgs(["!!!"]));
+
+const pluginScaffoldDir = mkdtempSync(join(tmpdir(), "openpets-plugin-"));
+try {
+  const target = join(pluginScaffoldDir, "demo");
+  const result = scaffoldPlugin({ name: "Demo Plugin", id: "local.demo", dir: target });
+  assert.equal(result.manifestPath, join(target, "openpets.plugin.json"));
+  const manifest = JSON.parse(readFileSync(result.manifestPath, "utf8")) as { readonly manifestVersion: number; readonly id: string; readonly entry: string; readonly permissions: readonly string[] };
+  assert.equal(manifest.manifestVersion, 2);
+  assert.equal(manifest.id, "local.demo");
+  assert.equal(manifest.entry, "index.js");
+  assert.ok(manifest.permissions.includes("commands"));
+  const entry = readFileSync(result.entryPath, "utf8");
+  assert.match(entry, /OpenPetsPlugin\.register/);
+  assert.match(entry, /reference types="@open-pets\/plugin-sdk"/);
+  assert.ok(existsSync(join(target, "README.md")));
+  assert.throws(() => scaffoldPlugin({ name: "Demo Plugin", id: "local.demo", dir: target }));
+} finally {
+  rmSync(pluginScaffoldDir, { recursive: true, force: true });
+}
 
 const pinned = createVersionPinnedCliCommand("1.2.3", ["mcp", "--pet", "fixer"]);
 assert.deepEqual(pinned, { command: "npx", args: ["-y", `${cliPackageName}@1.2.3`, "mcp", "--pet", "fixer"] });
@@ -272,7 +300,7 @@ assert.equal(invalidHook.status, 1);
 const missingPetHook = spawnSync(process.execPath, [new URL("./index.js", import.meta.url).pathname, "hook", "--openpets-managed", "--pet"], { input: JSON.stringify({ hook_event_name: "Notification" }), encoding: "utf8" });
 assert.equal(missingPetHook.status, 1);
 
-for (const args of [["--help"], ["-h"], ["status", "--help"], ["pets", "--help"], ["react", "--help"], ["say", "--help"], ["install", "--help"], ["configure", "--help"], ["configure", "-h"], ["mcp", "--help"], ["hook", "--help"]]) {
+for (const args of [["--help"], ["-h"], ["status", "--help"], ["pets", "--help"], ["react", "--help"], ["say", "--help"], ["install", "--help"], ["configure", "--help"], ["configure", "-h"], ["plugin", "--help"], ["plugin", "new", "--help"], ["mcp", "--help"], ["hook", "--help"]]) {
   const help = spawnSync(process.execPath, [new URL("./index.js", import.meta.url).pathname, ...args], { encoding: "utf8" });
   assert.equal(help.status, 0);
   assert.match(help.stdout, /Usage:/);

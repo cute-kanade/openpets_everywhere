@@ -42,6 +42,13 @@ interface CommandSpec {
   readonly args: readonly string[];
 }
 
+interface PluginNewOptions {
+  readonly name: string;
+  readonly id: string;
+  readonly dir: string;
+  readonly author?: string;
+}
+
 interface PreparedHooks {
   readonly settingsPath: string;
   readonly settings: Record<string, unknown>;
@@ -124,6 +131,22 @@ async function main(): Promise<void> {
     const code = await runClaudeHookFromStdin(process.stdin, { configuredPetId: readPetArg(args), projectLocal: hasProjectLocalArg(args), debug: process.env.OPENPETS_DEBUG === "1" });
     process.exitCode = code;
     return;
+  }
+  if (command === "plugin") {
+    const [subcommand, ...rest] = args;
+    if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+      printPluginUsage();
+      return;
+    }
+    if (subcommand === "new" || subcommand === "init") {
+      if (hasHelp(rest)) {
+        printPluginUsage();
+        return;
+      }
+      scaffoldPlugin(parsePluginNewArgs(rest));
+      return;
+    }
+    throw new CliError(`Unknown plugin subcommand: ${subcommand}`);
   }
   throw new CliError(`Unknown command: ${command}`);
 }
@@ -334,6 +357,126 @@ function setCursorRulesMode(current: ConfigureOptions["cursorRulesMode"], next: 
 export function parseInstallArgs(args: readonly string[]): InstallOptions {
   if (args.length !== 1) throw new CliError("Usage: openpets install <pet-id>");
   return { petId: validateOpenPetsPetArg(args[0] ?? "") };
+}
+
+export function parsePluginNewArgs(args: readonly string[]): PluginNewOptions {
+  let name: string | undefined;
+  let id: string | undefined;
+  let dir: string | undefined;
+  let author: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--id") { id = readRequiredArg(args, index, "--id"); index += 1; }
+    else if (arg.startsWith("--id=")) id = arg.slice("--id=".length);
+    else if (arg === "--dir") { dir = readRequiredArg(args, index, "--dir"); index += 1; }
+    else if (arg.startsWith("--dir=")) dir = arg.slice("--dir=".length);
+    else if (arg === "--author") { author = readRequiredArg(args, index, "--author"); index += 1; }
+    else if (arg.startsWith("--author=")) author = arg.slice("--author=".length);
+    else if (arg.startsWith("--")) throw new CliError(`Unknown plugin new option: ${arg}`);
+    else if (name === undefined) name = arg;
+    else throw new CliError(`Unexpected argument: ${arg}`);
+  }
+  const cleanName = (name ?? "").trim();
+  if (!cleanName) throw new CliError("Usage: openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]");
+  if (cleanName.length > 60 || /[\x00-\x1F\x7F]/.test(cleanName)) throw new CliError("Plugin name must be 1-60 printable characters.");
+  const slug = slugifyPluginName(cleanName);
+  if (!slug) throw new CliError("Plugin name must contain at least one letter or number.");
+  const finalId = (id ?? `local.${slug}`).trim();
+  if (!isValidPluginId(finalId)) throw new CliError("Plugin id must be 1-64 chars (letters, numbers, dot, dash, underscore) and cannot start with a dot.");
+  return { name: cleanName, id: finalId, dir: dir ?? slug, author: author?.trim() || undefined };
+}
+
+function slugifyPluginName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function isValidPluginId(id: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id);
+}
+
+export function scaffoldPlugin(options: PluginNewOptions): { readonly dir: string; readonly manifestPath: string; readonly entryPath: string } {
+  const targetDir = resolve(options.dir);
+  const manifestPath = join(targetDir, "openpets.plugin.json");
+  const entryPath = join(targetDir, "index.js");
+  if (existsSync(manifestPath) || existsSync(entryPath)) throw new CliError(`A plugin already exists at ${targetDir}. Choose another --dir.`);
+  mkdirSync(targetDir, { recursive: true });
+  const dirStats = lstatSync(targetDir);
+  if (dirStats.isSymbolicLink() || !dirStats.isDirectory()) throw new CliError("Target plugin path must be a directory.");
+
+  const manifest = {
+    manifestVersion: 2,
+    id: options.id,
+    name: options.name,
+    version: "1.0.0",
+    description: `${options.name} — an OpenPets plugin.`,
+    author: options.author ?? "",
+    runtime: "javascript",
+    entry: "index.js",
+    sdkVersion: "1.0.0",
+    permissions: ["pet:speak", "pet:reaction", "commands", "status"],
+    configSchema: {},
+  };
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+  writeFileSync(entryPath, pluginEntryTemplate(options.name), { encoding: "utf8", flag: "wx" });
+  const readmePath = join(targetDir, "README.md");
+  if (!existsSync(readmePath)) writeFileSync(readmePath, pluginReadmeTemplate(options, targetDir), { encoding: "utf8" });
+
+  process.stdout.write(
+    `Created OpenPets plugin "${sanitizeTerminalText(options.name)}" (${options.id})\n  ${targetDir}\n\n` +
+      "Next steps:\n" +
+      "  1. (optional) npm i -D @open-pets/plugin-sdk    # editor types\n" +
+      "  2. From the OpenPets repo root, run it locally:\n" +
+      `     OPENPETS_DEV_PLUGIN_PATHS=${targetDir} pnpm dev:desktop\n` +
+      "  3. Open Tray → Plugins, enable it, then right-click your pet.\n\n" +
+      "Docs: https://openpets.dev/sdk\n",
+  );
+  return { dir: targetDir, manifestPath, entryPath };
+}
+
+function pluginEntryTemplate(name: string): string {
+  return `/// <reference types="@open-pets/plugin-sdk" />
+
+OpenPetsPlugin.register({
+  async start(ctx) {
+    await ctx.status.set({ text: ${JSON.stringify(`${name} is ready`)}, tone: "info" })
+
+    await ctx.commands.register(
+      { id: "say-hello", title: "Say hello", description: "Get a friendly greeting." },
+      async () => {
+        await ctx.pet.speak(${JSON.stringify(`Hello from ${name}!`)})
+        await ctx.pet.react("waving")
+      },
+    )
+  },
+
+  async stop() {},
+})
+`;
+}
+
+function pluginReadmeTemplate(options: PluginNewOptions, targetDir: string): string {
+  return `# ${options.name}
+
+An OpenPets plugin (\`${options.id}\`).
+
+## Develop
+
+\`\`\`bash
+# optional: editor autocomplete + type-checking
+npm i -D @open-pets/plugin-sdk
+
+# from the OpenPets repo root, load this folder and launch the app
+OPENPETS_DEV_PLUGIN_PATHS=${targetDir} pnpm dev:desktop
+\`\`\`
+
+Then open **Tray → Plugins**, enable the plugin, and right-click your pet to
+run its commands.
+
+## Learn more
+
+- SDK guide: https://openpets.dev/sdk
+- Reference: https://openpets.dev/docs/plugin-sdk
+`;
 }
 
 export function parseReactArgs(args: readonly string[]): ReactOptions {
@@ -563,7 +706,11 @@ function getPackageVersion(): string {
 }
 
 function printUsage(): void {
-  process.stdout.write("Usage:\n  openpets status\n  openpets pets\n  openpets react <reaction>\n  openpets say <message> [--reaction <reaction>]\n  openpets install <pet-id>\n  openpets configure [--agent claude|opencode|cursor] [--pet <id>] [--cwd <path>] [--yes] [--force] [--with-rules|--rules-only|--remove-rules]\n  openpets mcp [--pet <id>]\n  openpets hook --openpets-managed [--pet <id>]\n\nRun `openpets <command> --help` for command options.\n");
+  process.stdout.write("Usage:\n  openpets status\n  openpets pets\n  openpets react <reaction>\n  openpets say <message> [--reaction <reaction>]\n  openpets install <pet-id>\n  openpets configure [--agent claude|opencode|cursor] [--pet <id>] [--cwd <path>] [--yes] [--force] [--with-rules|--rules-only|--remove-rules]\n  openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]\n  openpets mcp [--pet <id>]\n  openpets hook --openpets-managed [--pet <id>]\n\nRun `openpets <command> --help` for command options.\n");
+}
+
+function printPluginUsage(): void {
+  process.stdout.write("Usage:\n  openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]\n\nScaffolds a new OpenPets plugin folder with a manifest and entry file.\n\nOptions:\n  --id <id>        Plugin id (reverse-DNS style). Defaults to local.<name-slug>.\n  --dir <path>     Target directory. Defaults to ./<name-slug>.\n  --author <name>  Author name written into the manifest.\n  -h, --help       Show this help.\n\nLearn more: https://openpets.dev/sdk\n");
 }
 
 function printInstallUsage(): void {

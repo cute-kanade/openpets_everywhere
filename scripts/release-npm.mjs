@@ -9,6 +9,7 @@ const repoRoot = resolve(scriptsDir, "..");
 const repository = "alvinunreal/openpets";
 
 const publishOrder = [
+  "packages/sdk",
   "packages/client",
   "packages/agent-events",
   "packages/mcp",
