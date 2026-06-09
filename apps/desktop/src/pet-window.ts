@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { getAppStateSnapshot, markPetBroken, type PetScaleValue } from "./app-state.js";
-import { clampToPrimaryWorkArea, defaultPetWindowSize, getDefaultPetInitialPosition, type Point } from "./display.js";
+import { clampToVisibleWorkArea, defaultPetWindowSize, getDefaultPetInitialPosition, type Point } from "./display.js";
 import { builtInPet } from "./built-in-pet.js";
 import { getInstalledPetDir } from "./pet-paths.js";
 import type { OpenPetsReaction } from "./local-ipc-protocol.js";
@@ -582,12 +582,12 @@ function tryUpdateLoadedPetContent(window: BrowserWindow, render: PetContentRend
 }
 
 export function getSafeDefaultPetPosition(position: Point | undefined): Point {
-  return clampToPrimaryWorkArea(position ?? getDefaultPetInitialPosition(), defaultPetWindowSize);
+  return clampToVisibleWorkArea(position ?? getDefaultPetInitialPosition(), defaultPetWindowSize);
 }
 
 export function readWindowPosition(window: BrowserWindow): Point {
   const [x, y] = window.getPosition();
-  return clampToPrimaryWorkArea({ x, y }, defaultPetWindowSize);
+  return clampToVisibleWorkArea({ x, y }, defaultPetWindowSize);
 }
 
 function applyLinuxPetWindowShape(window: BrowserWindow, scale: PetScaleValue, hasBubble: boolean): void {
