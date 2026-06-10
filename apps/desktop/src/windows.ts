@@ -205,6 +205,46 @@ export function installInternalUiHandlers(): void {
     return getPluginService().uninstall(id);
   });
 
+  ipcMain.handle("openpets:plugins-inspector", async (event, id: unknown) => {
+    assertAllowedSender(event, ["control-center"]);
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(id)) throw new Error("Invalid plugin inspector request.");
+    return getPluginService().runtime.getInspectorState(id);
+  });
+
+  ipcMain.handle("openpets:plugin-platform-settings-get", async (event) => {
+    assertAllowedSender(event, ["control-center"]);
+    const { getPluginPlatformSettings } = await import("./plugin-platform-settings.js");
+    return getPluginPlatformSettings();
+  });
+
+  ipcMain.handle("openpets:plugin-platform-settings-update", async (event, patch: unknown) => {
+    assertAllowedSender(event, ["control-center"]);
+    if (!isPlainObject(patch)) throw new Error("Invalid plugin platform settings patch.");
+    const { updatePluginPlatformSettings } = await import("./plugin-platform-settings.js");
+    return updatePluginPlatformSettings(patch as never);
+  });
+
+  ipcMain.handle("openpets:plugin-platform-ai-key-set", async (event, key: unknown) => {
+    assertAllowedSender(event, ["control-center"]);
+    const { getPluginHostCapabilitiesForUi } = await import("./plugin-host-capabilities.js");
+    const { hostSecretsOwner, hostAiApiKeySecret } = await import("./plugin-ai-gateway.js");
+    const capabilities = getPluginHostCapabilitiesForUi();
+    if (!capabilities) throw new Error("Plugin host capabilities are unavailable.");
+    if (key === null || key === "") { await capabilities.secretsStore.delete(hostSecretsOwner, hostAiApiKeySecret); return { ok: true, hasKey: false }; }
+    if (typeof key !== "string" || key.length > 4096) throw new Error("Invalid AI API key.");
+    await capabilities.secretsStore.set(hostSecretsOwner, hostAiApiKeySecret, key);
+    return { ok: true, hasKey: true };
+  });
+
+  ipcMain.handle("openpets:plugin-platform-ai-key-status", async (event) => {
+    assertAllowedSender(event, ["control-center"]);
+    const { getPluginHostCapabilitiesForUi } = await import("./plugin-host-capabilities.js");
+    const { hostSecretsOwner, hostAiApiKeySecret } = await import("./plugin-ai-gateway.js");
+    const capabilities = getPluginHostCapabilitiesForUi();
+    if (!capabilities) return { hasKey: false };
+    return { hasKey: await capabilities.secretsStore.has(hostSecretsOwner, hostAiApiKeySecret) };
+  });
+
   ipcMain.handle("openpets:get-catalog", async (event) => {
     assertAllowedSender(event, ["control-center"]);
     return getCatalogUiState();

@@ -93,36 +93,132 @@ function installSdkHandler(channel: string, contents: WebContents, sdk: PluginSd
   });
 }
 
+type RunCallback = (id: unknown) => ((...callbackArgs: unknown[]) => Promise<unknown>) | undefined;
+type SdkCallHandler = (sdk: PluginSdkApi, args: unknown[], runCallback: RunCallback, contents: WebContents) => unknown;
+
+const noop = (): void => undefined;
+const callbackOf = (runCallback: RunCallback, id: unknown): ((...callbackArgs: unknown[]) => unknown) => runCallback(id) ?? noop;
+
+const sdkCallHandlers: Record<string, SdkCallHandler> = {
+  // Pet handles (first arg is the pet handle id; "default" targets the default pet).
+  "pet.speak": (sdk, args) => sdk.pets.forPet(args[0]).speak(args[1]),
+  "pet.react": (sdk, args) => sdk.pets.forPet(args[0]).react(args[1] as never),
+  "pet.setAnimation": (sdk, args) => sdk.pets.forPet(args[0]).setAnimation(args[1]),
+  "pet.setScale": (sdk, args) => sdk.pets.forPet(args[0]).setScale(args[1]),
+  "pet.badge": (sdk, args) => sdk.pets.forPet(args[0]).badge(args[1]),
+  "pet.moveBy": (sdk, args) => sdk.pets.forPet(args[0]).moveBy(args[1]),
+  "pet.wander": (sdk, args) => sdk.pets.forPet(args[0]).wander(args[1]),
+  "pet.moveToHome": (sdk, args) => sdk.pets.forPet(args[0]).moveToHome(),
+  "pet.moveTo": (sdk, args) => sdk.pets.forPet(args[0]).moveTo(args[1], args[2]),
+  "pet.followCursor": (sdk, args) => sdk.pets.forPet(args[0]).followCursor(args[1]),
+  "pet.physics": (sdk, args) => sdk.pets.forPet(args[0]).physics(args[1]),
+  "pet.onTick": (sdk, args, runCallback) => sdk.pets.forPet(args[0]).onTick(callbackOf(runCallback, args[1])),
+  "pet.offTick": (sdk, args) => sdk.pets.forPet("default").offTick(args[0]),
+  "pet.getState": (sdk, args) => sdk.pets.forPet(args[0]).getState(),
+  "pet.show": (sdk, args) => sdk.pets.forPet(args[0]).show(),
+  "pet.hide": (sdk, args) => sdk.pets.forPet(args[0]).hide(),
+  "pet.close": (sdk, args) => sdk.pets.forPet(args[0]).close(),
+  "pets.list": (sdk) => sdk.pets.list(),
+  "pets.spawn": (sdk, args) => sdk.pets.spawn(args[0]),
+  "pets.onChange": (sdk, args, runCallback) => sdk.pets.onChange(callbackOf(runCallback, args[0])),
+  "pets.offChange": (sdk, args) => sdk.pets.offChange(args[0]),
+  // UI: bubbles, toasts, panels, menus.
+  "ui.bubble": (sdk, args) => sdk.ui.bubble(args[0]),
+  "ui.bubbleUpdate": (sdk, args) => sdk.ui.bubbleUpdate(args[0], args[1]),
+  "ui.bubbleDismiss": (sdk, args) => sdk.ui.bubbleDismiss(args[0]),
+  "ui.bubblePin": (sdk, args) => sdk.ui.bubblePin(args[0]),
+  "ui.bubbleUnpin": (sdk, args) => sdk.ui.bubbleUnpin(args[0]),
+  "ui.bubbleSubscribe": (sdk, args, runCallback) => sdk.ui.bubbleSubscribe(args[0], args[1], callbackOf(runCallback, args[2]) as never),
+  "ui.toast": (sdk, args) => sdk.ui.toast(args[0]),
+  "ui.panel": (sdk, args) => sdk.ui.panel(args[0]),
+  "ui.panelShow": (sdk, args) => sdk.ui.panelShow(args[0]),
+  "ui.panelHide": (sdk, args) => sdk.ui.panelHide(args[0]),
+  "ui.panelPost": (sdk, args) => sdk.ui.panelPost(args[0], args[1]),
+  "ui.panelClose": (sdk, args) => sdk.ui.panelClose(args[0]),
+  "ui.panelOnMessage": (sdk, args, runCallback) => sdk.ui.panelOnMessage(args[0], callbackOf(runCallback, args[1])),
+  "ui.menuSetItems": (sdk, args) => sdk.ui.menuSetItems(args[0]),
+  "ui.menuOnSelect": (sdk, args, runCallback) => sdk.ui.menuOnSelect(callbackOf(runCallback, args[0])),
+  "ui.menuOffSelect": (sdk, args) => sdk.ui.menuOffSelect(args[0]),
+  // Audio.
+  "audio.play": (sdk, args) => sdk.audio.play(args[0], args[1]),
+  "audio.stop": (sdk) => sdk.audio.stop(),
+  // Senses bus.
+  "events.on": (sdk, args, runCallback) => sdk.events.on(args[0], callbackOf(runCallback, args[1])),
+  "events.off": (sdk, args) => sdk.events.off(args[0]),
+  // Assets.
+  "assets.resolve": (sdk, args) => sdk.assets.resolve(args[0], args[1]),
+  // Inter-plugin bus.
+  "bus.publish": (sdk, args) => sdk.bus.publish(args[0], args[1]),
+  "bus.subscribe": (sdk, args, runCallback) => sdk.bus.subscribe(args[0], callbackOf(runCallback, args[1])),
+  "bus.unsubscribe": (sdk, args) => sdk.bus.unsubscribe(args[0]),
+  // Scheduling.
+  "schedule.once": (sdk, args, runCallback) => sdk.schedule.once(String(args[0]), Number(args[1]), callbackOf(runCallback, args[2])),
+  "schedule.every": (sdk, args, runCallback) => sdk.schedule.every(String(args[0]), Number(args[1]), callbackOf(runCallback, args[2])),
+  "schedule.daily": (sdk, args, runCallback) => sdk.schedule.daily(String(args[0]), args[1] as never, callbackOf(runCallback, args[2])),
+  "schedule.cron": (sdk, args, runCallback) => sdk.schedule.cron(String(args[0]), args[1], callbackOf(runCallback, args[2])),
+  "schedule.at": (sdk, args, runCallback) => sdk.schedule.at(String(args[0]), args[1], callbackOf(runCallback, args[2])),
+  "schedule.list": (sdk) => sdk.schedule.list(),
+  "schedule.cancel": (sdk, args) => sdk.schedule.cancel(String(args[0])),
+  "schedule.cancelAll": (sdk) => sdk.schedule.cancelAll(),
+  // Storage.
+  "storage.get": (sdk, args) => sdk.storage.get(String(args[0])),
+  "storage.set": (sdk, args) => sdk.storage.set(String(args[0]), args[1]),
+  "storage.delete": (sdk, args) => sdk.storage.delete(String(args[0])),
+  "storage.keys": (sdk) => sdk.storage.keys(),
+  "storage.subscribe": (sdk, args, runCallback) => sdk.storage.subscribe(String(args[0]), callbackOf(runCallback, args[1])),
+  "storage.unsubscribe": (sdk, args) => sdk.storage.unsubscribe(args[0]),
+  // Config (special-cased disposers keyed by callback id).
+  "config.get": (sdk) => sdk.config.get(),
+  "config.onChange": (sdk, args, _runCallback, contents) => { const id = String(args[0] ?? ""); if (!id) return { ok: false }; const disposer = sdk.config.onChange((config) => { void contents.executeJavaScript(`globalThis.__openPetsRunCallback(${JSON.stringify(id)}, [${JSON.stringify(config)}])`, true); }); let map = configDisposers.get(contents); if (!map) { map = new Map(); configDisposers.set(contents, map); } map.set(id, disposer); return { ok: true }; },
+  "config.offChange": (sdk, args, _runCallback, contents) => { const id = String(args[0] ?? ""); const disposer = configDisposers.get(contents)?.get(id); disposer?.(); configDisposers.get(contents)?.delete(id); return { ok: true }; },
+  // Network.
+  "net.fetch": (sdk, args) => sdk.net.fetch(String(args[0]), args[1]),
+  "net.stream": (sdk, args, runCallback) => sdk.net.stream(String(args[0]), args[1], callbackOf(runCallback, args[2]) as (chunk: string) => void),
+  // Notifications.
+  "notify.notify": (sdk, args) => sdk.notify.notify(args[0]),
+  // AI gateway.
+  "ai.available": (sdk) => sdk.ai.available(),
+  "ai.complete": (sdk, args) => sdk.ai.complete(args[0]),
+  "ai.stream": (sdk, args, runCallback) => sdk.ai.stream(args[0], callbackOf(runCallback, args[1]) as (chunk: string) => void),
+  // Secrets.
+  "secrets.get": (sdk, args) => sdk.secrets.get(args[0]),
+  "secrets.set": (sdk, args) => sdk.secrets.set(args[0], args[1]),
+  "secrets.delete": (sdk, args) => sdk.secrets.delete(args[0]),
+  "secrets.has": (sdk, args) => sdk.secrets.has(args[0]),
+  // Voice.
+  "voice.speak": (sdk, args) => sdk.voice.speak(args[0], args[1]),
+  "voice.listen": (sdk, args) => sdk.voice.listen(args[0]),
+  // Auth.
+  "auth.oauth": (sdk, args) => sdk.auth.oauth(args[0]),
+  "auth.refresh": (sdk, args) => sdk.auth.refresh(args[0]),
+  "auth.signOut": (sdk, args) => sdk.auth.signOut(args[0]),
+  // Files.
+  "files.pick": (sdk, args) => sdk.files.pick(args[0]),
+  "files.read": (sdk, args) => sdk.files.read(args[0], args[1]),
+  "files.save": (sdk, args) => sdk.files.save(args[0]),
+  // System.
+  "system.info": (sdk) => sdk.system.info(),
+  "system.metrics": (sdk) => sdk.system.metrics(),
+  "system.openExternal": (sdk, args) => sdk.system.openExternal(args[0]),
+  "system.readClipboardText": (sdk) => sdk.system.readClipboardText(),
+  "system.writeClipboardText": (sdk, args) => sdk.system.writeClipboardText(args[0]),
+  // Commands & status & legacy http & log.
+  "commands.register": (sdk, args, runCallback) => sdk.commands.register(args[0] as never, callbackOf(runCallback, args[1])),
+  "commands.unregister": (sdk, args) => sdk.commands.unregister(String(args[0])),
+  "status.set": (sdk, args) => sdk.status.set(args[0] as never),
+  "status.clear": (sdk) => sdk.status.clear(),
+  "http.fetch": (sdk, args) => sdk.http.fetch(String(args[0]), args[1]),
+  "log.debug": (sdk, args) => sdk.log.debug(...args),
+  "log.info": (sdk, args) => sdk.log.info(...args),
+  "log.warn": (sdk, args) => sdk.log.warn(...args),
+  "log.error": (sdk, args) => sdk.log.error(...args),
+};
+
 async function dispatchSdkCall(contents: WebContents, sdk: PluginSdkApi, path: string, args: unknown[]): Promise<unknown> {
-  const runCallback = (id: unknown) => typeof id === "string" ? (...callbackArgs: unknown[]) => contents.executeJavaScript(`globalThis.__openPetsRunCallback(${JSON.stringify(id)}, ${JSON.stringify(callbackArgs)})`, true) : undefined;
-  switch (path) {
-    case "pet.speak": return sdk.pet.speak(String(args[0]));
-    case "pet.react": return sdk.pet.react(args[0] as never);
-    case "pet.moveBy": return sdk.pet.moveBy(args[0] as never);
-    case "pet.wander": return sdk.pet.wander(args[0] as never);
-    case "pet.moveToHome": return sdk.pet.moveToHome();
-    case "schedule.once": return sdk.schedule.once(String(args[0]), Number(args[1]), runCallback(args[2]) ?? (() => undefined));
-    case "schedule.every": return sdk.schedule.every(String(args[0]), Number(args[1]), runCallback(args[2]) ?? (() => undefined));
-    case "schedule.daily": return sdk.schedule.daily(String(args[0]), args[1] as never, runCallback(args[2]) ?? (() => undefined));
-    case "schedule.cancel": return sdk.schedule.cancel(String(args[0]));
-    case "schedule.cancelAll": return sdk.schedule.cancelAll();
-    case "storage.get": return sdk.storage.get(String(args[0]));
-    case "storage.set": return sdk.storage.set(String(args[0]), args[1]);
-    case "storage.delete": return sdk.storage.delete(String(args[0]));
-    case "config.get": return sdk.config.get();
-    case "config.onChange": { const id = String(args[0] ?? ""); if (!id) return { ok: false }; const disposer = sdk.config.onChange((config) => { void contents.executeJavaScript(`globalThis.__openPetsRunCallback(${JSON.stringify(id)}, [${JSON.stringify(config)}])`, true); }); let map = configDisposers.get(contents); if (!map) { map = new Map(); configDisposers.set(contents, map); } map.set(id, disposer); return { ok: true }; }
-    case "config.offChange": { const id = String(args[0] ?? ""); const disposer = configDisposers.get(contents)?.get(id); disposer?.(); configDisposers.get(contents)?.delete(id); return { ok: true }; }
-    case "commands.register": return sdk.commands.register(args[0] as never, runCallback(args[1]) ?? (() => undefined));
-    case "commands.unregister": return sdk.commands.unregister(String(args[0]));
-    case "status.set": return sdk.status.set(args[0] as never);
-    case "status.clear": return sdk.status.clear();
-    case "http.fetch": return sdk.http.fetch(String(args[0]), args[1]);
-    case "log.debug": return sdk.log.debug(...args);
-    case "log.info": return sdk.log.info(...args);
-    case "log.warn": return sdk.log.warn(...args);
-    case "log.error": return sdk.log.error(...args);
-    default: throw new Error("Unknown plugin SDK call.");
-  }
+  const runCallback: RunCallback = (id) => typeof id === "string" ? (...callbackArgs: unknown[]) => contents.executeJavaScript(`globalThis.__openPetsRunCallback(${JSON.stringify(id)}, ${JSON.stringify(callbackArgs)})`, true) : undefined;
+  const handler = sdkCallHandlers[path];
+  if (!handler) throw new Error("Unknown plugin SDK call.");
+  return handler(sdk, args, runCallback, contents);
 }
 
 export type PluginJsRequestPolicy = { readonly entryUrl: string; readonly htmlUrl: string };

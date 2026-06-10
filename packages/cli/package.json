@@ -14,7 +14,8 @@
     "openpets": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "schemas"
   ],
   "publishConfig": {
     "access": "public"

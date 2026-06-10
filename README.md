@@ -319,13 +319,17 @@ packages/claude           @open-pets/claude, Claude command and hook helpers
 packages/opencode         @open-pets/opencode, OpenCode config and plugin integration
 packages/pi               @open-pets/pi, Pi extension package
 packages/agent-events     Shared safe agent event speech helpers
-packages/cli              @open-pets/cli, user-run CLI and MCP/hook entrypoints
+packages/cli              @open-pets/cli, user-run CLI, plugin scaffolder/validator, MCP/hook entrypoints
+packages/sdk              @open-pets/plugin-sdk, plugin SDK v3 types + testing harness
 packages/pet-format       @open-pets/pet-format, pet/catalog format types
+plugins/official          First-party plugin source (bundled + catalog)
 docs/                     Documentation
 ```
 
 ## Documentation
 
+- [`docs/plugins.md`](docs/plugins.md) - plugin platform (SDK v3): manifest, permissions, dev workflow, test kit.
+- [`docs/superplugins.md`](docs/superplugins.md) - SDK v3 design rationale and feature spec.
 - [`docs/claude-integration.md`](docs/claude-integration.md) - Claude Code setup, MCP, memory, hooks, and safety.
 - [`docs/opencode.md`](docs/opencode.md) - OpenCode global/project setup, plugin behavior, and safety.
 - [`docs/wsl-ipc.md`](docs/wsl-ipc.md) - Windows desktop + WSL MCP transport setup.

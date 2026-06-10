@@ -1,4 +1,4 @@
-import { app } from "electron";
+import { app, powerMonitor } from "electron";
 import { existsSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 
@@ -8,7 +8,10 @@ import { installDefaultPetDisplayHandlers, shouldOpenDefaultPetOnLaunch, showDef
 import { installAppLifecycle } from "./lifecycle.js";
 import { debug, error as logError, getLogFilePath, info, initializeLogger, warn } from "./logger.js";
 import { startLocalIpcServer } from "./local-ipc.js";
+import { startDevPluginWatcher } from "./plugin-dev-watcher.js";
+import { createElectronPluginHostCapabilities } from "./plugin-host-capabilities.js";
 import { defaultPluginPetApi } from "./plugin-pet-api.js";
+import { initializePluginPlatformSettings } from "./plugin-platform-settings.js";
 import { ElectronPluginJsHost } from "./plugin-js-host.js";
 import { initializePluginService } from "./plugin-service.js";
 import { createAppTray, refreshTrayMenu } from "./tray.js";
@@ -60,7 +63,11 @@ if (!gotSingleInstanceLock) {
     const roots = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_ROOTS);
     const paths = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_PATHS);
     const devPluginMode = roots.length > 0 || paths.length > 0;
-    const pluginService = initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion(), new ElectronPluginJsHost(), writePluginRuntimeLog, process.env.OPENPETS_DISABLE_PLUGIN_CATALOG === "1" || devPluginMode, resolveBundledOfficialPluginRoots(), !devPluginMode);
+    initializePluginPlatformSettings(app.getPath("userData"));
+    const pluginCapabilities = createElectronPluginHostCapabilities(app.getPath("userData"));
+    const pluginService = initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion(), new ElectronPluginJsHost(), writePluginRuntimeLog, process.env.OPENPETS_DISABLE_PLUGIN_CATALOG === "1" || devPluginMode, resolveBundledOfficialPluginRoots(), !devPluginMode, pluginCapabilities);
+    // Wall-clock schedules (daily/cron/at) re-arm deterministically after sleep.
+    powerMonitor.on("resume", () => pluginService.runtime.resyncSchedules());
     if (shouldOpenDefaultPetOnLaunch()) {
       showDefaultPet();
     }
@@ -76,6 +83,7 @@ if (!gotSingleInstanceLock) {
         const results = await service.loadLocalRoots(roots, { autoApprove: true, pruneStale: true });
         for (const result of results) if (!result.ok) logError("app", "dev plugin root load failed", new Error(`${result.path}: ${result.error}`));
       }
+      if (devPluginMode) startDevPluginWatcher(service, roots, paths);
     })().catch((error) => logError("app", "plugin service startup failed", error));
     void checkForGitHubReleaseUpdate().then(() => refreshTrayMenu());
     info("app", "startup complete", { logFile: getLogFilePath(), openDefaultPetOnLaunch: shouldOpenDefaultPetOnLaunch() });

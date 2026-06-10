@@ -4,7 +4,9 @@ import { getAppStateSnapshot, getDefaultPetPosition, resetDefaultPetPosition, se
 import { defaultPetWindowSize, getDefaultPetInitialPosition } from "./display.js";
 import { debug, info } from "./logger.js";
 import { transientDisplayMs, type OpenPetsReaction } from "./local-ipc-protocol.js";
-import { clearTransientReaction, createDefaultPetWindow, getSafeDefaultPetPosition, getTransientDisplayDurationMs, getTransientReactionAnimationMs, isPetWindowDragging, loadDefaultPetContent, mergePetTransientDisplay, readWindowPosition, recoverPetMouseInterop, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
+import { clearTransientReaction, createDefaultPetWindow, getSafeDefaultPetPosition, getTransientDisplayDurationMs, getTransientReactionAnimationMs, isPetWindowDragging, loadDefaultPetContent, mergePetTransientDisplay, readWindowPosition, recoverPetMouseInterop, setPetReactionState, type PetPluginBubbles, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
+import { PetBubbleArbiter, type ActiveBubble, type PetBubbleSink } from "./plugin-bubble-arbiter.js";
+import { publishPluginPetEvent } from "./plugin-events-source.js";
 
 let defaultPetWindow: BrowserWindow | null = null;
 let paused = false;
@@ -22,6 +24,29 @@ let movementInProgress = false;
 
 export type PetMoveOptions = { readonly x: number; readonly y: number; readonly durationMs?: number };
 export type PetWanderOptions = { readonly distance?: number; readonly durationMs?: number };
+
+// Plugin bubble slots (SDK v3): the arbiter decides what each slot shows; the
+// sink merges its decisions into the default pet render.
+let pluginTransientBubble: ActiveBubble | null = null;
+let pluginPinnedBubble: ActiveBubble | null = null;
+
+const defaultPetBubbleSink: PetBubbleSink = {
+  present(slot, content) {
+    if (slot === "pinned") pluginPinnedBubble = content;
+    else pluginTransientBubble = content;
+    debug("pet.default", "plugin bubble slot", { slot, token: content?.token ?? null, pluginId: content?.pluginId });
+    if (content) showDefaultPetForExternalEvent();
+    refreshDefaultPetContent();
+  },
+};
+
+/** The default pet's bubble arbiter — the Electron bubbles capability targets this. */
+export const defaultPetBubbleArbiter = new PetBubbleArbiter(defaultPetBubbleSink);
+
+export function getDefaultPetPluginBubbles(): PetPluginBubbles | null {
+  if (!pluginTransientBubble && !pluginPinnedBubble) return null;
+  return { transient: pluginTransientBubble, pinned: pluginPinnedBubble };
+}
 
 export function showDefaultPet(): void {
   updatePreferences({ openDefaultPetOnLaunch: true });
@@ -60,11 +85,15 @@ export function setDefaultPetPaused(nextPaused: boolean): void {
     return;
   }
 
-  void loadDefaultPetContent(defaultPetWindow, paused, transientDisplay, statusBadge, getCurrentDismissToken());
+  void loadDefaultPetContent(defaultPetWindow, paused, transientDisplay, statusBadge, getCurrentDismissToken(), getDefaultPetPluginBubbles());
 }
 
 export function getDefaultPetPaused(): boolean {
   return paused;
+}
+
+export function getDefaultPetWindowForPlugins(): BrowserWindow | null {
+  return defaultPetWindow && !defaultPetWindow.isDestroyed() ? defaultPetWindow : null;
 }
 
 export function refreshDefaultPetContent(): void {
@@ -74,7 +103,7 @@ export function refreshDefaultPetContent(): void {
   }
 
   debug("pet.default", "refresh content", { windowId: defaultPetWindow.id, paused, hasDisplay: Boolean(transientDisplay), badge: statusBadge, petId: getAppStateSnapshot().preferences.defaultPetId });
-  void loadDefaultPetContent(defaultPetWindow, paused, transientDisplay, statusBadge, getCurrentDismissToken());
+  void loadDefaultPetContent(defaultPetWindow, paused, transientDisplay, statusBadge, getCurrentDismissToken(), getDefaultPetPluginBubbles());
 }
 
 export function recoverDefaultPetMouseInterop(reason: string): void {
@@ -151,13 +180,17 @@ export function installDefaultPetDisplayHandlers(): void {
 
 function handleBubbleDismissed(dismissToken: string): void {
   debug("pet.default", "bubble dismissed callback", { windowId: defaultPetWindow?.id, dismissToken, currentGeneration: displayGeneration });
+  if (PetBubbleArbiter.isArbiterToken(dismissToken)) {
+    defaultPetBubbleArbiter.handleDismissed(dismissToken);
+    return;
+  }
   if (dismissToken !== String(displayGeneration)) {
     debug("pet.default", "bubble dismissed stale token", { dismissToken, currentGeneration: displayGeneration });
     return;
   }
   clearDefaultPetDisplayTimers();
   if (defaultPetWindow && !defaultPetWindow.isDestroyed()) {
-    void loadDefaultPetContent(defaultPetWindow, paused, null, null);
+    void loadDefaultPetContent(defaultPetWindow, paused, null, null, undefined, getDefaultPetPluginBubbles());
   }
 }
 
@@ -173,9 +206,13 @@ function getOrCreateDefaultPetWindow(): BrowserWindow {
     paused,
     display: transientDisplay,
     badge: statusBadge,
+    pluginBubbles: getDefaultPetPluginBubbles(),
     onPositionChanged: setDefaultPetPosition,
     onHideRequested: hideDefaultPet,
     onBubbleDismissed: handleBubbleDismissed,
+    onBubbleAction: (token, actionId) => defaultPetBubbleArbiter.handleAction(token, actionId),
+    onBubbleSubmit: (token, values) => defaultPetBubbleArbiter.handleSubmit(token, values),
+    onPetEvent: (name, payload) => publishPluginPetEvent("default", name, payload),
   }, getCurrentDismissToken());
   const windowId = defaultPetWindow.id;
   info("pet.default", "created", { windowId, position, paused, petId: getAppStateSnapshot().preferences.defaultPetId });

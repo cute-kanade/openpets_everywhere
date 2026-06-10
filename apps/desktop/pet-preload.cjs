@@ -106,11 +106,233 @@ ipcRenderer.on("openpets:pet-probe-hit-test", (_event, point) => {
   reportInteractiveHit(Boolean(target && target.closest(".pet-hitbox, .pet-shell, .bubble")) || dragging, typeof point.reason === "string" ? point.reason.slice(0, 80) : "probe", true);
 });
 
+// --- Plugin bubble interactions (actions, inline inputs) -------------------
+
+const collectBubbleInputValues = (bubble) => {
+  const values = {};
+  for (const control of bubble.querySelectorAll(".bubble-input-control")) {
+    const id = control.dataset.inputId;
+    if (!id) continue;
+    values[id] = control.type === "number" ? Number(control.value) : String(control.value);
+  }
+  return values;
+};
+
+const handleBubbleInteraction = (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+  const actionButton = target.closest("[data-bubble-action]");
+  if (actionButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    ipcRenderer.send("openpets:bubble-action", actionButton.dataset.bubbleToken, actionButton.dataset.bubbleAction);
+    return true;
+  }
+  const submitButton = target.closest("[data-bubble-submit]");
+  if (submitButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const bubble = submitButton.closest(".bubble");
+    ipcRenderer.send("openpets:bubble-submit", submitButton.dataset.bubbleSubmit, bubble ? collectBubbleInputValues(bubble) : {});
+    return true;
+  }
+  if (target.closest(".bubble-input-control")) return true;
+  return false;
+};
+
+// --- Pet senses: clicks, hover, drops ---------------------------------------
+
+let lastHoverSentAt = 0;
+let suppressClickUntil = 0;
+
+const sendPetEvent = (name, payload) => {
+  ipcRenderer.send("openpets:pet-event", name, payload || {});
+};
+
+const installPetSenses = () => {
+  document.addEventListener("click", (event) => {
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (!target.closest(".pet-hitbox, .pet-shell")) return;
+    if (Date.now() < suppressClickUntil) return;
+    sendPetEvent("pet:clicked", {});
+  });
+  document.addEventListener("dblclick", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest(".pet-hitbox, .pet-shell")) return;
+    sendPetEvent("pet:doubleClicked", {});
+  });
+  document.addEventListener("mouseover", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest(".pet-hitbox, .pet-shell")) return;
+    const now = Date.now();
+    if (now - lastHoverSentAt < 2000) return;
+    lastHoverSentAt = now;
+    sendPetEvent("pet:hover", {});
+  }, { passive: true });
+
+  const maxDropTextBytes = 256 * 1024;
+  const maxDropFileBytes = 5 * 1024 * 1024;
+  document.addEventListener("dragover", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest(".pet-hitbox, .pet-shell")) event.preventDefault();
+  });
+  document.addEventListener("drop", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest(".pet-hitbox, .pet-shell")) return;
+    event.preventDefault();
+    const transfer = event.dataTransfer;
+    if (!transfer) return;
+    const files = [...(transfer.files || [])].slice(0, 4);
+    if (files.length > 0) {
+      Promise.all(files.map(async (file) => ({
+        name: String(file.name).slice(0, 200),
+        sizeBytes: file.size,
+        text: file.size <= maxDropFileBytes ? await file.text().catch(() => "") : "",
+        truncated: file.size > maxDropFileBytes,
+      }))).then((read) => sendPetEvent("pet:drop", { kind: "files", droppedFiles: read })).catch(() => undefined);
+      return;
+    }
+    const text = String(transfer.getData("text/plain") || "").slice(0, maxDropTextBytes);
+    if (text) sendPetEvent("pet:drop", { kind: "text", text });
+  });
+};
+
+// --- Plugin sprite/scale overrides ------------------------------------------
+
+let spriteOverrideElement = null;
+ipcRenderer.on("openpets:pet-sprite-override", (_event, override) => {
+  const shell = document.querySelector(".pet-shell");
+  if (!shell) return;
+  const base = shell.querySelector(".sprite, .installed-card");
+  if (spriteOverrideElement) { spriteOverrideElement.remove(); spriteOverrideElement = null; }
+  if (!override || typeof override.fileUrl !== "string" || !override.fileUrl.startsWith("file://")) {
+    if (base) base.style.visibility = "";
+    return;
+  }
+  const probe = new Image();
+  probe.onload = () => {
+    const frame = probe.naturalHeight;
+    const frames = Math.max(1, Math.floor(probe.naturalWidth / Math.max(1, frame)));
+    const fps = Math.min(30, Math.max(1, Number(override.fps) || 8));
+    const el = document.createElement("div");
+    el.className = "plugin-sprite-override";
+    el.style.cssText = `position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:${frame}px;height:${frame}px;background-image:url("${override.fileUrl.replace(/"/g, "%22")}");background-repeat:no-repeat;background-size:${probe.naturalWidth}px ${frame}px;animation:plugin-sprite-frames ${(frames / fps).toFixed(3)}s steps(${frames}) ${override.loop === false ? "1" : "infinite"};pointer-events:none;`;
+    let style = document.getElementById("plugin-sprite-override-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "plugin-sprite-override-style";
+      document.head.appendChild(style);
+    }
+    style.textContent = `@keyframes plugin-sprite-frames { from { background-position: 0 0; } to { background-position: -${frames * frame}px 0; } }`;
+    if (base) base.style.visibility = "hidden";
+    shell.appendChild(el);
+    spriteOverrideElement = el;
+  };
+  probe.src = override.fileUrl;
+});
+
+ipcRenderer.on("openpets:pet-scale-override", (_event, scale) => {
+  const value = Number(scale);
+  if (!Number.isFinite(value) || value < 0.25 || value > 3) return;
+  const sprite = document.querySelector(".sprite, .installed-sprite");
+  if (sprite) sprite.style.transform = `scale(${value})`;
+});
+
+// --- Plugin audio (named WebAudio recipes + bundled data URLs) ---------------
+
+let audioContext = null;
+let activeAudioNodes = [];
+let activeAudioElements = [];
+
+const getAudioContext = () => {
+  if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  return audioContext;
+};
+
+const namedSoundRecipes = {
+  chime: [{ freq: 880, type: "sine", start: 0, duration: 0.35 }, { freq: 1318.5, type: "sine", start: 0.12, duration: 0.4 }],
+  pop: [{ freq: 420, type: "square", start: 0, duration: 0.08 }],
+  nom: [{ freq: 220, type: "triangle", start: 0, duration: 0.1 }, { freq: 180, type: "triangle", start: 0.12, duration: 0.1 }],
+  alert: [{ freq: 660, type: "sawtooth", start: 0, duration: 0.18 }, { freq: 660, type: "sawtooth", start: 0.26, duration: 0.18 }],
+  "level-up": [{ freq: 523.25, type: "sine", start: 0, duration: 0.12 }, { freq: 659.25, type: "sine", start: 0.12, duration: 0.12 }, { freq: 783.99, type: "sine", start: 0.24, duration: 0.22 }],
+  tick: [{ freq: 1000, type: "square", start: 0, duration: 0.03 }],
+  success: [{ freq: 587.33, type: "sine", start: 0, duration: 0.14 }, { freq: 880, type: "sine", start: 0.14, duration: 0.24 }],
+  error: [{ freq: 311.13, type: "sine", start: 0, duration: 0.18 }, { freq: 233.08, type: "sine", start: 0.2, duration: 0.28 }],
+};
+
+ipcRenderer.on("openpets:play-audio", (_event, payload) => {
+  try {
+    if (!payload) return;
+    const volume = Math.min(1, Math.max(0, Number(payload.volume) || 0.6));
+    if (payload.kind === "named") {
+      const recipe = namedSoundRecipes[payload.name];
+      if (!recipe) return;
+      const ctxAudio = getAudioContext();
+      const now = ctxAudio.currentTime;
+      for (const note of recipe) {
+        const osc = ctxAudio.createOscillator();
+        const gain = ctxAudio.createGain();
+        osc.type = note.type;
+        osc.frequency.value = note.freq;
+        gain.gain.setValueAtTime(0, now + note.start);
+        gain.gain.linearRampToValueAtTime(volume * 0.35, now + note.start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + note.start + note.duration);
+        osc.connect(gain).connect(ctxAudio.destination);
+        osc.start(now + note.start);
+        osc.stop(now + note.start + note.duration + 0.05);
+        activeAudioNodes.push(osc);
+      }
+      return;
+    }
+    if (payload.kind === "data" && typeof payload.dataUrl === "string" && payload.dataUrl.startsWith("data:audio/")) {
+      const element = new Audio(payload.dataUrl);
+      element.volume = volume;
+      activeAudioElements.push(element);
+      element.addEventListener("ended", () => { activeAudioElements = activeAudioElements.filter((entry) => entry !== element); });
+      void element.play().catch(() => undefined);
+    }
+  } catch { /* audio is best-effort */ }
+});
+
+ipcRenderer.on("openpets:stop-audio", () => {
+  for (const node of activeAudioNodes) { try { node.stop(); } catch { /* already stopped */ } }
+  activeAudioNodes = [];
+  for (const element of activeAudioElements) { try { element.pause(); } catch { /* noop */ } }
+  activeAudioElements = [];
+});
+
+// --- Plugin TTS ---------------------------------------------------------------
+
+ipcRenderer.on("openpets:tts-speak", (_event, payload) => {
+  try {
+    if (!payload || typeof payload.text !== "string" || !window.speechSynthesis) return;
+    const utterance = new SpeechSynthesisUtterance(payload.text.slice(0, 500));
+    if (typeof payload.rate === "number" && payload.rate >= 0.5 && payload.rate <= 2) utterance.rate = payload.rate;
+    if (typeof payload.voice === "string" && payload.voice) {
+      const match = window.speechSynthesis.getVoices().find((voice) => voice.name === payload.voice || voice.lang === payload.voice);
+      if (match) utterance.voice = match;
+    }
+    window.speechSynthesis.speak(utterance);
+  } catch { /* tts is best-effort */ }
+});
+
+ipcRenderer.on("openpets:tts-stop", () => {
+  try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch { /* noop */ }
+});
+
 const installMouseInterop = () => {
   lastInteractiveHit = null;
   dragging = false;
 
-  document.addEventListener("click", dismissBubble);
+  document.addEventListener("click", (event) => {
+    if (handleBubbleInteraction(event)) return;
+    dismissBubble(event);
+  });
+  installPetSenses();
+
+  let dragStartPoint = null;
 
   document.addEventListener("mousemove", (event) => {
     updateInteractiveHit(event);
@@ -123,13 +345,18 @@ const installMouseInterop = () => {
     if (event.button !== 0 || !target?.closest(".pet-hitbox, .pet-shell")) return;
     event.preventDefault();
     dragging = true;
+    dragStartPoint = { screenX: event.screenX, screenY: event.screenY };
     setInteractiveHit(true);
     ipcRenderer.send("openpets:pet-drag-start", { screenX: event.screenX, screenY: event.screenY });
   });
 
-  document.addEventListener("mouseup", () => {
+  document.addEventListener("mouseup", (event) => {
     if (!dragging) return;
     dragging = false;
+    if (dragStartPoint && Math.hypot(event.screenX - dragStartPoint.screenX, event.screenY - dragStartPoint.screenY) > 4) {
+      suppressClickUntil = Date.now() + 300;
+    }
+    dragStartPoint = null;
     ipcRenderer.send("openpets:pet-drag-end");
   });
 

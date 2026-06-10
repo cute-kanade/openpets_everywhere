@@ -1,7 +1,7 @@
 {
   "name": "@open-pets/plugin-sdk",
-  "version": "2.1.1",
-  "description": "Type definitions for building OpenPets desktop pet plugins. Types only — the OpenPets runtime injects the SDK implementation at load time.",
+  "version": "3.0.0",
+  "description": "Type definitions and testing harness for building OpenPets desktop pet plugins (SDK v3). The OpenPets runtime injects the SDK implementation at load time; the ./testing entry point runs plugins without the app.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -28,6 +28,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {

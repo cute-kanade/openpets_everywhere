@@ -7,7 +7,7 @@ import type { PluginJsHost, PluginJsHostInstance } from "./plugin-js-host.js";
 import { defaultMaxPluginManifestBytes, readSafePluginManifest } from "./plugin-manifest-reader.js";
 import { type OpenPetsJavascriptPluginManifest, type OpenPetsPluginManifest, type PluginAction } from "./plugin-manifest.js";
 import type { PluginPetApi } from "./plugin-pet-api.js";
-import { PluginSdkBridge, type PluginLogLevel, type PluginRuntimePublicState, type PluginStorageStore } from "./plugin-sdk-bridge.js";
+import { PluginSdkBridge, type PluginHostCapabilities, type PluginInspectorState, type PluginLogLevel, type PluginRuntimePublicState, type PluginStorageStore } from "./plugin-sdk-bridge.js";
 import type { PluginStateRecord, PluginStateStore } from "./plugin-state.js";
 
 export interface PluginTimerHandle { cancel(): void }
@@ -30,6 +30,7 @@ export type PluginRuntimeOptions = {
   readonly jsHost?: PluginJsHost;
   readonly storageStore?: PluginStorageStore;
   readonly logger?: (level: PluginLogLevel, message: string, fields?: Record<string, unknown>) => void;
+  readonly capabilities?: PluginHostCapabilities;
 };
 
 type CompiledTimer = { readonly intervalMs: number; readonly actions: readonly CompiledAction[] };
@@ -43,6 +44,7 @@ export class PluginRuntime {
   readonly #allowedPluginRoots: readonly string[];
   readonly #maxManifestBytes: number;
   readonly #jsHost?: PluginJsHost;
+  readonly #capabilities?: PluginHostCapabilities;
   readonly #sdkBridge: PluginSdkBridge;
   readonly #logger: (level: PluginLogLevel, message: string, fields?: Record<string, unknown>) => void;
   readonly #slots = new Map<string, PluginRuntimeSlot>();
@@ -55,8 +57,9 @@ export class PluginRuntime {
     this.#allowedPluginRoots = options.allowedPluginRoots;
     this.#maxManifestBytes = options.maxManifestBytes ?? defaultMaxPluginManifestBytes;
     this.#jsHost = options.jsHost;
+    this.#capabilities = options.capabilities;
     this.#logger = options.logger ?? (() => undefined);
-    this.#sdkBridge = new PluginSdkBridge({ stateStore: this.#stateStore, petApi: this.#petApi, scheduler: this.#scheduler, storage: options.storageStore, onError: (id, reason) => this.#markBroken(id, reason), logger: this.#logger });
+    this.#sdkBridge = new PluginSdkBridge({ stateStore: this.#stateStore, petApi: this.#petApi, scheduler: this.#scheduler, storage: options.storageStore, onError: (id, reason) => this.#markBroken(id, reason), logger: this.#logger, capabilities: options.capabilities });
   }
 
   async start(): Promise<void> {
@@ -70,15 +73,18 @@ export class PluginRuntime {
   }
 
   getPluginState(id: string): PluginRuntimePublicState { return this.#sdkBridge.getPublicState(id); }
+  getInspectorState(id: string): PluginInspectorState { return this.#sdkBridge.getInspectorState(id); }
   executeCommand(id: string, commandId: string, args?: Record<string, unknown>): Promise<void> { return this.#sdkBridge.executeCommand(id, commandId, args); }
+  executeMenuSelect(id: string, itemId: string): Promise<void> { return this.#sdkBridge.executeMenuSelect(id, itemId); }
   notifyConfigChanged(id: string): void { this.#sdkBridge.notifyConfigChanged(id); }
+  resyncSchedules(): void { this.#sdkBridge.resyncSchedules(); }
 
   async reloadAll(): Promise<void> {
     for (const id of this.#slots.keys()) this.#cancelPlugin(id);
     const records = this.#stateStore.listRecords();
     const jsIds: string[] = [];
     for (const record of records) {
-      if (record.runtime === "javascript" || record.manifestVersion === 2) jsIds.push(record.id);
+      if (record.runtime === "javascript" || record.manifestVersion === 2 || record.manifestVersion === 3) jsIds.push(record.id);
       else await this.reloadPlugin(record.id);
     }
     await Promise.all(jsIds.map((id) => this.reloadPlugin(id)));
@@ -185,6 +191,8 @@ export class PluginRuntime {
     slot.jsHost?.stop();
     slot.jsHost = undefined;
     this.#sdkBridge.clearPlugin(id);
+    const teardown = (this.#capabilities as { clearPlugin?: (pluginId: string) => void } | undefined)?.clearPlugin;
+    if (teardown) { try { teardown(id); } catch { /* host teardown is best effort */ } }
   }
 
   #slotFor(id: string): PluginRuntimeSlot {

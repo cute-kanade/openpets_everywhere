@@ -130,7 +130,7 @@ await scenario("javascript http fetch rejects oversized response", async ({ stor
   const originalFetch = globalThis.fetch;
   const jsHost = new FakeJsHost();
   addPlugin(store, { manifestVersion: 2, runtime: "javascript", approvedPermissions: ["network"], approvedNetworkHosts: ["api.github.com"] }, jsManifest({ permissions: ["network"], network: { hosts: ["api.github.com"] } }));
-  globalThis.fetch = (async () => new Response("x".repeat(1024 * 1024 + 1), { status: 200 })) as typeof fetch;
+  globalThis.fetch = (async () => new Response("x".repeat(4 * 1024 * 1024 + 1), { status: 200 })) as typeof fetch;
   try {
     await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
     await assert.rejects(() => jsHost.starts[0].sdk!.http.fetch("https://api.github.com/"), /too large/);

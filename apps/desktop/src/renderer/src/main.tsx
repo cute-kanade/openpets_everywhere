@@ -29,9 +29,22 @@ type DashboardActivity = { messagesSent: number; reactionsSent: number; reaction
 type DashboardSnapshot = { defaultPet: { id: string; displayName: string; previewSpriteUrl: string }; installedPetCount: number; catalog: { source: string; total?: number; page?: number; pageCount?: number; error?: string }; plugins: { installed: number; enabled: number; broken: number }; updateStatus: UpdateStatus; activity: DashboardActivity };
 type ReactionAnimationSettings = { reactions: { id: string; label: string; description: string; defaultAnimation: UserSelectableAnimationState }[]; animations: { id: UserSelectableAnimationState; label: string; description: string }[]; sprite: { frameWidth: number; frameHeight: number; columns: number; rows: number; states: Record<UserSelectableAnimationState, { row: number; frames: number; durationMs: number; iterations?: number | "infinite" }> }; overrides: ReactionAnimationOverrides; previewSpriteUrl: string };
 type PluginFilter = "all" | "installed" | "catalog" | "local" | "broken";
-type PluginPermission = "pet:speak" | "pet:reaction" | "pet:move" | "timer" | "schedule" | "storage" | "status" | "commands" | "network";
+type PluginPermission =
+  | "pet:speak" | "pet:reaction" | "pet:move" | "timer" | "schedule" | "storage" | "status" | "commands" | "network"
+  | "pet:interact" | "pet:pin" | "pet:animate" | "pet:speak:dynamic" | "pet:drop" | "pets:read" | "pets:manage"
+  | "audio" | "events" | "ui:toast" | "ui:panel" | "notify" | "bus" | "ai" | "secrets" | "voice:speak" | "voice:listen"
+  | "auth" | "files" | "system:openExternal" | "system:metrics" | "clipboard" | "network:write";
+type PluginPlatformSettings = {
+  allowPluginAudio: boolean;
+  allowDynamicSpeech: boolean;
+  allowPluginVoice: boolean;
+  allowMicrophone: boolean;
+  quietHours: { enabled: boolean; start: string; end: string };
+  ai: { provider: "none" | "anthropic" | "openai" | "ollama"; model: string; baseUrl?: string };
+};
+type PluginInspectorState = { schedules: Array<{ id: string; type: string; nextRunMs: number }>; commands: PluginCommand[]; menuItems: Array<{ id: string; title: string }>; status?: PluginStatus; activeBubbles: number; activePanels: number; eventSubscriptions: number; lastError?: string; quotaCounters: Record<string, number> };
 type PluginIconName = "plugin" | "bell" | "timer" | "github" | "heart" | "sparkles" | "coffee" | "focus";
-type PluginConfigField = { type: "text" | "textarea" | "number" | "boolean" | "select" | "time" | "multiSelect" | "list"; label?: string; description?: string; default?: string | number | boolean | string[] | Array<Record<string, unknown>>; options?: Array<{ label: string; value: string }>; min?: number; max?: number; step?: number; maxLength?: number; maxItems?: number; itemSchema?: Record<string, PluginConfigField> };
+type PluginConfigField = { type: "text" | "textarea" | "number" | "boolean" | "select" | "time" | "date" | "multiSelect" | "list" | "secret"; label?: string; description?: string; default?: string | number | boolean | string[] | Array<Record<string, unknown>>; options?: Array<{ label: string; value: string }>; min?: number; max?: number; step?: number; maxLength?: number; maxItems?: number; itemSchema?: Record<string, PluginConfigField> };
 type PluginConfigSchema = Record<string, PluginConfigField>;
 type PluginConfig = Record<string, unknown>;
 type PluginCommand = { id: string; title: string; description?: string };
@@ -66,6 +79,11 @@ type ControlCenterApi = {
   installCatalogPlugin(id: string): Promise<PluginServiceResult>;
   updateCatalogPlugin(id: string): Promise<PluginServiceResult>;
   uninstallPlugin(id: string): Promise<PluginServiceResult>;
+  getPluginInspector(id: string): Promise<PluginInspectorState>;
+  getPluginPlatformSettings(): Promise<PluginPlatformSettings>;
+  updatePluginPlatformSettings(patch: Partial<PluginPlatformSettings>): Promise<PluginPlatformSettings>;
+  setPluginAiApiKey(key: string | null): Promise<{ ok: boolean; hasKey: boolean }>;
+  getPluginAiApiKeyStatus(): Promise<{ hasKey: boolean }>;
   getCatalog(): Promise<CatalogState>;
   getCatalogPage(page: number): Promise<CatalogState>;
   getCatalogSearch(): Promise<{ pets: SearchPetEntry[]; error?: string }>;
@@ -882,7 +900,10 @@ function SettingsView() {
   const [reactionSettings, setReactionSettings] = useState<ReactionAnimationSettings | null>(null);
   const [launchAtLogin, setLaunchAtLogin] = useState<LaunchAtLoginState | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
-  const [activeTab, setActiveTab] = useState<"general" | "reactions">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "reactions" | "plugins">("general");
+  const [platformSettings, setPlatformSettings] = useState<PluginPlatformSettings | null>(null);
+  const [aiKeyStatus, setAiKeyStatus] = useState<{ hasKey: boolean }>({ hasKey: false });
+  const [aiKeyDraft, setAiKeyDraft] = useState("");
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -890,16 +911,20 @@ function SettingsView() {
 
   async function loadSettings() {
     setError("");
-    const [nextSettings, nextReactions, nextLaunch, nextUpdate] = await Promise.all([
+    const [nextSettings, nextReactions, nextLaunch, nextUpdate, nextPlatform, nextAiKey] = await Promise.all([
       api.getSettingsState(),
       api.getReactionAnimationSettings(),
       api.getLaunchAtLogin(),
       api.getUpdateStatus(),
+      api.getPluginPlatformSettings().catch(() => null),
+      api.getPluginAiApiKeyStatus().catch(() => ({ hasKey: false })),
     ]);
     setSettings(nextSettings);
     setReactionSettings(nextReactions);
     setLaunchAtLogin(nextLaunch);
     setUpdateStatus(nextUpdate);
+    setPlatformSettings(nextPlatform);
+    setAiKeyStatus(nextAiKey);
     if (nextUpdate.state === "checking") {
       void api.checkForUpdates().then(setUpdateStatus).catch((err) => setError(String(err?.message ?? err)));
     }
@@ -947,6 +972,13 @@ function SettingsView() {
 
   const overrides = settings?.preferences.reactionAnimationOverrides ?? {};
 
+  function patchPlatformSettings(patch: Partial<PluginPlatformSettings>, success: string) {
+    void run("Saving", async () => {
+      setPlatformSettings(await api.updatePluginPlatformSettings(patch));
+      setMessage(success);
+    });
+  }
+
   return <div className="settings-layout">
     {error && <div className="error settings-message">{error}</div>}
     {message && <div className="settings-success settings-message">{message}</div>}
@@ -960,6 +992,10 @@ function SettingsView() {
         <button className={`settings-nav-item ${activeTab === "reactions" ? "active" : ""}`} onClick={() => setActiveTab("reactions")}>
           <PetsIcon />
           <span>Reaction Mapping</span>
+        </button>
+        <button className={`settings-nav-item ${activeTab === "plugins" ? "active" : ""}`} onClick={() => setActiveTab("plugins")}>
+          <PluginsIcon />
+          <span>Plugin Platform</span>
         </button>
       </aside>
 
@@ -1064,6 +1100,99 @@ function SettingsView() {
             </div>
           </div>
         )}
+
+        {activeTab === "plugins" && (
+          <div className="settings-section">
+            <p className="eyebrow">Plugin Platform</p>
+            <h2 className="settings-section-title">Plugin Permissions & AI</h2>
+            <p className="text-sm text-slatecopy -mt-2 mb-2">Global gates for what plugins may do. Sensitive capabilities stay off until you enable them here.</p>
+
+            <div className="settings-group">
+              <ToggleRow
+                title="Plugins may play sound"
+                description="Allow plugin chimes, alerts, and bundled sounds."
+                checked={platformSettings?.allowPluginAudio ?? true}
+                disabled={!platformSettings || !!busy}
+                onChange={(checked) => patchPlatformSettings({ allowPluginAudio: checked }, "Plugin sound preference saved.")}
+              />
+              <ToggleRow
+                title="Plugins may speak (voice)"
+                description="Allow text-to-speech through the system voice."
+                checked={platformSettings?.allowPluginVoice ?? true}
+                disabled={!platformSettings || !!busy}
+                onChange={(checked) => patchPlatformSettings({ allowPluginVoice: checked }, "Plugin voice preference saved.")}
+              />
+              <ToggleRow
+                title="Allow AI-generated pet speech"
+                description="Sensitive: lets approved plugins show model-generated bubbles."
+                checked={platformSettings?.allowDynamicSpeech ?? false}
+                disabled={!platformSettings || !!busy}
+                onChange={(checked) => patchPlatformSettings({ allowDynamicSpeech: checked }, "AI speech preference saved.")}
+              />
+              <ToggleRow
+                title="Allow microphone (push-to-talk)"
+                description="Sensitive: lets approved plugins capture one-shot voice input."
+                checked={platformSettings?.allowMicrophone ?? false}
+                disabled={!platformSettings || !!busy}
+                onChange={(checked) => patchPlatformSettings({ allowMicrophone: checked }, "Microphone preference saved.")}
+              />
+            </div>
+
+            <div className="settings-group">
+              <ToggleRow
+                title="Quiet hours"
+                description="Silence plugin speech, sound, and voice during this window."
+                checked={platformSettings?.quietHours.enabled ?? false}
+                disabled={!platformSettings || !!busy}
+                onChange={(checked) => patchPlatformSettings({ quietHours: { ...(platformSettings?.quietHours ?? { start: "22:00", end: "08:00" }), enabled: checked } }, "Quiet hours saved.")}
+              />
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <strong>Quiet window</strong>
+                  <small>Start and end of the quiet-hours window.</small>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <input type="time" className="settings-select" value={platformSettings?.quietHours.start ?? "22:00"} disabled={!platformSettings || !!busy} onChange={(event) => patchPlatformSettings({ quietHours: { ...(platformSettings?.quietHours ?? { enabled: false, end: "08:00" }), start: event.target.value } as PluginPlatformSettings["quietHours"] }, "Quiet hours saved.")} />
+                  <span className="opacity-60">to</span>
+                  <input type="time" className="settings-select" value={platformSettings?.quietHours.end ?? "08:00"} disabled={!platformSettings || !!busy} onChange={(event) => patchPlatformSettings({ quietHours: { ...(platformSettings?.quietHours ?? { enabled: false, start: "22:00" }), end: event.target.value } as PluginPlatformSettings["quietHours"] }, "Quiet hours saved.")} />
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-group">
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <strong>AI provider</strong>
+                  <small>One provider serves every plugin through the host AI gateway. Keys are encrypted and never shared with plugin code.</small>
+                </div>
+                <select className="settings-select" value={platformSettings?.ai.provider ?? "none"} disabled={!platformSettings || !!busy} onChange={(event) => patchPlatformSettings({ ai: { ...(platformSettings?.ai ?? { model: "" }), provider: event.target.value as PluginPlatformSettings["ai"]["provider"] } }, "AI provider saved.")}>
+                  <option value="none">Disabled</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="ollama">Ollama (local)</option>
+                </select>
+              </div>
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <strong>Model</strong>
+                  <small>Leave empty for the provider default.</small>
+                </div>
+                <input type="text" className="settings-select" placeholder="provider default" defaultValue={platformSettings?.ai.model ?? ""} disabled={!platformSettings || !!busy} onBlur={(event) => { if (event.target.value !== (platformSettings?.ai.model ?? "")) patchPlatformSettings({ ai: { ...(platformSettings?.ai ?? { provider: "none" }), model: event.target.value } as PluginPlatformSettings["ai"] }, "AI model saved."); }} />
+              </div>
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <strong>API key</strong>
+                  <small>{aiKeyStatus.hasKey ? "A key is stored (encrypted)." : "No key stored. Ollama needs no key."}</small>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <input type="password" className="settings-select" placeholder={aiKeyStatus.hasKey ? "••••••••" : "Paste key"} value={aiKeyDraft} disabled={!!busy} onChange={(event) => setAiKeyDraft(event.target.value)} />
+                  <Button variant="secondary" size="compact" disabled={!!busy || !aiKeyDraft} onClick={() => void run("Saving", async () => { setAiKeyStatus(await api.setPluginAiApiKey(aiKeyDraft)); setAiKeyDraft(""); setMessage("AI key saved."); })}>Save</Button>
+                  {aiKeyStatus.hasKey && <Button variant="secondary" size="compact" disabled={!!busy} onClick={() => void run("Saving", async () => { setAiKeyStatus(await api.setPluginAiApiKey(null)); setMessage("AI key removed."); })}>Remove</Button>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   </div>;
@@ -1087,7 +1216,31 @@ const pluginPermissionLabels: Record<PluginPermission, string> = {
   status: "Status",
   commands: "Commands",
   network: "Network",
+  "pet:interact": "Bubble buttons",
+  "pet:pin": "Pinned bubble",
+  "pet:animate": "Custom animation",
+  "pet:speak:dynamic": "AI speech",
+  "pet:drop": "Drag & drop",
+  "pets:read": "Read pets",
+  "pets:manage": "Manage pets",
+  audio: "Sound",
+  events: "Events",
+  "ui:toast": "Toasts",
+  "ui:panel": "Panels",
+  notify: "Notifications",
+  bus: "Plugin bus",
+  ai: "AI gateway",
+  secrets: "Secrets",
+  "voice:speak": "Voice",
+  "voice:listen": "Microphone",
+  auth: "Sign-in",
+  files: "Files",
+  "system:openExternal": "Open links",
+  "system:metrics": "System metrics",
+  clipboard: "Clipboard",
+  "network:write": "Network write",
 };
+const sensitivePermissionSet = new Set<PluginPermission>(["voice:listen", "clipboard", "pet:speak:dynamic"]);
 
 const pluginStatusTone: Record<NonNullable<PluginStatus["tone"]>, keyof typeof statusPillToneClass> = {
   info: "blue",
@@ -1314,7 +1467,7 @@ function ConfigFieldEditor({ pluginId, fieldKey, field, value, onChange }: { plu
         })}
       </span>
     ) : (
-      <input className="plugin-input" type={field.type === "number" ? "number" : field.type === "time" ? "time" : "text"} value={field.type === "number" && typeof value === "number" ? String(value) : textValue} min={field.min} max={field.max} step={field.step} maxLength={field.maxLength} onChange={(event) => onChange(field.type === "number" ? Number(event.target.value) : event.target.value)} />
+      <input className="plugin-input" type={field.type === "number" ? "number" : field.type === "time" ? "time" : field.type === "date" ? "date" : field.type === "secret" ? "password" : "text"} autoComplete={field.type === "secret" ? "off" : undefined} value={field.type === "number" && typeof value === "number" ? String(value) : textValue} min={field.min} max={field.max} step={field.step} maxLength={field.maxLength} onChange={(event) => onChange(field.type === "number" ? Number(event.target.value) : event.target.value)} />
     )}
   </label>;
 }
@@ -1955,7 +2108,7 @@ function PluginsView() {
                 <div className="settings-row-info"><strong>{installed.enabled ? "Enabled" : "Disabled"}</strong><small>{installed.brokenReason || (installed.catalogDisabled ? "This plugin is disabled by the catalog." : "Toggle this plugin without leaving the Control Center.")}</small></div>
                 <input className="settings-toggle" type="checkbox" checked={installed.enabled} disabled={!!busy || installed.catalogDisabled || Boolean(installed.brokenReason)} onChange={(event) => void run("Saving", async () => { applyResult(await api.setPluginEnabled(installed.id, event.target.checked), event.target.checked ? "Plugin enabled." : "Plugin disabled."); })} />
               </label>
-              <div className="badges plugin-permissions">{installed.approvedPermissions.length ? installed.approvedPermissions.map((permission) => <StatusPill key={permission} tone={permission === "network" ? "orange" : "blue"}>{pluginPermissionLabels[permission]}</StatusPill>) : <StatusPill tone="slate">No permissions</StatusPill>}</div>
+              <div className="badges plugin-permissions">{installed.approvedPermissions.length ? installed.approvedPermissions.map((permission) => <StatusPill key={permission} tone={sensitivePermissionSet.has(permission) ? "red" : permission === "network" || permission === "network:write" ? "orange" : "blue"}>{pluginPermissionLabels[permission]}</StatusPill>) : <StatusPill tone="slate">No permissions</StatusPill>}</div>
             </section>
             {!!installed.configErrors?.length && <section className="plugin-section plugin-section-danger"><div className="plugin-section-title"><small>Configuration</small><strong>Needs attention</strong></div><ul>{installed.configErrors.map((configError, index) => <li key={index}>{configError.message || String(configError)}</li>)}</ul></section>}
             {hasConfigFields && <section className="plugin-section">
@@ -1984,7 +2137,7 @@ function PluginsView() {
           </> : <section className="plugin-section">
             <div className="plugin-section-title"><small>Catalog</small><strong>Ready to install</strong></div>
             <p className="desc">Install this plugin to approve its permissions and make it available in your desktop companion.</p>
-            <div className="badges plugin-permissions">{catalogPlugin?.permissions.map((permission) => <StatusPill key={permission} tone={permission === "network" ? "orange" : "blue"}>{pluginPermissionLabels[permission]}</StatusPill>)}</div>
+            <div className="badges plugin-permissions">{catalogPlugin?.permissions.map((permission) => <StatusPill key={permission} tone={sensitivePermissionSet.has(permission) ? "red" : permission === "network" || permission === "network:write" ? "orange" : "blue"}>{pluginPermissionLabels[permission]}</StatusPill>)}</div>
             <Button variant="primary" fullWidth icon={<InstallIcon />} disabled={!!busy || catalogPlugin?.deprecated} onClick={() => void run("Installing", async () => { await installCatalogEntry(selected); })}>Install Plugin</Button>
           </section>}
         </> : <div className="plugin-empty plugin-empty-detail"><PluginGlyph /><strong>No plugin selected</strong><small>Install a catalog plugin or load a local folder to begin.</small></div>}

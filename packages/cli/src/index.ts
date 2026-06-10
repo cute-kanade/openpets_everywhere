@@ -12,6 +12,9 @@ import { claudeHookEvents, openPetsHookMarker, removeOpenPetsHooks, runClaudeHoo
 import { buildCursorRulesPreview, buildOpenPetsOnlyPreview, classifyCursorMcpStatus, classifyCursorRulesStatus, executeCursorMcpWrite, executeCursorRulesWrite, getCursorProjectMcpPath, getCursorProjectRulesPath, planCursorMcpInstall, planCursorMcpReplace, planCursorRulesInstall, planCursorRulesRemove, planCursorRulesReplace, readCursorMcpConfig, readCursorOpenPetsRules } from "@open-pets/cursor";
 import { prepareOpenCodeProjectSetup, writePreparedOpenCodeProjectSetup } from "@open-pets/opencode";
 
+import { pluginTemplateNames, pluginTemplates, type PluginTemplateName } from "./plugin-templates.js";
+import { validatePluginFolder } from "./plugin-validate.js";
+
 export const cliPackageName = "@open-pets/cli";
 
 interface ConfigureOptions {
@@ -47,6 +50,7 @@ interface PluginNewOptions {
   readonly id: string;
   readonly dir: string;
   readonly author?: string;
+  readonly template: PluginTemplateName;
 }
 
 interface PreparedHooks {
@@ -144,6 +148,22 @@ async function main(): Promise<void> {
         return;
       }
       scaffoldPlugin(parsePluginNewArgs(rest));
+      return;
+    }
+    if (subcommand === "validate") {
+      if (hasHelp(rest)) {
+        printPluginUsage();
+        return;
+      }
+      const target = rest.find((arg) => !arg.startsWith("--")) ?? ".";
+      const result = validatePluginFolder(target);
+      if (result.ok) {
+        process.stdout.write(`Plugin manifest and declared files look valid: ${resolve(target)}\n`);
+        return;
+      }
+      process.stderr.write(`Plugin validation failed (${result.issues.length} issue${result.issues.length === 1 ? "" : "s"}):\n`);
+      for (const issue of result.issues) process.stderr.write(`  ${issue.path}: ${issue.message}\n`);
+      process.exitCode = 1;
       return;
     }
     throw new CliError(`Unknown plugin subcommand: ${subcommand}`);
@@ -364,6 +384,7 @@ export function parsePluginNewArgs(args: readonly string[]): PluginNewOptions {
   let id: string | undefined;
   let dir: string | undefined;
   let author: string | undefined;
+  let template: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--id") { id = readRequiredArg(args, index, "--id"); index += 1; }
@@ -372,18 +393,22 @@ export function parsePluginNewArgs(args: readonly string[]): PluginNewOptions {
     else if (arg.startsWith("--dir=")) dir = arg.slice("--dir=".length);
     else if (arg === "--author") { author = readRequiredArg(args, index, "--author"); index += 1; }
     else if (arg.startsWith("--author=")) author = arg.slice("--author=".length);
+    else if (arg === "--template") { template = readRequiredArg(args, index, "--template"); index += 1; }
+    else if (arg.startsWith("--template=")) template = arg.slice("--template=".length);
     else if (arg.startsWith("--")) throw new CliError(`Unknown plugin new option: ${arg}`);
     else if (name === undefined) name = arg;
     else throw new CliError(`Unexpected argument: ${arg}`);
   }
   const cleanName = (name ?? "").trim();
-  if (!cleanName) throw new CliError("Usage: openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]");
+  if (!cleanName) throw new CliError("Usage: openpets plugin new <name> [--template <template>] [--id <id>] [--dir <path>] [--author <name>]");
   if (cleanName.length > 60 || /[\x00-\x1F\x7F]/.test(cleanName)) throw new CliError("Plugin name must be 1-60 printable characters.");
   const slug = slugifyPluginName(cleanName);
   if (!slug) throw new CliError("Plugin name must contain at least one letter or number.");
   const finalId = (id ?? `local.${slug}`).trim();
   if (!isValidPluginId(finalId)) throw new CliError("Plugin id must be 1-64 chars (letters, numbers, dot, dash, underscore) and cannot start with a dot.");
-  return { name: cleanName, id: finalId, dir: dir ?? slug, author: author?.trim() || undefined };
+  const finalTemplate = (template ?? "blank").trim() as PluginTemplateName;
+  if (!pluginTemplateNames.includes(finalTemplate)) throw new CliError(`Unknown plugin template: ${finalTemplate}. Templates: ${pluginTemplateNames.join(", ")}.`);
+  return { name: cleanName, id: finalId, dir: dir ?? slug, author: author?.trim() || undefined, template: finalTemplate };
 }
 
 function slugifyPluginName(name: string): string {
@@ -403,55 +428,43 @@ export function scaffoldPlugin(options: PluginNewOptions): { readonly dir: strin
   const dirStats = lstatSync(targetDir);
   if (dirStats.isSymbolicLink() || !dirStats.isDirectory()) throw new CliError("Target plugin path must be a directory.");
 
+  const template = pluginTemplates[options.template];
   const manifest = {
-    manifestVersion: 2,
+    $schema: "https://openpets.dev/schemas/openpets.plugin.schema.json",
+    manifestVersion: 3,
     id: options.id,
     name: options.name,
     version: "1.0.0",
-    description: `${options.name} — an OpenPets plugin.`,
-    author: options.author ?? "",
+    description: `${options.name} — ${template.description}`,
     runtime: "javascript",
     entry: "index.js",
-    sdkVersion: "1.0.0",
-    permissions: ["pet:speak", "pet:reaction", "commands", "status"],
-    configSchema: {},
+    sdkVersion: "3.0.0",
+    permissions: template.permissions,
+    configSchema: template.configSchema,
   };
+  const templateContext = { id: options.id, name: options.name };
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-  writeFileSync(entryPath, pluginEntryTemplate(options.name), { encoding: "utf8", flag: "wx" });
+  writeFileSync(entryPath, template.entry(templateContext), { encoding: "utf8", flag: "wx" });
+  writeFileSync(join(targetDir, "test.js"), template.test(templateContext), { encoding: "utf8", flag: "wx" });
+  const packageJsonPath = join(targetDir, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    writeFileSync(packageJsonPath, `${JSON.stringify({ name: slugifyPluginName(options.name) || "openpets-plugin", private: true, type: "module", scripts: { test: "node test.js" }, devDependencies: { "@open-pets/plugin-sdk": "^3.0.0" } }, null, 2)}\n`, { encoding: "utf8" });
+  }
   const readmePath = join(targetDir, "README.md");
   if (!existsSync(readmePath)) writeFileSync(readmePath, pluginReadmeTemplate(options, targetDir), { encoding: "utf8" });
 
   process.stdout.write(
-    `Created OpenPets plugin "${sanitizeTerminalText(options.name)}" (${options.id})\n  ${targetDir}\n\n` +
+    `Created OpenPets plugin "${sanitizeTerminalText(options.name)}" (${options.id}) from the ${options.template} template\n  ${targetDir}\n\n` +
       "Next steps:\n" +
-      "  1. (optional) npm i -D @open-pets/plugin-sdk    # editor types\n" +
-      "  2. From the OpenPets repo root, run it locally:\n" +
+      "  1. npm install              # pulls @open-pets/plugin-sdk for types + the test kit\n" +
+      "  2. npm test                 # deterministic harness, no app needed\n" +
+      "  3. From the OpenPets repo root, run it live with hot reload:\n" +
       `     OPENPETS_DEV_PLUGIN_PATHS=${targetDir} pnpm dev:desktop\n` +
-      "  3. Open Tray → Plugins, enable it, then right-click your pet.\n\n" +
+      "  4. Open Tray → Plugins, enable it, then right-click your pet.\n\n" +
+      `Validate anytime: openpets plugin validate ${targetDir}\n` +
       "Docs: https://openpets.dev/sdk\n",
   );
   return { dir: targetDir, manifestPath, entryPath };
-}
-
-function pluginEntryTemplate(name: string): string {
-  return `/// <reference types="@open-pets/plugin-sdk" />
-
-OpenPetsPlugin.register({
-  async start(ctx) {
-    await ctx.status.set({ text: ${JSON.stringify(`${name} is ready`)}, tone: "info" })
-
-    await ctx.commands.register(
-      { id: "say-hello", title: "Say hello", description: "Get a friendly greeting." },
-      async () => {
-        await ctx.pet.speak(${JSON.stringify(`Hello from ${name}!`)})
-        await ctx.pet.react("waving")
-      },
-    )
-  },
-
-  async stop() {},
-})
-`;
 }
 
 function pluginReadmeTemplate(options: PluginNewOptions, targetDir: string): string {
@@ -710,7 +723,21 @@ function printUsage(): void {
 }
 
 function printPluginUsage(): void {
-  process.stdout.write("Usage:\n  openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]\n\nScaffolds a new OpenPets plugin folder with a manifest and entry file.\n\nOptions:\n  --id <id>        Plugin id (reverse-DNS style). Defaults to local.<name-slug>.\n  --dir <path>     Target directory. Defaults to ./<name-slug>.\n  --author <name>  Author name written into the manifest.\n  -h, --help       Show this help.\n\nLearn more: https://openpets.dev/sdk\n");
+  process.stdout.write(
+    "Usage:\n" +
+      "  openpets plugin new <name> [--template <template>] [--id <id>] [--dir <path>] [--author <name>]\n" +
+      "  openpets plugin validate [dir]\n\n" +
+      "plugin new scaffolds a typed SDK v3 plugin with a manifest, a working entry, and a passing\n" +
+      "test built on @open-pets/plugin-sdk/testing. plugin validate checks the manifest, config\n" +
+      "schema, declared assets/panels, permissions, and network hosts at author time.\n\n" +
+      "Options:\n" +
+      `  --template <t>   Template: ${pluginTemplateNames.join(", ")}. Defaults to blank.\n` +
+      "  --id <id>        Plugin id (reverse-DNS style). Defaults to local.<name-slug>.\n" +
+      "  --dir <path>     Target directory. Defaults to ./<name-slug>.\n" +
+      "  --author <name>  Author name (informational).\n" +
+      "  -h, --help       Show this help.\n\n" +
+      "Learn more: https://openpets.dev/sdk\n",
+  );
 }
 
 function printInstallUsage(): void {

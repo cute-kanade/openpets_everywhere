@@ -2,16 +2,17 @@ import { constants, promises as fs } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
+import { readDeclaredPluginFiles } from "./plugin-assets.js";
 import { defaultMaxPluginManifestBytes, isUnderPath, readSafePluginManifest } from "./plugin-manifest-reader.js";
 import { OPENPETS_PLUGIN_MANIFEST_FILENAME, validatePluginManifest, type OpenPetsPluginManifest } from "./plugin-manifest.js";
 
 export type LocalPluginLoadResult = { readonly manifest: OpenPetsPluginManifest; readonly installPath: string; readonly manifestPath: string };
-export type LocalPluginSourceManifest = { readonly manifest: OpenPetsPluginManifest; readonly manifestText: string; readonly entryText?: string };
+export type LocalPluginSourceManifest = { readonly manifest: OpenPetsPluginManifest; readonly manifestText: string; readonly entryText?: string; readonly declaredFiles?: ReadonlyMap<string, Buffer> };
 const maxPluginEntryBytes = 1024 * 1024;
 
 export async function loadLocalPluginSnapshot(options: { readonly sourceFolder: string; readonly userDataPath: string; readonly maxManifestBytes?: number }): Promise<LocalPluginLoadResult> {
   const source = await readLocalPluginSourceManifest({ sourceFolder: options.sourceFolder, maxManifestBytes: options.maxManifestBytes });
-  return publishLocalPluginSnapshot({ manifest: source.manifest, manifestText: source.manifestText, entryText: source.entryText, userDataPath: options.userDataPath, maxManifestBytes: options.maxManifestBytes });
+  return publishLocalPluginSnapshot({ manifest: source.manifest, manifestText: source.manifestText, entryText: source.entryText, declaredFiles: source.declaredFiles, userDataPath: options.userDataPath, maxManifestBytes: options.maxManifestBytes });
 }
 
 export async function readLocalPluginSourceManifest(options: { readonly sourceFolder: string; readonly maxManifestBytes?: number }): Promise<LocalPluginSourceManifest> {
@@ -36,7 +37,7 @@ export async function readLocalPluginSourceManifest(options: { readonly sourceFo
     const result = validatePluginManifest(parsed);
     if (!result.ok) throw new Error("Plugin manifest validation failed.");
     if (!isSafePluginDirectoryName(result.manifest.id)) throw new Error("Plugin id is reserved.");
-    if (result.manifest.manifestVersion !== 2) return { manifest: result.manifest, manifestText: text };
+    if (result.manifest.manifestVersion !== 2 && result.manifest.manifestVersion !== 3) return { manifest: result.manifest, manifestText: text };
     const entryPath = join(realSourceFolder, result.manifest.entry);
     const entryStat = await fs.lstat(entryPath);
     if (!entryStat.isFile() || entryStat.isSymbolicLink()) throw new Error("Selected plugin entry is invalid.");
@@ -47,14 +48,16 @@ export async function readLocalPluginSourceManifest(options: { readonly sourceFo
     try {
       const nofollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
       entryHandle = await fs.open(entryPath, constants.O_RDONLY | nofollow);
-      return { manifest: result.manifest, manifestText: text, entryText: await readBoundedUtf8(entryHandle, maxPluginEntryBytes) };
+      const entryText = await readBoundedUtf8(entryHandle, maxPluginEntryBytes);
+      const declaredFiles = result.manifest.manifestVersion === 3 ? await readDeclaredPluginFiles(result.manifest, realSourceFolder) : undefined;
+      return { manifest: result.manifest, manifestText: text, entryText, declaredFiles };
     } finally { await entryHandle?.close().catch(() => undefined); }
   } finally {
     await handle?.close().catch(() => undefined);
   }
 }
 
-export async function publishLocalPluginSnapshot(options: { readonly manifest: OpenPetsPluginManifest; readonly manifestText: string; readonly entryText?: string; readonly userDataPath: string; readonly maxManifestBytes?: number }): Promise<LocalPluginLoadResult> {
+export async function publishLocalPluginSnapshot(options: { readonly manifest: OpenPetsPluginManifest; readonly manifestText: string; readonly entryText?: string; readonly declaredFiles?: ReadonlyMap<string, Buffer>; readonly userDataPath: string; readonly maxManifestBytes?: number }): Promise<LocalPluginLoadResult> {
   const maxBytes = options.maxManifestBytes ?? defaultMaxPluginManifestBytes;
   const devRoot = join(options.userDataPath, "plugins-dev");
   await fs.mkdir(devRoot, { recursive: true });
@@ -68,11 +71,16 @@ export async function publishLocalPluginSnapshot(options: { readonly manifest: O
   try {
     await assertRealDirectory(tempPath, "Plugin temporary directory is invalid.");
     await fs.writeFile(tempManifestPath, options.manifestText, { mode: 0o600 });
-    if (options.manifest.manifestVersion === 2) {
+    if (options.manifest.manifestVersion === 2 || options.manifest.manifestVersion === 3) {
       if (options.entryText === undefined) throw new Error("Plugin entry file is missing.");
       const tempEntryPath = join(tempPath, options.manifest.entry);
       await fs.mkdir(dirname(tempEntryPath), { recursive: true });
       await fs.writeFile(tempEntryPath, options.entryText, { mode: 0o600 });
+      for (const [relPath, bytes] of options.declaredFiles ?? new Map<string, Buffer>()) {
+        const filePath = join(tempPath, relPath);
+        await fs.mkdir(dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, bytes, { mode: 0o600 });
+      }
     }
     await readSafePluginManifest({ installPath: tempPath, manifestPath: tempManifestPath, allowedPluginRoots: [devRoot], maxManifestBytes: maxBytes, expectedId: options.manifest.id, expectedVersion: options.manifest.version });
     await replaceInstallDirectory(devRoot, installPath, tempPath);

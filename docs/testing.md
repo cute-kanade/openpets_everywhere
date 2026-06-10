@@ -1,6 +1,6 @@
 # OpenPets testing
 
-OpenPets currently uses lightweight Node contract checks instead of a full test framework.
+OpenPets uses lightweight Node contract checks instead of a full test framework, plus a first-class plugin test kit for the plugin layer (see below).
 
 ## Commands
 
@@ -53,5 +53,26 @@ Good fits for the current harness:
 - Claude hook event mapping and speech safety
 - Claude settings merge/install/uninstall against temp files
 - zip safety and catalog validation
+- plugin SDK bridge validators (incl. property/fuzz tests — `apps/desktop/tests/plugin-bridge-fuzz.test.ts`)
 
 Electron tray/window behavior remains manually verified until a later UI automation phase.
+
+## Plugin test kit (SDK v3)
+
+The plugin layer goes beyond "lightweight checks": `@open-pets/plugin-sdk/testing`
+ships a supported harness (`createTestHarness`) so any plugin's `start` handler
+runs deterministically with no Electron, no network, no real timers, and no
+real user data — the same isolation rules as above. It provides a fake clock
+(`clock.advance("90m")` drives `once`/`every`/`daily`/`cron`/`at`), curated
+event injection, bubble/command interaction, permission simulation, mocks for
+`net`/`ai`/`secrets`/`files`/`auth`/`voice`/`system`, and descriptor-level
+assertions (`expectSpoke`, `expectBubble`, `expectStored`, …).
+
+- Scaffolded plugins (`openpets plugin new --template …`) ship a passing
+  `test.js` against the kit; `openpets plugin validate` checks manifests and
+  declared files at author time.
+- `packages/sdk/src/check-plugin-sdk.ts` is the kit's own contract test, and
+  `apps/desktop/src/check-plugin-sdk-conformance.ts` is the compile-time drift
+  guard between the runtime bridge and the published types.
+
+See `docs/plugins.md` for the full developer workflow (hot reload, inspector).

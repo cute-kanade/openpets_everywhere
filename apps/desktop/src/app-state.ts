@@ -8,6 +8,7 @@ import { builtInPet } from "./built-in-pet.js";
 import type { Point } from "./display.js";
 import { allowedReactions, type OpenPetsReaction } from "./local-ipc-protocol.js";
 import { assertSafePetId, getInstalledPetDir } from "./pet-paths.js";
+import { publishPluginAgentActivity } from "./plugin-events-source.js";
 import { normalizeReactionAnimationOverrides, type ReactionAnimationOverrides } from "./reaction-animation-mapping.js";
 
 export interface InstalledPetState {
@@ -166,6 +167,7 @@ export function getDefaultPetPosition(): Point | undefined {
 }
 
 export function recordOpenPetsActivity(activity: OpenPetsActivityRecord, now: number = Date.now()): OpenPetsStateV1 {
+  publishPluginAgentActivity({ kind: activity.kind, reaction: activity.reaction });
   const state = getInitializedState();
   const analytics = state.analytics;
   const reaction = activity.kind === "react" ? activity.reaction : activity.reaction;

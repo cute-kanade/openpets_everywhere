@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "..");
 
-const preloadChecks = ["control-center-preload.cjs", "pet-preload.cjs", "plugin-sdk-preload.cjs"];
+const preloadChecks = ["control-center-preload.cjs", "pet-preload.cjs", "plugin-sdk-preload.cjs", "panel-preload.cjs"];
 const behaviorTests = [
   ".test-dist/tests/lease-manager.test.js",
   ".test-dist/tests/onboarding-state.test.js",
@@ -27,6 +27,7 @@ const behaviorTests = [
   ".test-dist/tests/plugin-package.test.js",
   ".test-dist/tests/plugin-service.test.js",
   ".test-dist/tests/plugin-ui-static.test.js",
+  ".test-dist/tests/plugin-bridge-fuzz.test.js",
 ];
 const contractTests = [
   ".test-dist/contracts/local-ipc-protocol.contract.js",

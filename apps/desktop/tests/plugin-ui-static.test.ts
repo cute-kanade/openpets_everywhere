@@ -46,7 +46,15 @@ assert.match(jsHostSource, /start\(sdk\)/);
 assert.match(jsHostSource, /__openPetsRegisteredPlugin[\s\S]*stop/);
 assert.match(jsHostSource, /preload: getPluginSdkPreloadPath\(\)/);
 assert.match(pluginSdkPreloadSource, /contextBridge\.exposeInMainWorld\("__openPetsSdk", sdk\)/);
-assert.match(pluginSdkPreloadSource, /speak: \(message\) => call\("pet\.speak", \[message\]\)/);
+assert.match(pluginSdkPreloadSource, /speak: \(spec\) => call\("pet\.speak", \[petId, spec\]\)/);
 assert.match(pluginSdkPreloadSource, /register: \(command, handler\) => call\("commands\.register"/);
+// SDK v3 namespaces are exposed to the plugin sandbox.
+assert.match(pluginSdkPreloadSource, /bubble: \(spec\) => call\("ui\.bubble", \[spec\]\)/);
+assert.match(pluginSdkPreloadSource, /on: \(event, fn\) => subscription\("events\.on", "events\.off"/);
+assert.match(pluginSdkPreloadSource, /publish: \(topic, payload\) => call\("bus\.publish", \[topic, payload\]\)/);
+// Plugin platform settings are reachable from the Control Center.
+assert.match(windowsSource, /openpets:plugin-platform-settings-get/);
+assert.match(windowsSource, /openpets:plugins-inspector/);
+assert.match(controlCenterPreloadSource, /getPluginPlatformSettings: \(\) => ipcRenderer\.invoke\("openpets:plugin-platform-settings-get"\)/);
 
 console.error("Plugin Control Center static validation passed.");

@@ -5,10 +5,50 @@ export const openPetsPluginManifestFilename = OPENPETS_PLUGIN_MANIFEST_FILENAME;
 
 export type PluginRuntime = "declarative";
 export type KnownPluginRuntime = PluginRuntime | "javascript";
-export type PluginPermission = "pet:speak" | "pet:reaction" | "pet:move" | "timer" | "schedule" | "storage" | "status" | "commands" | "network";
+export type PluginPermission =
+  | "pet:speak"
+  | "pet:reaction"
+  | "pet:move"
+  | "timer"
+  | "schedule"
+  | "storage"
+  | "status"
+  | "commands"
+  | "network"
+  // SDK v3 permissions (manifestVersion 3 only)
+  | "pet:interact"
+  | "pet:pin"
+  | "pet:animate"
+  | "pet:speak:dynamic"
+  | "pet:drop"
+  | "pets:read"
+  | "pets:manage"
+  | "audio"
+  | "events"
+  | "ui:toast"
+  | "ui:panel"
+  | "notify"
+  | "bus"
+  | "ai"
+  | "secrets"
+  | "voice:speak"
+  | "voice:listen"
+  | "auth"
+  | "files"
+  | "system:openExternal"
+  | "system:metrics"
+  | "clipboard"
+  | "network:write";
 export type PluginJavascriptPermission = Exclude<PluginPermission, "timer">;
+/** Permissions flagged sensitive in the UI (louder consent, global toggles). */
+export const sensitivePluginPermissions: ReadonlySet<PluginPermission> = new Set(["voice:listen", "clipboard", "pet:speak:dynamic"]);
 export type PluginIcon = "plugin" | "bell" | "timer" | "github" | "heart" | "sparkles" | "coffee" | "focus";
-export type PluginConfigFieldType = "text" | "textarea" | "number" | "boolean" | "select" | "time" | "multiSelect" | "list";
+export type PluginConfigFieldType = "text" | "textarea" | "number" | "boolean" | "select" | "time" | "date" | "multiSelect" | "list" | "secret";
+
+/** Asset kinds a v3 plugin can declare and bundle. */
+export type PluginAssetKind = "icons" | "images" | "svgs" | "sprites" | "sounds";
+/** Manifest `assets` block: per-kind maps of asset name -> relative file path. */
+export type PluginAssetsDeclaration = Partial<Record<PluginAssetKind, Record<string, string>>>;
 
 export type PluginConfigField = {
   type: PluginConfigFieldType;
@@ -43,7 +83,7 @@ export type OpenPetsDeclarativePluginManifest = {
 };
 
 export type OpenPetsJavascriptPluginManifest = {
-  manifestVersion: 2;
+  manifestVersion: 2 | 3;
   id: string;
   name: string;
   description?: string;
@@ -55,6 +95,10 @@ export type OpenPetsJavascriptPluginManifest = {
   permissions: PluginJavascriptPermission[];
   network?: { hosts: string[] };
   configSchema?: Record<string, PluginConfigField>;
+  /** v3 only: bundled asset declarations (name -> relative path). */
+  assets?: PluginAssetsDeclaration;
+  /** v3 only: sandboxed panel pages (name -> relative .html path). */
+  panels?: Record<string, string>;
 };
 
 export type OpenPetsPluginManifest = OpenPetsDeclarativePluginManifest | OpenPetsJavascriptPluginManifest;
@@ -69,21 +113,67 @@ export type PluginManifestValidationResult =
   | { ok: true; manifest: OpenPetsPluginManifest; errors: [] }
   | { ok: false; errors: PluginManifestValidationError[] };
 
-const topLevelFields = new Set(["manifestVersion", "id", "name", "description", "version", "runtime", "icon", "permissions", "configSchema", "triggers"]);
-const jsTopLevelFields = new Set(["manifestVersion", "id", "name", "description", "version", "runtime", "sdkVersion", "entry", "icon", "permissions", "network", "configSchema"]);
+// "$schema" is tolerated everywhere so manifests can opt into editor validation.
+const topLevelFields = new Set(["$schema", "manifestVersion", "id", "name", "description", "version", "runtime", "icon", "permissions", "configSchema", "triggers"]);
+const jsTopLevelFields = new Set(["$schema", "manifestVersion", "id", "name", "description", "version", "runtime", "sdkVersion", "entry", "icon", "permissions", "network", "configSchema"]);
+const jsV3TopLevelFields = new Set([...jsTopLevelFields, "assets", "panels"]);
 const configFieldFields = new Set(["type", "label", "description", "default", "options", "min", "max", "step", "maxLength", "maxItems", "itemSchema"]);
 const configOptionFields = new Set(["label", "value"]);
 const triggerFields = new Set(["on", "everyMinutes", "actions"]);
 const speakActionFields = new Set(["type", "message"]);
 const reactActionFields = new Set(["type", "reaction"]);
-const supportedConfigTypes = new Set(["text", "textarea", "number", "boolean", "select", "time", "multiSelect", "list"]);
-const deferredConfigTypes = new Set(["multi-select", "date", "schedule", "connection", "secret"]);
+const supportedConfigTypes = new Set(["text", "textarea", "number", "boolean", "select", "time", "date", "multiSelect", "list", "secret"]);
+const deferredConfigTypes = new Set(["multi-select", "schedule", "connection"]);
 const deferredConfigFeatures = new Set(["dynamicOptions"]);
 const supportedPluginIcons = new Set(["plugin", "bell", "timer", "github", "heart", "sparkles", "coffee", "focus"]);
-export const pluginPermissions = ["pet:speak", "pet:reaction", "pet:move", "timer", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginPermission[];
-const javascriptPluginPermissions = ["pet:speak", "pet:reaction", "pet:move", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginJavascriptPermission[];
+export const pluginV3Permissions = [
+  "pet:interact",
+  "pet:pin",
+  "pet:animate",
+  "pet:speak:dynamic",
+  "pet:drop",
+  "pets:read",
+  "pets:manage",
+  "audio",
+  "events",
+  "ui:toast",
+  "ui:panel",
+  "notify",
+  "bus",
+  "ai",
+  "secrets",
+  "voice:speak",
+  "voice:listen",
+  "auth",
+  "files",
+  "system:openExternal",
+  "system:metrics",
+  "clipboard",
+  "network:write",
+] as const satisfies readonly PluginPermission[];
+export const pluginPermissions = ["pet:speak", "pet:reaction", "pet:move", "timer", "schedule", "storage", "status", "commands", "network", ...pluginV3Permissions] as const satisfies readonly PluginPermission[];
+const javascriptPluginPermissionsV2 = ["pet:speak", "pet:reaction", "pet:move", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginJavascriptPermission[];
+const javascriptPluginPermissionsV3 = [...javascriptPluginPermissionsV2, ...pluginV3Permissions] as const satisfies readonly PluginJavascriptPermission[];
 export const pluginPermissionSet: ReadonlySet<string> = new Set(pluginPermissions);
 const declarativePluginPermissionSet: ReadonlySet<string> = new Set(["pet:speak", "pet:reaction", "timer"]);
+const pluginAssetKinds = ["icons", "images", "svgs", "sprites", "sounds"] as const satisfies readonly PluginAssetKind[];
+const pluginAssetExtensions: Record<PluginAssetKind, readonly string[]> = {
+  icons: [".png", ".webp", ".svg"],
+  images: [".png", ".webp", ".jpg", ".jpeg", ".gif"],
+  svgs: [".svg"],
+  sprites: [".png", ".webp"],
+  sounds: [".ogg", ".mp3", ".wav"],
+};
+/** Per-file size caps enforced when asset files are published/installed. */
+export const pluginAssetMaxBytes: Record<PluginAssetKind, number> = {
+  icons: 256 * 1024,
+  images: 1024 * 1024,
+  svgs: 256 * 1024,
+  sprites: 5 * 1024 * 1024,
+  sounds: 1024 * 1024,
+};
+export const pluginPanelMaxBytes = 1024 * 1024;
+const assetNamePattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 export function canonicalizePluginPermissions(value: unknown): PluginPermission[] {
   if (!Array.isArray(value)) throw new Error("Plugin permissions must be an array.");
@@ -102,10 +192,10 @@ export function validatePluginManifest(input: unknown): PluginManifestValidation
     return { ok: false, errors: [{ path: "$", code: "invalid_manifest", message: "Plugin manifest must be a JSON object." }] };
   }
 
-  if (input.manifestVersion === 2) return validateJavascriptPluginManifest(input);
+  if (input.manifestVersion === 2 || input.manifestVersion === 3) return validateJavascriptPluginManifest(input, input.manifestVersion);
 
   rejectUnknownFields(input, topLevelFields, "$", errors);
-  if (input.manifestVersion !== 1) addError(errors, "$.manifestVersion", "invalid_manifest_version", "manifestVersion must be 1 or 2.");
+  if (input.manifestVersion !== 1) addError(errors, "$.manifestVersion", "invalid_manifest_version", "manifestVersion must be 1, 2, or 3.");
   validateString(input.id, "$.id", "id", errors, /^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/);
   validateString(input.name, "$.name", "name", errors);
   if (input.description !== undefined) validateString(input.description, "$.description", "description", errors);
@@ -126,29 +216,76 @@ export function validatePluginManifest(input: unknown): PluginManifestValidation
   return { ok: true, manifest: input as OpenPetsPluginManifest, errors: [] };
 }
 
-function validateJavascriptPluginManifest(input: Record<string, unknown>): PluginManifestValidationResult {
+function validateJavascriptPluginManifest(input: Record<string, unknown>, manifestVersion: 2 | 3): PluginManifestValidationResult {
   const errors: PluginManifestValidationError[] = [];
-  rejectUnknownFields(input, jsTopLevelFields, "$", errors);
+  rejectUnknownFields(input, manifestVersion === 3 ? jsV3TopLevelFields : jsTopLevelFields, "$", errors);
   validateString(input.id, "$.id", "id", errors, /^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/);
   validateString(input.name, "$.name", "name", errors);
   if (input.description !== undefined) validateString(input.description, "$.description", "description", errors);
   validateString(input.version, "$.version", "version", errors, /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
   validatePluginIcon(input.icon, errors);
-  if (input.runtime !== "javascript") addError(errors, "$.runtime", "invalid_runtime", 'manifestVersion 2 runtime must be "javascript".');
+  if (input.runtime !== "javascript") addError(errors, "$.runtime", "invalid_runtime", `manifestVersion ${manifestVersion} runtime must be "javascript".`);
   validateString(input.sdkVersion, "$.sdkVersion", "sdkVersion", errors, /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
+  if (manifestVersion === 3 && typeof input.sdkVersion === "string" && !input.sdkVersion.startsWith("3.")) {
+    addError(errors, "$.sdkVersion", "invalid_sdk_version", "manifestVersion 3 requires sdkVersion 3.x.y.");
+  }
   validateEntryPath(input.entry, errors);
-  validateJavascriptPermissions(input.permissions, errors);
-  validateConfigSchema(input.configSchema, errors);
+  validateJavascriptPermissions(input.permissions, manifestVersion, errors);
+  validateConfigSchema(input.configSchema, errors, manifestVersion);
   validateNetwork(input.network, errors);
+  if (manifestVersion === 3) {
+    validateAssets(input.assets, errors);
+    validatePanels(input.panels, errors);
+  }
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, manifest: input as OpenPetsPluginManifest, errors: [] };
 }
 
-function validateJavascriptPermissions(value: unknown, errors: PluginManifestValidationError[]): Set<string> {
-  const allowed = new Set<string>(javascriptPluginPermissions);
+function validateJavascriptPermissions(value: unknown, manifestVersion: 2 | 3, errors: PluginManifestValidationError[]): Set<string> {
+  const allowed = new Set<string>(manifestVersion === 3 ? javascriptPluginPermissionsV3 : javascriptPluginPermissionsV2);
   const permissions = validatePermissions(value, errors);
-  for (const permission of permissions) if (!allowed.has(permission)) addError(errors, "$.permissions", "invalid_permission", "Permission is not valid for javascript plugins.");
+  for (const permission of permissions) if (!allowed.has(permission)) addError(errors, "$.permissions", "invalid_permission", `Permission ${permission} is not valid for manifestVersion ${manifestVersion} javascript plugins.`);
   return permissions;
+}
+
+function validateRelativeAssetPath(value: unknown, allowedExtensions: readonly string[], path: string, errors: PluginManifestValidationError[]): void {
+  if (typeof value !== "string" || value.trim() === "") return addError(errors, path, "invalid_asset_path", "Asset path must be a non-empty string.");
+  if (value.startsWith("/") || value.includes("\\") || value.split("/").includes("..") || value.split("/").includes(".")) {
+    return addError(errors, path, "invalid_asset_path", "Asset path must be a safe relative path.");
+  }
+  if (!allowedExtensions.some((extension) => value.toLowerCase().endsWith(extension))) {
+    addError(errors, path, "invalid_asset_format", `Asset must end with one of ${allowedExtensions.join(", ")}.`);
+  }
+}
+
+function validateAssets(value: unknown, errors: PluginManifestValidationError[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) return addError(errors, "$.assets", "invalid_assets", "assets must be an object.");
+  rejectUnknownFields(value, new Set(pluginAssetKinds), "$.assets", errors);
+  for (const kind of pluginAssetKinds) {
+    const group = value[kind];
+    if (group === undefined) continue;
+    if (!isRecord(group)) { addError(errors, `$.assets.${kind}`, "invalid_assets", `assets.${kind} must be an object.`); continue; }
+    const entries = Object.entries(group);
+    if (entries.length > 32) addError(errors, `$.assets.${kind}`, "too_many_assets", `assets.${kind} may declare at most 32 entries.`);
+    for (const [name, assetPath] of entries) {
+      const path = `$.assets.${kind}.${name}`;
+      if (!assetNamePattern.test(name)) addError(errors, path, "invalid_asset_name", "Asset names must be simple lowercase identifiers.");
+      validateRelativeAssetPath(assetPath, pluginAssetExtensions[kind], path, errors);
+    }
+  }
+}
+
+function validatePanels(value: unknown, errors: PluginManifestValidationError[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) return addError(errors, "$.panels", "invalid_panels", "panels must be an object.");
+  const entries = Object.entries(value);
+  if (entries.length > 8) addError(errors, "$.panels", "too_many_panels", "panels may declare at most 8 entries.");
+  for (const [name, panelPath] of entries) {
+    const path = `$.panels.${name}`;
+    if (!assetNamePattern.test(name)) addError(errors, path, "invalid_panel_name", "Panel names must be simple lowercase identifiers.");
+    validateRelativeAssetPath(panelPath, [".html"], path, errors);
+  }
 }
 
 function validatePluginIcon(value: unknown, errors: PluginManifestValidationError[]): void {
@@ -196,13 +333,14 @@ function validatePermissions(value: unknown, errors: PluginManifestValidationErr
 
 type ConfigFieldSets = { text: Set<string>; select: Set<string>; number: Set<string>; schema: Record<string, unknown> };
 
-function validateConfigSchema(value: unknown, errors: PluginManifestValidationError[]): ConfigFieldSets {
+function validateConfigSchema(value: unknown, errors: PluginManifestValidationError[], manifestVersion: 1 | 2 | 3 = 1): ConfigFieldSets {
   const fields: ConfigFieldSets = { text: new Set(), select: new Set(), number: new Set(), schema: isRecord(value) ? value : {} };
   if (value === undefined) return fields;
   if (!isRecord(value)) {
     addError(errors, "$.configSchema", "invalid_config_schema", "configSchema must be an object.");
     return fields;
   }
+  const v3OnlyTypes = new Set(["date", "secret"]);
   for (const [key, field] of Object.entries(value)) {
     const path = `$.configSchema.${key}`;
     if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(key)) addError(errors, path, "invalid_config_key", "Config field keys must be simple identifiers.");
@@ -214,11 +352,12 @@ function validateConfigSchema(value: unknown, errors: PluginManifestValidationEr
     for (const feature of deferredConfigFeatures) {
       if (Object.prototype.hasOwnProperty.call(field, feature)) addError(errors, `${path}.${feature}`, "deferred_config_feature", `${feature} is deferred and unsupported in v1.`);
     }
-    if (typeof field.type !== "string" || !supportedConfigTypes.has(field.type)) {
-      const code = typeof field.type === "string" && deferredConfigTypes.has(field.type) ? "deferred_config_type" : "invalid_config_type";
-      addError(errors, `${path}.type`, code, "Config field type must be text, textarea, number, boolean, or select.");
+    const typeUnsupported = typeof field.type !== "string" || !supportedConfigTypes.has(field.type) || (manifestVersion < 3 && v3OnlyTypes.has(field.type));
+    if (typeUnsupported) {
+      const code = typeof field.type === "string" && (deferredConfigTypes.has(field.type) || (manifestVersion < 3 && v3OnlyTypes.has(field.type))) ? "deferred_config_type" : "invalid_config_type";
+      addError(errors, `${path}.type`, code, "Config field type is not supported for this manifest version.");
     } else {
-      validateConfigFieldSemantics(field, path, errors);
+      validateConfigFieldSemantics(field, path, errors, manifestVersion);
       if (field.type === "number") fields.number.add(key);
       if (field.type === "text") fields.text.add(key);
       if (field.type === "select") fields.select.add(key);
@@ -227,7 +366,7 @@ function validateConfigSchema(value: unknown, errors: PluginManifestValidationEr
   return fields;
 }
 
-function validateConfigFieldSemantics(field: Record<string, unknown>, path: string, errors: PluginManifestValidationError[]): void {
+function validateConfigFieldSemantics(field: Record<string, unknown>, path: string, errors: PluginManifestValidationError[], manifestVersion: 1 | 2 | 3 = 1): void {
   if (field.label !== undefined) validateString(field.label, `${path}.label`, "label", errors);
   if (field.description !== undefined) validateString(field.description, `${path}.description`, "description", errors);
   if (field.type !== "select" && field.type !== "multiSelect" && field.options !== undefined) addError(errors, `${path}.options`, "invalid_options", "options are only valid for select config fields.");
@@ -235,10 +374,12 @@ function validateConfigFieldSemantics(field: Record<string, unknown>, path: stri
   if (field.type === "number" && field.default !== undefined && (typeof field.default !== "number" || !Number.isFinite(field.default))) addError(errors, `${path}.default`, "invalid_default", "Default must be a finite number.");
   if (field.type === "boolean" && field.default !== undefined && typeof field.default !== "boolean") addError(errors, `${path}.default`, "invalid_default", "Default must be a boolean.");
   if (field.type === "time" && field.default !== undefined && (typeof field.default !== "string" || !isValidTime(field.default))) addError(errors, `${path}.default`, "invalid_default", "Default must be HH:mm between 00:00 and 23:59.");
+  if (field.type === "date" && field.default !== undefined && (typeof field.default !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(field.default))) addError(errors, `${path}.default`, "invalid_default", "Default must be YYYY-MM-DD.");
+  if (field.type === "secret" && field.default !== undefined) addError(errors, `${path}.default`, "invalid_default", "Secret config fields must not declare defaults.");
   if (field.type === "select" || field.type === "multiSelect") validateSelectField(field, path, errors);
   if (field.type === "list") {
     if (field.maxItems !== undefined && (typeof field.maxItems !== "number" || !Number.isInteger(field.maxItems) || field.maxItems < 0)) addError(errors, `${path}.maxItems`, "invalid_max_items", "maxItems must be a non-negative integer.");
-    if (field.itemSchema !== undefined) validateConfigSchema(field.itemSchema, errors);
+    if (field.itemSchema !== undefined) validateConfigSchema(field.itemSchema, errors, manifestVersion);
   }
 }
 

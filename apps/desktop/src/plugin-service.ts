@@ -10,7 +10,7 @@ import type { PluginJsHost } from "./plugin-js-host.js";
 import { OPENPETS_PLUGIN_MANIFEST_FILENAME, type OpenPetsPluginManifest, type PluginIcon, type PluginPermission } from "./plugin-manifest.js";
 import { downloadCatalogPluginZip, installCatalogPluginPackage, readCatalogPluginManifestFromZip, resolveSafePluginInstallDir } from "./plugin-package.js";
 import type { PluginPetApi } from "./plugin-pet-api.js";
-import { JsonPluginStorageStore, type PluginCommand, type PluginLogLevel, type PluginStatus } from "./plugin-sdk-bridge.js";
+import { JsonPluginStorageStore, type PluginCommand, type PluginHostCapabilities, type PluginLogLevel, type PluginStatus } from "./plugin-sdk-bridge.js";
 import { PluginRuntime, type PluginRuntimeScheduler } from "./plugin-runtime.js";
 import { PluginStateStore, type PluginSource, type PluginStateRecord } from "./plugin-state.js";
 
@@ -63,6 +63,7 @@ export type PluginServiceOptions = {
   readonly disableCatalog?: boolean;
   readonly seedBundledPlugins?: boolean;
   readonly bundledPluginSourceDirs?: readonly string[];
+  readonly capabilities?: PluginHostCapabilities;
 };
 
 export const bundledOfficialPluginIds = ["openpets.ambient-companion", "openpets.break-buddy", "openpets.pet-pal", "openpets.focus-buddy", "openpets.wander-buddy", "openpets.quick-reminders", "openpets.github-notifications"] as const;
@@ -102,7 +103,7 @@ export class PluginService {
       this.runtime = options.runtime;
     } else {
       if (!options.petApi) throw new Error("Plugin service requires petApi when runtime is not provided.");
-      this.runtime = new PluginRuntime({ stateStore: this.stateStore, petApi: options.petApi, scheduler: options.scheduler, allowedPluginRoots: this.allowedPluginRoots, maxManifestBytes: options.maxManifestBytes, jsHost: options.jsHost, storageStore: options.userDataPath ? new JsonPluginStorageStore(join(options.userDataPath, "plugin-storage")) : undefined, logger: options.runtimeLogger });
+      this.runtime = new PluginRuntime({ stateStore: this.stateStore, petApi: options.petApi, scheduler: options.scheduler, allowedPluginRoots: this.allowedPluginRoots, maxManifestBytes: options.maxManifestBytes, jsHost: options.jsHost, storageStore: options.userDataPath ? new JsonPluginStorageStore(join(options.userDataPath, "plugin-storage")) : undefined, logger: options.runtimeLogger, capabilities: options.capabilities });
     }
     this.#maxManifestBytes = options.maxManifestBytes;
   }
@@ -413,11 +414,16 @@ export class PluginService {
     await fs.mkdir(tempPath, { recursive: true });
     try {
       await fs.writeFile(join(tempPath, OPENPETS_PLUGIN_MANIFEST_FILENAME), source.manifestText, { mode: 0o600 });
-      if (source.manifest.manifestVersion === 2) {
+      if (source.manifest.manifestVersion === 2 || source.manifest.manifestVersion === 3) {
         if (source.entryText === undefined) throw new Error("Bundled plugin entry is missing.");
         const entryPath = join(tempPath, source.manifest.entry);
         await fs.mkdir(dirname(entryPath), { recursive: true });
         await fs.writeFile(entryPath, source.entryText, { mode: 0o600 });
+        for (const [relPath, bytes] of source.declaredFiles ?? new Map<string, Buffer>()) {
+          const filePath = join(tempPath, relPath);
+          await fs.mkdir(dirname(filePath), { recursive: true });
+          await fs.writeFile(filePath, bytes, { mode: 0o600 });
+        }
       }
       await readSafePluginManifest({ installPath: tempPath, manifestPath: join(tempPath, OPENPETS_PLUGIN_MANIFEST_FILENAME), allowedPluginRoots: [root], maxManifestBytes: this.#maxManifestBytes, expectedId: source.manifest.id, expectedVersion: source.manifest.version });
       await replaceInstallDirectory(root, installPath, tempPath);
@@ -436,23 +442,41 @@ export class PluginService {
 
 let appPluginService: PluginService | null = null;
 
-export function initializePluginService(userDataPath: string, petApi: PluginPetApi, currentAppVersion = "0.0.0", jsHost?: PluginJsHost, runtimeLogger?: (level: PluginLogLevel, message: string, fields?: Record<string, unknown>) => void, disableCatalog?: boolean, bundledPluginSourceDirs: readonly string[] = [], seedBundledPlugins = true): PluginService {
-  appPluginService = new PluginService({ userDataPath, petApi, currentAppVersion, jsHost, runtimeLogger, disableCatalog, bundledPluginSourceDirs, seedBundledPlugins });
+export function initializePluginService(userDataPath: string, petApi: PluginPetApi, currentAppVersion = "0.0.0", jsHost?: PluginJsHost, runtimeLogger?: (level: PluginLogLevel, message: string, fields?: Record<string, unknown>) => void, disableCatalog?: boolean, bundledPluginSourceDirs: readonly string[] = [], seedBundledPlugins = true, capabilities?: PluginHostCapabilities): PluginService {
+  appPluginService = new PluginService({ userDataPath, petApi, currentAppVersion, jsHost, runtimeLogger, disableCatalog, bundledPluginSourceDirs, seedBundledPlugins, capabilities });
   return appPluginService;
 }
 
-export type PluginCommandMenuItem = { readonly pluginId: string; readonly pluginName: string; readonly commandId: string; readonly commandTitle: string; readonly form?: PluginCommand["form"] };
+export type PluginCommandMenuItem = { readonly pluginId: string; readonly pluginName: string; readonly commandId: string; readonly commandTitle: string; readonly form?: PluginCommand["form"]; readonly placement?: "top" | "submenu"; readonly priority?: number; readonly featured?: boolean };
+export type PluginDynamicMenuItem = { readonly pluginId: string; readonly pluginName: string; readonly itemId: string; readonly title: string; readonly enabled?: boolean; readonly checked?: boolean };
+
 export async function getDefaultPetPluginCommands(maxPlugins = 8, maxCommandsPerPlugin = 8): Promise<PluginCommandMenuItem[]> {
   if (!appPluginService) return [];
   const snapshot = await appPluginService.getSnapshot();
   return snapshot.plugins.filter((plugin) => plugin.enabled && !plugin.brokenReason && plugin.commands && plugin.commands.length > 0)
     .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id) || a.id.localeCompare(b.id)).slice(0, maxPlugins)
-    .flatMap((plugin) => [...(plugin.commands ?? [])].slice(0, maxCommandsPerPlugin).map((command) => ({ pluginId: plugin.id, pluginName: plugin.name ?? plugin.id, commandId: command.id, commandTitle: command.title, form: command.form })));
+    .flatMap((plugin) => [...(plugin.commands ?? [])].slice(0, maxCommandsPerPlugin).map((command) => ({ pluginId: plugin.id, pluginName: plugin.name ?? plugin.id, commandId: command.id, commandTitle: command.title, form: command.form, placement: command.placement, priority: command.priority, featured: command.featured })));
+}
+
+export async function getDefaultPetPluginMenuItems(maxPlugins = 8, maxItemsPerPlugin = 8): Promise<PluginDynamicMenuItem[]> {
+  if (!appPluginService) return [];
+  const snapshot = await appPluginService.getSnapshot();
+  return snapshot.plugins.filter((plugin) => plugin.enabled && !plugin.brokenReason)
+    .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id) || a.id.localeCompare(b.id)).slice(0, maxPlugins)
+    .flatMap((plugin) => {
+      const items = appPluginService!.runtime.getPluginState(plugin.id).menuItems ?? [];
+      return [...items].slice(0, maxItemsPerPlugin).map((item) => ({ pluginId: plugin.id, pluginName: plugin.name ?? plugin.id, itemId: item.id, title: item.title, enabled: item.enabled, checked: item.checked }));
+    });
 }
 
 export async function executeDefaultPetPluginCommand(pluginId: string, commandId: string, args?: Record<string, unknown>): Promise<void> {
   if (!appPluginService) return;
   await appPluginService.executeCommand(pluginId, commandId, args);
+}
+
+export async function executeDefaultPetPluginMenuSelect(pluginId: string, itemId: string): Promise<void> {
+  if (!appPluginService) return;
+  await appPluginService.runtime.executeMenuSelect(pluginId, itemId);
 }
 
 export function stopPluginService(): void {

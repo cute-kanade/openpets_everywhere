@@ -6,6 +6,8 @@ import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 import { assertSafeProjectHookPath, cliPackageName, configureProject, createClaudeMcpAddJsonArgs, createLocalDevCliCommand, createVersionPinnedCliCommand, installProjectLocalHooks, parseConfigureArgs, parseInstallArgs, parsePluginNewArgs, parseReactArgs, parseSayArgs, resolveConfiguredPet, runClaudeMcpAddJson, scaffoldPlugin } from "./index.js";
+import { pluginTemplateNames } from "./plugin-templates.js";
+import { validatePluginFolder } from "./plugin-validate.js";
 
 const packageVersion = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { readonly version: string }).version;
 
@@ -40,30 +42,46 @@ assert.throws(() => parseSayArgs([]));
 assert.throws(() => parseSayArgs(["Hello", "--reaction", "bad"]));
 assert.throws(() => parseSayArgs(["Hello", "--unknown"]));
 
-assert.deepEqual(parsePluginNewArgs(["My Plugin"]), { name: "My Plugin", id: "local.my-plugin", dir: "my-plugin", author: undefined });
+assert.deepEqual(parsePluginNewArgs(["My Plugin"]), { name: "My Plugin", id: "local.my-plugin", dir: "my-plugin", author: undefined, template: "blank" });
 assert.equal(parsePluginNewArgs(["My Plugin", "--id", "acme.my-plugin"]).id, "acme.my-plugin");
 assert.equal(parsePluginNewArgs(["My Plugin", "--dir", "/tmp/p"]).dir, "/tmp/p");
 assert.equal(parsePluginNewArgs(["My Plugin", "--author=Jane"]).author, "Jane");
+assert.equal(parsePluginNewArgs(["My Plugin", "--template", "tamagotchi"]).template, "tamagotchi");
 assert.throws(() => parsePluginNewArgs([]));
 assert.throws(() => parsePluginNewArgs(["x", "--id", ".bad"]));
 assert.throws(() => parsePluginNewArgs(["x", "--unknown"]));
+assert.throws(() => parsePluginNewArgs(["x", "--template", "nope"]));
 assert.throws(() => parsePluginNewArgs(["!!!"]));
 
 const pluginScaffoldDir = mkdtempSync(join(tmpdir(), "openpets-plugin-"));
 try {
   const target = join(pluginScaffoldDir, "demo");
-  const result = scaffoldPlugin({ name: "Demo Plugin", id: "local.demo", dir: target });
+  const result = scaffoldPlugin({ name: "Demo Plugin", id: "local.demo", dir: target, template: "blank" });
   assert.equal(result.manifestPath, join(target, "openpets.plugin.json"));
-  const manifest = JSON.parse(readFileSync(result.manifestPath, "utf8")) as { readonly manifestVersion: number; readonly id: string; readonly entry: string; readonly permissions: readonly string[] };
-  assert.equal(manifest.manifestVersion, 2);
+  const manifest = JSON.parse(readFileSync(result.manifestPath, "utf8")) as { readonly manifestVersion: number; readonly id: string; readonly entry: string; readonly sdkVersion: string; readonly permissions: readonly string[] };
+  assert.equal(manifest.manifestVersion, 3);
   assert.equal(manifest.id, "local.demo");
   assert.equal(manifest.entry, "index.js");
+  assert.ok(manifest.sdkVersion.startsWith("3."));
   assert.ok(manifest.permissions.includes("commands"));
   const entry = readFileSync(result.entryPath, "utf8");
   assert.match(entry, /OpenPetsPlugin\.register/);
   assert.match(entry, /reference types="@open-pets\/plugin-sdk"/);
   assert.ok(existsSync(join(target, "README.md")));
-  assert.throws(() => scaffoldPlugin({ name: "Demo Plugin", id: "local.demo", dir: target }));
+  assert.ok(existsSync(join(target, "test.js")));
+  assert.equal(validatePluginFolder(target).ok, true, JSON.stringify(validatePluginFolder(target).issues));
+  assert.throws(() => scaffoldPlugin({ name: "Demo Plugin", id: "local.demo", dir: target, template: "blank" }));
+
+  // Every template scaffolds to a folder that passes author-time validation.
+  for (const template of pluginTemplateNames) {
+    const templateTarget = join(pluginScaffoldDir, `tpl-${template}`);
+    scaffoldPlugin({ name: `Demo ${template}`, id: `local.demo-${template}`, dir: templateTarget, template });
+    const validation = validatePluginFolder(templateTarget);
+    assert.equal(validation.ok, true, `${template}: ${JSON.stringify(validation.issues)}`);
+  }
+  // The validator catches missing referenced files.
+  rmSync(join(target, "index.js"));
+  assert.equal(validatePluginFolder(target).ok, false);
 } finally {
   rmSync(pluginScaffoldDir, { recursive: true, force: true });
 }
