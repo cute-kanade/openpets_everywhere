@@ -10,109 +10,57 @@ This guide is for an AI agent creating a new OpenPets desktop release from a loc
 - Root command: `pnpm release:desktop`
 - Update checker expects GitHub release tags like `v2.0.0`.
 
-## Current WSL/NPM patch release plan
+## Current SDK v3, translations, and plugin release plan
 
-The next end-user release is a **public npm package patch** for issue #3. Desktop `v2.1.1` already advertises WSL NAT TCP endpoints correctly, but WSL/OpenCode uses `npx @open-pets/cli`, and npm `latest` was still `2.0.7`, whose client rejects non-loopback TCP discovery endpoints.
+The next end-user release is a **desktop + web plugin catalog + npm SDK release**. The baseline local release tag before this work is `v2.5.1`; changes since then include the new plugin SDK v3 package, a much larger desktop plugin host surface, manifest v3 plugins, plugin/app translations, and catalog packaging changes.
 
-Release goals:
-
-1. Publish all public npm packages at `2.1.1` so `npx -y @open-pets/cli@latest` includes the WSL NAT client fix.
-2. Keep the existing desktop GitHub Release `v2.1.1`; do not create another desktop release for this npm-only patch unless desktop code changes again.
-3. Preserve desktop package version `2.1.1` and align public package versions to `2.1.1`.
-4. Document OpenCode's per-MCP `environment` key for setting `OPENPETS_DISCOVERY_FILE` explicitly.
-5. Verify from a Windows + WSL lab that a WSL client can read the Windows discovery file and reach the advertised TCP endpoint.
-
-Suggested issue response:
-
-```md
-I reproduced the remaining failure. Windows OpenPets is advertising the TCP endpoint correctly and WSL can read `ipc.json`, but `npx -y @open-pets/cli@latest` was still resolving to npm `2.0.7`, whose client rejected private WSL NAT endpoints like `tcp://172.x.x.x:<port>` before connecting.
-
-The fix is to publish the public npm packages at `2.1.1`, matching the desktop release. After npm updates, restart OpenCode or clear any npx cache and use the OpenCode MCP `environment` field for `OPENPETS_DISCOVERY_FILE`.
-```
-
-Required validation:
-
-```bash
-pnpm install
-pnpm build
-pnpm check
-pnpm release:npm -- --dry-run
-```
-
-Publish command:
-
-```bash
-pnpm release:npm -- --yes
-```
-
-Post-publish verification:
-
-```bash
-npm view @open-pets/client@2.1.1 version
-npm view @open-pets/cli@2.1.1 version
-npx -y @open-pets/cli@2.1.1 --help
-```
-
-WSL lab verification should include a discovery file with a private Windows endpoint such as:
-
-```json
-{
-  "endpoint": "tcp://10.211.55.3:37645",
-  "platform": "win32"
-}
-```
-
-and then:
-
-```bash
-OPENPETS_DISCOVERY_FILE=/mnt/c/Users/<WindowsUser>/AppData/Roaming/OpenPets/runtime/ipc.json \
-  npx -y @open-pets/cli@2.1.1 status
-```
-
-## Companion-first plugin release plan
-
-The next end-user release is a **desktop + web plugin catalog release**, not an npm package release by default.
+This is not a small patch release. Treat it as a major plugin-platform release unless product direction says otherwise.
 
 Release goals:
 
-1. Ship the desktop JavaScript plugin runtime and polished Plugins UI.
-2. Publish the official plugin catalog with exactly these first-party plugins:
-   - Ambient Companion (`openpets.ambient-companion`)
-   - Break Buddy (`openpets.break-buddy`)
-   - Pet Pal (`openpets.pet-pal`)
+1. Ship desktop plugin platform v3: SDK bridge, manifest v3 support, capability/permission enforcement, quotas, storage/state, events, bus, routes, UI panels, audio, notifications, diagnostics, and conformance checks.
+2. Publish `@open-pets/plugin-sdk` so plugin authors can depend on the SDK v3 types and `./testing` harness.
+3. Publish the official plugin catalog with the current first-party plugin lineup:
+   - Day Routine (`openpets.day-routine`)
    - Focus Buddy (`openpets.focus-buddy`)
-   - Wander Buddy (`openpets.wander-buddy`)
-   - Quick Reminders (`openpets.quick-reminders`)
-   - GitHub Notifications (`openpets.github-notifications`)
-3. Remove legacy sample plugins from public discovery:
-   - Break Reminder
-   - Eye Rest
-   - Focus Check-in
-   - Hydration Buddy
-   - Legacy focus samples
-4. Keep the old v1 plugin catalog available as an empty compatibility catalog.
-5. Release desktop artifacts through GitHub Releases so app update checks see the new version.
+   - Fortune Cookie (`openpets.fortune-cookie`)
+   - Launch Buddy (`openpets.launch-buddy`)
+   - Magic 8 Ball (`openpets.magic-8-ball`)
+   - Mood Check-in (`openpets.mood-check-in`)
+   - Reminders (`openpets.reminders`)
+   - Virtual Pet (`openpets.virtual-pet`)
+   - Water Reminder (`openpets.water-reminder`)
+4. Ship app/plugin translations and locale validation.
+5. Remove or keep hidden the old plugin lineup from public discovery unless it has been migrated to manifest v3 and intentionally retained.
+6. Keep older catalog endpoints available only as compatibility boundaries for old app versions; do not optimize current runtime behavior for legacy catalog/plugin paths.
+7. Release desktop artifacts through GitHub Releases so app update checks see the new version.
 
-Do **not** publish npm packages for this release unless a public npm package changed in a way that must be distributed through npm. Desktop can have a newer version than the npm packages. That is acceptable for desktop-only features like Electron UI, desktop runtime, packaging, and plugin catalog support.
+Recommended versioning for this release:
 
-## Release workstreams for the plugin release
+- If publishing the SDK v3 package to npm, align **all publishable npm packages** to one shared version because `scripts/release-npm.mjs` enforces a single version across the publish order. For the SDK v3 launch, `3.0.0` is the natural version unless a different release decision is made.
+- Bump `apps/desktop/package.json` to the same release version when shipping the desktop host/runtime that implements SDK v3. The current tagged desktop baseline is `v2.5.1`, so the next GitHub Release tag must be a new version.
+- Do not leave `packages/sdk/package.json` at `3.0.0` while other publishable packages remain at `2.1.1` if running `pnpm release:npm`; the release script will reject mixed publishable package versions.
+
+## Release workstreams for the SDK v3/plugin release
 
 ### A. Desktop app release
 
 Desktop release includes:
 
-- JavaScript plugin host and SDK preload.
-- Manifest v2/catalog v2 support.
+- SDK v3 runtime bridge and `@open-pets/plugin-sdk` conformance alignment.
+- Manifest v3/catalog support for translated official plugins.
+- Expanded plugin host capabilities: permissions, storage/state, schedules, commands, events, bus, routes, UI panels, audio, notifications, quotas, diagnostics, and security validation.
+- Plugin SDK preload and panel preload packaging contracts.
 - Official plugin install/update/uninstall support.
-- Polished Plugins hub/configuration UI.
-- Local dev plugin workflow cleanup.
-- Packaging contract updates for plugin SDK preload.
+- Plugins hub/configuration UI with translated plugin metadata/config fields.
+- Local dev plugin workflow cleanup and plugin diagnostics.
 
 Required validation before desktop release:
 
 ```bash
 pnpm --filter @open-pets/desktop check
 pnpm --filter @open-pets/desktop test
+pnpm plugins:locales
 pnpm --filter @open-pets/desktop package:dir
 ```
 
@@ -120,15 +68,14 @@ Manual desktop QA:
 
 1. Run normal desktop dev startup or a packaged app (`pnpm dev:desktop` or the output from `pnpm --filter @open-pets/desktop package:dir`) so bundled seeding runs.
 2. Open tray → Plugins.
-3. Confirm Ambient Companion, Break Buddy, Pet Pal, Focus Buddy, Wander Buddy, and GitHub Notifications appear in dev mode.
-4. Confirm old sample plugins do not appear.
-5. Confirm Ambient Companion, Break Buddy, Pet Pal, Focus Buddy, and Wander Buddy are bundled/default-enabled as intended; Focus Buddy should remain passive until a command starts a session, and Wander Buddy should use conservative movement defaults.
-6. Configure Break Buddy with break/reminder cards, not JSON.
-7. Run Pet Pal and Focus Buddy commands from the Plugins UI and pet right-click menu when available.
-8. Configure GitHub public repositories; verify no token/OAuth UI exists.
-9. Confirm GitHub plugin only asks for `api.github.com` network approval and is not default-enabled.
-10. Restart desktop and confirm enabled plugins reload without broken state.
-11. Inspect logs for plugin errors.
+3. Confirm the current official manifest v3 plugins appear in dev mode: Day Routine, Focus Buddy, Fortune Cookie, Launch Buddy, Magic 8 Ball, Mood Check-in, Reminders, Virtual Pet, and Water Reminder.
+4. Confirm old sample/legacy plugins do not appear unless they were intentionally migrated and listed in the release plan.
+5. Confirm plugin names, descriptions, config labels, command labels, and pet messages resolve through translations rather than raw `$t:` keys.
+6. Exercise the SDK v3 surfaces used by official plugins: schedule, storage/state, commands, status, audio, notifications, pet reactions/interactions, and any panel UI.
+7. Configure Reminders, Water Reminder, Focus Buddy, Launch Buddy, Day Routine, and other config-heavy plugins with form controls, not JSON.
+8. Run plugin commands from the Plugins UI and pet right-click menu when available.
+9. Restart desktop and confirm enabled plugins reload without broken state or duplicate timers/listeners.
+10. Inspect logs for plugin SDK, translation, permission, quota, and manifest validation errors.
 
 For explicit local plugin development, run `pnpm dev:desktop:plugins` separately and confirm official plugins are loaded as local dev plugins and start disabled; this mode intentionally skips bundled seeding.
 
@@ -137,14 +84,15 @@ For explicit local plugin development, run `pnpm dev:desktop:plugins` separately
 Web release includes:
 
 - `plugins/official/**` source plugins.
-- `web/public/plugins/catalog.v2.json` with the seven official plugins.
-- `web/public/plugins/catalog.v1.json` with an empty plugin list.
-- Removal of legacy sample plugin manifests.
+- `web/public/plugins/catalog.v2.json`, regenerated from the current manifest v3 official plugin sources. The desktop runtime currently reads the v2 catalog endpoint even when the contained plugins use manifest v3 / SDK v3.
+- `web/public/plugins/catalog.v1.json` retained as an empty compatibility catalog for old desktop versions.
+- Removal or hiding of legacy sample plugin manifests from current public discovery.
 - Updated `web/docs/plugin-publishing.md`.
 
 Required validation from the repository root:
 
 ```bash
+pnpm plugins:locales
 pnpm plugins:test
 pnpm plugins:check
 pnpm plugins:package
@@ -155,12 +103,13 @@ Publishing sequence:
 
 1. From the repository root, validate and stage local catalog/ZIP artifacts:
    ```bash
+   pnpm plugins:locales
    pnpm plugins:test
    pnpm plugins:check
    pnpm plugins:package
    ```
-2. Confirm `web/public/plugins/catalog.v2.json` has only the seven launch-current official plugins.
-3. Confirm `web/public/plugins/catalog.v1.json` has `plugins: []`.
+2. Confirm `pnpm plugins:package` regenerated `web/public/plugins/catalog.v2.json` from the current official manifest v3 plugin lineup. Do not release if the checked-in v2 catalog still lists the old ambient/break/pet-pal/wander/quick-reminders/github lineup.
+3. Confirm `web/public/plugins/catalog.v1.json` has `plugins: []` and does not expose stale legacy plugins.
 4. Upload plugin ZIPs to R2 and regenerate catalogs:
    ```bash
    pnpm plugins:publish
@@ -179,55 +128,57 @@ Publishing sequence:
 Suggested release title:
 
 ```txt
-OpenPets v<version> — Plugins
+OpenPets v<version> — Plugin SDK v3
 ```
 
 Suggested release notes:
 
 ```md
-## New: OpenPets Plugins
+## New: Plugin SDK v3
 
-OpenPets now includes a first-party plugin platform for optional desktop companion behaviors.
+OpenPets now includes the SDK v3 plugin platform for richer local companion behaviors, translated plugin experiences, and a public plugin SDK package.
 
 ### Included plugins
 
-- Ambient Companion — calm local presence, greetings, and low-frequency reactions.
-- Break Buddy — wellness break nudges with custom messages, reactions, days, and intervals.
-- Pet Pal — playful user-triggered pet actions.
-- Focus Buddy — passive focus/break sessions with pet feedback and controls.
-- Wander Buddy — gentle companion movement with conservative defaults.
-- Quick Reminders — short local reminders from the pet menu.
-- GitHub Notifications — developer/advanced public repository release and failed-workflow notifications. No GitHub login, token, or private repository access is used.
+- Day Routine — morning and evening companion check-ins.
+- Focus Buddy — focus/break sessions with pet feedback and controls.
+- Fortune Cookie — daily and on-demand fortune messages.
+- Launch Buddy — configurable greetings when OpenPets starts.
+- Magic 8 Ball — playful answers from the pet menu.
+- Mood Check-in — scheduled mood prompts.
+- Reminders — short local reminders with optional sound and OS notifications.
+- Virtual Pet — lightweight care and interaction loops.
+- Water Reminder — hydration nudges with configurable pace and sound.
 
 ### Plugin management
 
-- New polished Plugins window with install, enable, configure, update, reload, and uninstall actions.
-- Friendly plugin configuration UI; no JSON editing required.
-- Plugin permissions and network hosts are explicit.
-- JavaScript plugins run in a sandboxed renderer with a narrow OpenPets SDK.
+- Plugins can use SDK v3 capabilities for pet actions, schedules, storage/state, commands, status, audio, notifications, events, and UI panels.
+- Friendly translated plugin configuration UI; no JSON editing required.
+- Plugin permissions, capabilities, quotas, and manifest validation are explicit.
+- JavaScript plugins run through the desktop SDK bridge with conformance checks against `@open-pets/plugin-sdk`.
 
 ### Developer notes
 
+- `@open-pets/plugin-sdk` provides SDK v3 types and a `./testing` entry point for plugin authors.
 - Local plugin development is available through explicit developer mode and `pnpm dev:desktop:plugins`.
-- Legacy sample plugins were removed from discovery.
+- Legacy sample plugins were removed or hidden from current discovery.
 
 ### Known limitations
 
-- GitHub Notifications supports public repositories only in this release.
 - Desktop artifacts are currently unsigned, so OS security warnings may appear.
 ```
 
 ### D. NPM release decision
 
-Default decision for this plugin release: **skip npm publishing**.
+Default decision for this SDK v3 release: **publish npm packages** after versions are aligned.
 
-Only do an npm release if one of these is true:
+NPM publishing is required if any of these are true:
 
-- A public npm package under `packages/*` changed and users need the published package update.
-- CLI/MCP/client protocol changes are required by the desktop release and must be distributed to external users.
+- `@open-pets/plugin-sdk` should be available to plugin authors.
+- CLI/MCP/client packages changed and users need the published package update.
 - Existing published packages are incompatible with the desktop release in a way that affects normal use.
 
-If npm is needed, publish all public npm packages together using the NPM package release section below. Do not partially publish a subset unless the release tooling and package dependency versions are intentionally changed to support that.
+Before running `pnpm release:npm`, align every publishable package in `scripts/release-npm.mjs` to one shared version. The script currently publishes the SDK first and rejects mixed versions.
 
 ## What the release script does
 
@@ -252,7 +203,7 @@ Published releases are visible to the app update checker.
 
 ## Default release assets
 
-Default command for this companion-first plugin release:
+Default command for this SDK v3/plugin release:
 
 ```bash
 pnpm release:desktop -- --yes --include-optional
@@ -330,6 +281,7 @@ packages/mcp/package.json
 packages/opencode/package.json
 packages/pet-format/package.json
 packages/pi/package.json
+packages/sdk/package.json
 ```
 
 Set each top-level `version` field to the chosen version, for example:
@@ -411,7 +363,7 @@ The release script requires a clean tree before release creation.
 
 ### 8. Create the published GitHub Release and upload assets
 
-For the recommended companion-first plugin release with optional artifacts:
+For the recommended SDK v3/plugin release with optional artifacts:
 
 ```bash
 pnpm release:desktop -- --yes --include-optional
@@ -640,6 +592,7 @@ R2 upload is optional for Partner Center MSIX/AppX submissions because the Store
 OpenPets publishes these public npm packages, in dependency order:
 
 ```txt
+@open-pets/plugin-sdk
 @open-pets/client
 @open-pets/agent-events
 @open-pets/mcp
@@ -654,6 +607,8 @@ install-pet
 Do not publish the private workspace root, `@open-pets/desktop`, or `@open-pets/pet-format`.
 
 Publish all public packages together at the same version whenever any public package changes. The CLI depends on the other `@open-pets/*` packages by exact published version, so partial/mixed-version npm releases can break `npx -y @open-pets/cli ...`.
+
+The npm release helper enforces one shared version across every package in its publish order, including `@open-pets/plugin-sdk`. If this release publishes SDK v3, bump the existing public packages to the same version before running the helper.
 
 Dry-run npm publishing first:
 
@@ -678,6 +633,7 @@ Publishing with the npm helper requires `npm whoami` to succeed, a clean working
 After publishing, verify the npm dependency set resolves:
 
 ```bash
+npm view @open-pets/plugin-sdk@<version> version
 npm view @open-pets/client@<version> version
 npm view @open-pets/agent-events@<version> version
 npm view @open-pets/mcp@<version> version

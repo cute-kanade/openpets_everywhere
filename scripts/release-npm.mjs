@@ -172,15 +172,16 @@ function printHelp() {
 Publishes the public OpenPets npm packages in dependency order.
 
 Packages:
-  1. @open-pets/client
-  2. @open-pets/agent-events
-  3. @open-pets/mcp
-  4. @open-pets/claude
-  5. @open-pets/opencode
-  6. @open-pets/cursor
-  7. @open-pets/pi
-  8. @open-pets/cli
-  9. install-pet
+  1. @open-pets/plugin-sdk
+  2. @open-pets/client
+  3. @open-pets/agent-events
+  4. @open-pets/mcp
+  5. @open-pets/claude
+  6. @open-pets/opencode
+  7. @open-pets/cursor
+  8. @open-pets/pi
+  9. @open-pets/cli
+  10. install-pet
 
 Options:
   --yes            publish to npm; without this, runs pnpm publish --dry-run
