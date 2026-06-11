@@ -43,7 +43,7 @@ export type PluginServiceSnapshot = { readonly plugins: readonly SafePluginRecor
 export type SafeCatalogPluginRecord = { readonly id: string; readonly name: string; readonly version: string; readonly description: string; readonly runtime: "declarative" | "javascript"; readonly icon?: PluginIcon; readonly sdkVersion?: string; readonly permissions: readonly PluginPermission[]; readonly installed: boolean; readonly bundled?: boolean; readonly deprecated?: boolean; readonly statusReason?: string };
 export type PluginCatalogSnapshot = { readonly plugins: readonly SafeCatalogPluginRecord[] };
 export type PluginServiceResult = { readonly ok: true; readonly snapshot: PluginServiceSnapshot } | { readonly ok: false; readonly error: string; readonly snapshot: PluginServiceSnapshot };
-export type PluginConfigSoundPickResult = { readonly ok: true; readonly sound: { readonly kind: "user-sound"; readonly id: string; readonly name?: string }; readonly snapshot: PluginServiceSnapshot } | { readonly ok: false; readonly error: string; readonly snapshot: PluginServiceSnapshot };
+export type PluginConfigSoundPickResult = { readonly ok: true; readonly sound: { readonly kind: "user-sound"; readonly id: string; readonly name?: string }; readonly snapshot: PluginServiceSnapshot } | { readonly ok: true; readonly canceled: true; readonly snapshot: PluginServiceSnapshot } | { readonly ok: false; readonly error: string; readonly snapshot: PluginServiceSnapshot };
 export type DevPluginLoadResult = { readonly path: string; readonly id?: string; readonly ok: true } | { readonly path: string; readonly ok: false; readonly error: string };
 export type PluginFolderDialog = (options?: unknown) => Promise<{ readonly canceled: boolean; readonly filePaths: readonly string[] }>;
 export type PluginPermissionDialog = (manifest: OpenPetsPluginManifest) => Promise<boolean>;
@@ -212,7 +212,7 @@ export class PluginService {
     const picker = this.#showSoundOpenDialog ?? this.#showOpenDialog ?? defaultSoundOpenDialog;
     this.#log("debug", "Plugin config sound picker opened.", { pluginId: id });
     const selection = await picker({ properties: ["openFile"], filters: [{ name: "Audio", extensions: ["ogg", "mp3", "wav"] }] });
-    if (selection.canceled || selection.filePaths.length === 0) { this.#log("debug", "Plugin config sound pick canceled.", { pluginId: id, canceled: true }); return { ok: true, sound: { kind: "user-sound", id: "" }, snapshot: await this.getSnapshot() }; }
+    if (selection.canceled || selection.filePaths.length === 0) { this.#log("debug", "Plugin config sound pick canceled.", { pluginId: id, canceled: true }); return { ok: true, canceled: true, snapshot: await this.getSnapshot() }; }
     const selectedPath = selection.filePaths[0] ?? "";
     const selectedFields: Record<string, unknown> = { pluginId: id, basename: basename(selectedPath), ext: extname(selectedPath).toLowerCase() };
     try { selectedFields.sizeBytes = (await fs.stat(selectedPath)).size; } catch { selectedFields.reason = "stat-unavailable"; }

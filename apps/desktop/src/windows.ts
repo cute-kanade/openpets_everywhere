@@ -14,7 +14,6 @@ import { recoverDefaultPetMouseInterop, refreshDefaultPetContent, resetDefaultPe
 import { installPet, installPetFromFolder, installPetFromZipFile, removePet, setDefaultInstalledPet } from "./pet-installation.js";
 import { assertSafePetId, getInstalledPetDir } from "./pet-paths.js";
 import { debug, error as logError, warn } from "./logger.js";
-import { classifyPluginError, logPluginDiagnostic } from "./plugin-diagnostics.js";
 import { getPluginService, type PluginConfigSoundPickResult, type PluginServiceResult } from "./plugin-service.js";
 import { defaultPetSprite, reactionAnimationMetadata, selectableAnimationMetadata, validateReactionAnimationOverrides } from "./reaction-animation-mapping.js";
 import { checkForGitHubReleaseUpdate, getUpdateStatus, openUpdateReleasePage } from "./update-checker.js";
@@ -195,7 +194,7 @@ export function installInternalUiHandlers(): void {
     debug("ui", "Plugin sound pick requested.", { pluginId: id });
     try {
       const result = await getPluginService().pickConfigSound(id);
-      if (result.ok && result.sound.id) debug("ui", "Plugin sound pick succeeded.", { pluginId: id, ok: true, soundId: result.sound.id });
+      if (result.ok && "sound" in result && result.sound.id) debug("ui", "Plugin sound pick succeeded.", { pluginId: id, ok: true, soundId: result.sound.id });
       else if (result.ok) debug("ui", "Plugin sound pick canceled.", { pluginId: id, ok: true, canceled: true });
       else warn("ui", "Plugin sound pick failed.", { pluginId: id, ok: false, reason: result.error });
       return result;
@@ -648,20 +647,6 @@ function withControlCenterRoute(rawUrl: string, route: ControlCenterRoute): stri
 
 function pluginUiError(error: string): PluginServiceResult {
   return { ok: false, error, snapshot: { plugins: [] } };
-}
-
-async function logUiAction<T>(operation: string, pluginId: string | undefined, fn: () => Promise<T>, extra: Record<string, unknown> = {}): Promise<T> {
-  const started = Date.now();
-  logPluginDiagnostic((level, message, fields) => (level === "warn" || level === "error" ? warn("ui", message, fields) : debug("ui", message, fields)), "debug", "plugin ui action", { operation, pluginId, phase: "request", ...extra });
-  try {
-    const result = await fn();
-    const ok = typeof result === "object" && result !== null && "ok" in result ? Boolean((result as { ok?: unknown }).ok) : true;
-    logPluginDiagnostic((level, message, fields) => (level === "warn" || level === "error" ? warn("ui", message, fields) : debug("ui", message, fields)), ok ? "debug" : "warn", "plugin ui action", { operation, pluginId, phase: "result", ok, durationMs: Date.now() - started, reason: ok ? undefined : (result as { error?: string }).error, ...extra });
-    return result;
-  } catch (error) {
-    logPluginDiagnostic((level, message, fields) => (level === "warn" || level === "error" ? warn("ui", message, fields) : debug("ui", message, fields)), "warn", "plugin ui action", { operation, pluginId, phase: "fail", ok: false, durationMs: Date.now() - started, reason: error instanceof Error ? error.message : String(error), errorCode: classifyPluginError(error), ...extra });
-    throw error;
-  }
 }
 
 function pluginUiSoundError(error: string): PluginConfigSoundPickResult {

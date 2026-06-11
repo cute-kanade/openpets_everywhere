@@ -145,7 +145,7 @@ const sdk = {
     bubble: (spec) => call("ui.bubble", [spec]).then(makeBubbleHandle),
     alert: (spec) => call("ui.alert", [spec]).then((handle) => {
       const bubble = makeBubbleHandle(handle);
-      bubble.acknowledge = () => call("ui.bubbleDismiss", [handle && handle.bubbleId]);
+      bubble.acknowledge = () => call("ui.bubbleDismiss", [handle.bubbleId]);
       return bubble;
     }),
     toast: (spec) => call("ui.toast", [spec]),

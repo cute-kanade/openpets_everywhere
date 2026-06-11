@@ -141,6 +141,8 @@ await scenario("pickConfigSound returns opaque sound and logs success", async ({
   addPlugin(store, { manifestVersion: 3, runtime: "javascript", sdkVersion: "3.0.0" }, { manifestVersion: 3, id: "plug", name: "Plug", version: "1.0.0", runtime: "javascript", sdkVersion: "3.0.0", entry: "index.js", permissions: [], configSchema: { customSound: { type: "sound" } } });
   const result = await service.pickConfigSound("plug");
   assert.equal(result.ok, true);
+  assert.equal("sound" in result, true);
+  if (!("sound" in result)) throw new Error("Expected picked sound result.");
   assert.deepEqual(result.sound, { kind: "user-sound", id: "abc123", name: "ding.ogg" });
   assert.equal(runtime.logs.some((entry) => entry.message === "Plugin config sound import succeeded." && entry.fields?.pluginId === "plug" && entry.fields?.soundId === "abc123" && entry.fields?.name === "ding.ogg"), true);
 });

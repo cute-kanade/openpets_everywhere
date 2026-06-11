@@ -6,7 +6,7 @@ import { app, BrowserWindow, ipcMain, session, type Event, type IpcMainEvent, ty
 import type { OpenPetsJavascriptPluginManifest } from "./plugin-manifest.js";
 import { classifyPluginError, logPluginDiagnostic, truncatePluginConsoleMessage } from "./plugin-diagnostics.js";
 import type { PluginRuntimeLogger, PluginSdkApi } from "./plugin-sdk-bridge.js";
-import { isPluginSdkRoute, type PluginSdkRoute } from "./plugin-sdk-routes.js";
+import { isPluginSdkRoute, pluginSdkSyncRoutes, type PluginSdkRoute } from "./plugin-sdk-routes.js";
 import type { PluginStateRecord } from "./plugin-state.js";
 
 export type PluginJsHostStartOptions = {
@@ -254,7 +254,7 @@ export const sdkCallHandlers: Record<PluginSdkRoute, SdkCallHandler> = {
 };
 
 function dispatchSyncSdkCall(sdk: PluginSdkApi, path: PluginSdkRoute, args: unknown[]): unknown {
-  if (path !== "i18n.t" && path !== "i18n.locale") throw new Error("Plugin SDK call is not synchronous.");
+  if (!(pluginSdkSyncRoutes as readonly PluginSdkRoute[]).includes(path)) throw new Error("Plugin SDK call is not synchronous.");
   const handler = sdkCallHandlers[path];
   if (!handler) throw new Error("Unknown plugin SDK call.");
   return handler(sdk, args, () => undefined, undefined as never);

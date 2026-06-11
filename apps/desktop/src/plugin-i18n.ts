@@ -18,6 +18,7 @@ const maxPluginLocaleBytes = 256 * 1024;
 export type PluginLocaleCatalogs = Partial<Record<Locale, Record<string, string>>>;
 
 const registry = new Map<string, PluginLocaleCatalogs>();
+const pendingLoads = new Map<string, Promise<void>>();
 
 async function readBoundedUtf8(path: string, maxBytes: number): Promise<string> {
   let handle: FileHandle | undefined;
@@ -70,12 +71,22 @@ export function registerPluginLocales(pluginId: string, catalogs: PluginLocaleCa
 
 export function unregisterPluginLocales(pluginId: string): void {
   registry.delete(pluginId);
+  pendingLoads.delete(pluginId);
 }
 
 /** Lazily load and register a plugin's catalogs if not already present. */
 export async function ensureLoaded(pluginId: string, installPath: string): Promise<void> {
   if (registry.has(pluginId)) return;
-  registry.set(pluginId, await loadPluginLocales(installPath));
+  let pending = pendingLoads.get(pluginId);
+  if (!pending) {
+    pending = loadPluginLocales(installPath).then((catalogs) => {
+      registry.set(pluginId, catalogs);
+    }).finally(() => {
+      pendingLoads.delete(pluginId);
+    });
+    pendingLoads.set(pluginId, pending);
+  }
+  await pending;
 }
 
 function lookup(pluginId: string, key: string): string | undefined {
