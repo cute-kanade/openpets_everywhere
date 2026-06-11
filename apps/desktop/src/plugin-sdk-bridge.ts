@@ -40,7 +40,9 @@ export type PluginCommandFormField = {
   required?: boolean;
 };
 export type PluginCommandForm = { fields: readonly PluginCommandFormField[]; submitLabel?: string };
-export type PluginCommand = { id: string; title: string; description?: string; form?: PluginCommandForm; placement?: "top" | "submenu"; priority?: number; featured?: boolean; icon?: string };
+export type PluginIconAssetRef = { kind: "icon"; name: string };
+export type PluginCommandIcon = string | PluginIconAssetRef;
+export type PluginCommand = { id: string; title: string; description?: string; form?: PluginCommandForm; placement?: "top" | "submenu"; priority?: number; featured?: boolean; icon?: PluginCommandIcon };
 export type PluginMenuItem = { id: string; title: string; enabled?: boolean; checked?: boolean };
 export type PluginStatus = { text: string; tone?: "info" | "success" | "warning" | "error" };
 export type PluginRuntimePublicState = { commands: readonly PluginCommand[]; status?: PluginStatus; menuItems?: readonly PluginMenuItem[] };
@@ -666,7 +668,7 @@ export class PluginSdkBridge {
         writeClipboardText: async (text: unknown) => { requirePermission("clipboard"); await caps.system.writeClipboardText(String(text).slice(0, 64 * 1024)); },
       },
       commands: {
-        register: (command: PluginCommand, handler: (values?: Record<string, unknown>) => unknown) => { requirePermission("commands"); const meta = validateCommand(command); check(state.commands.size < quotas.commands || state.commands.has(meta.id), "Plugin command quota exceeded."); state.commands.set(meta.id, { meta, handler }); },
+        register: (command: PluginCommand, handler: (values?: Record<string, unknown>) => unknown) => { requirePermission("commands"); const meta = validateCommand(command, (ref) => resolveAssetRef(ref, ["icons"])); check(state.commands.size < quotas.commands || state.commands.has(meta.id), "Plugin command quota exceeded."); state.commands.set(meta.id, { meta, handler }); },
         unregister: (id: string) => { state.commands.delete(String(id)); },
       },
       status: { set: (status: PluginStatus | string) => { requirePermission("status"); state.status = validateStatus(status); }, clear: () => { state.status = undefined; } },
@@ -1053,14 +1055,24 @@ export function normalizeJson(value: unknown, maxBytes: number, label: string): 
   return JSON.parse(text) as unknown;
 }
 
-function validateCommand(command: PluginCommand): PluginCommand {
+function validateCommand(command: PluginCommand, validateIconAssetRef: (ref: unknown) => { kind: PluginAssetKind; name: string; path: string }): PluginCommand {
   if (!command || !commandIdPattern.test(command.id)) throw new Error("Invalid plugin command id.");
   if (typeof command.title !== "string" || command.title.trim() === "" || command.title.length > 80) throw new Error("Invalid plugin command title.");
   if (command.description !== undefined && (typeof command.description !== "string" || command.description.length > 240)) throw new Error("Invalid plugin command description.");
   const placement = command.placement === undefined ? undefined : (check(command.placement === "top" || command.placement === "submenu", "Invalid plugin command placement."), command.placement);
   const priority = command.priority === undefined ? undefined : (check(Number.isFinite(Number(command.priority)), "Invalid plugin command priority."), clampNumber(Number(command.priority), -1000, 1000));
-  const icon = command.icon === undefined ? undefined : (check(typeof command.icon === "string" && namedHostIcons.has(command.icon), "Invalid plugin command icon."), command.icon);
+  const icon = command.icon === undefined ? undefined : validateCommandIcon(command.icon, validateIconAssetRef);
   return { id: command.id, title: command.title, description: command.description, form: validateCommandForm(command.form), placement, priority, featured: command.featured === true || undefined, icon };
+}
+
+function validateCommandIcon(icon: unknown, validateIconAssetRef: (ref: unknown) => { kind: PluginAssetKind; name: string; path: string }): PluginCommandIcon {
+  if (typeof icon === "string") {
+    check(namedHostIcons.has(icon), "Invalid plugin command icon.");
+    return icon;
+  }
+  if (!isRecord(icon) || icon.kind !== "icon" || typeof icon.name !== "string") throw new Error("Invalid plugin command icon.");
+  validateIconAssetRef(icon);
+  return { kind: "icon", name: icon.name };
 }
 
 const commandFormFieldTypes = new Set(["text", "textarea", "number", "boolean", "select", "multiSelect", "time", "date", "list"]);

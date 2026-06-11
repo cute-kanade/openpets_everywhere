@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Focus timer">
+  <circle cx="32" cy="34" r="22" fill="#EEF2FF" stroke="#6366F1" stroke-width="4"/>
+  <path d="M24 8h16" stroke="#6366F1" stroke-width="5" stroke-linecap="round"/>
+  <path d="M32 20v15l10 6" stroke="#4338CA" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="32" cy="34" r="5" fill="#A7F3D0" stroke="#10B981" stroke-width="3"/>
+  <path d="M16 18l-5-5M48 18l5-5" stroke="#818CF8" stroke-width="4" stroke-linecap="round"/>
+</svg>

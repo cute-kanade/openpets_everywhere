@@ -180,6 +180,11 @@ are torn down with their plugin.
 - **System** — `info()` (platform/locale/timezone/theme/version/online) is
   always available; `metrics()` (aggregate CPU/mem only) needs
   `system:metrics`; `openExternal` is HTTPS-only.
+- **Commands** — `ctx.commands.register(...)` accepts `icon` as either one of
+  the host's named icon strings (for example `"info"`, `"check"`, `"timer"`) or
+  a manifest-declared bundled icon reference from `ctx.assets.icon(name)`. Raw SVG
+  strings are rejected; put custom SVG/PNG icons under `assets.icons` so the host
+  can validate and sanitize them before the command reaches runtime/UI state.
 - **Quiet hours** are a host primitive (Settings → Plugin Platform) gating
   speech audio, plugin sound, voice, and notification sound together.
 

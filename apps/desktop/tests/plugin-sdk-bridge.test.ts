@@ -74,6 +74,16 @@ await scenario("events.on config:changed uses config listener path", async ({ ap
   assert.deepEqual(capabilities.events.subscribed, []);
 });
 
+await scenario("commands accept declared icon asset refs and reject raw svg strings", ({ api, bridge }) => {
+  api.commands.register({ id: "focus", title: "Focus", icon: { kind: "icon", name: "focus" } }, () => undefined);
+  assert.deepEqual(bridge.getPublicState("plug").commands[0]?.icon, { kind: "icon", name: "focus" });
+
+  assert.throws(
+    () => api.commands.register({ id: "raw-svg", title: "Raw SVG", icon: "<svg></svg>" }, () => undefined),
+    /Invalid plugin command icon\./,
+  );
+});
+
 type ScenarioContext = {
   api: ReturnType<PluginSdkBridge["createApi"]>;
   bridge: PluginSdkBridge;
@@ -96,7 +106,7 @@ async function scenario(name: string, run: (context: ScenarioContext) => Promise
       runtime: "javascript",
       sdkVersion: "3.0.0",
       enabled: true,
-      approvedPermissions: ["events", "storage"],
+      approvedPermissions: ["commands", "events", "storage"],
       config: {},
     };
     store.upsertRecord(record);
@@ -163,6 +173,7 @@ function manifest(): OpenPetsJavascriptPluginManifest {
     runtime: "javascript",
     sdkVersion: "3.0.0",
     entry: "index.js",
-    permissions: ["events", "storage"],
+    permissions: ["commands", "events", "storage"],
+    assets: { icons: { focus: "assets/focus.svg" } },
   };
 }

@@ -741,7 +741,8 @@ async function createDefaultPetRender(paused: boolean, display: PetTransientDisp
   }
 
   const spriteUrl = pathToFileURL(join(app.getAppPath(), "assets", defaultPetSprite.fileName)).toString();
-  const bodyHtml = createPetBodyMarkup("OpenPets default pet", createBubbleMarkup(display, paused, badge, dismissToken, pluginBubbles), `<div class="sprite" role="img" aria-label="Claude animated default pet"></div>`, createPinnedBubbleMarkup(pluginBubbles));
+  const hasPinned = Boolean(pluginBubbles?.pinned);
+  const bodyHtml = createPetBodyMarkup("OpenPets default pet", createBubbleMarkup(display, paused, badge, dismissToken, pluginBubbles), `<div class="sprite" role="img" aria-label="Claude animated default pet"></div>`, createPinnedBubbleMarkup(pluginBubbles), hasPinned);
   const reactionState = getReactionSpriteState(display?.reaction);
   const stateRows = defaultPetSprite.states;
   const scale = getAppStateSnapshot().preferences.petScale as PetScaleValue;
@@ -818,7 +819,8 @@ async function createInstalledPetRender(petId: string, displayName: string, paus
   }
 
   const imageUrl = pathToFileURL(spritesheetPath).toString();
-  const bodyHtml = createPetBodyMarkup(escapeHtml(displayName), createBubbleMarkup(display, paused, badge, dismissToken, pluginBubbles), `<div class="installed-card" role="img" aria-label="${escapeHtml(displayName)}"><div class="installed-sprite"></div></div>`, createPinnedBubbleMarkup(pluginBubbles));
+  const hasPinned = Boolean(pluginBubbles?.pinned);
+  const bodyHtml = createPetBodyMarkup(escapeHtml(displayName), createBubbleMarkup(display, paused, badge, dismissToken, pluginBubbles), `<div class="installed-card" role="img" aria-label="${escapeHtml(displayName)}"><div class="installed-sprite"></div></div>`, createPinnedBubbleMarkup(pluginBubbles), hasPinned);
   const reactionState = getReactionSpriteState(display?.reaction);
   const stateRows = defaultPetSprite.states;
 
@@ -869,8 +871,8 @@ async function createInstalledPetRender(petId: string, displayName: string, paus
   };
 }
 
-function createPetBodyMarkup(stageLabel: string, bubble: string, spriteMarkup: string, pinnedBubble = ""): string {
-  return `<div class="stage" aria-label="${stageLabel}">
+function createPetBodyMarkup(stageLabel: string, bubble: string, spriteMarkup: string, pinnedBubble = "", hasPinned = false): string {
+  return `<div class="stage${hasPinned ? " has-pinned" : ""}" aria-label="${stageLabel}">
     ${pinnedBubble}
     ${bubble}
     <div class="pet-hitbox" aria-hidden="true">
@@ -946,9 +948,48 @@ function createPetWindowCss(paused: boolean, scale: PetScaleValue): string {
     .bubble-action.is-danger:hover { background: #dc2626; }
     .bubble-input { display: flex; gap: 5px; margin-top: 6px; align-items: center; }
     .bubble-input-control { box-sizing: border-box; flex: 1 1 auto; min-width: 0; border: 1px solid rgba(30, 58, 138, 0.25); border-radius: 8px; padding: 4px 7px; font: 700 10px/12px Inter, ui-sans-serif, system-ui, sans-serif; background: rgba(255, 255, 255, 0.9); color: #172033; pointer-events: auto; -webkit-app-region: no-drag; }
-    .bubble.is-pinned { bottom: ${Math.ceil(petBottom + scaledHeight + 8) + 140}px; max-height: 72px; max-width: min(200px, calc(100vw - 18px)); padding: 7px 10px; border-radius: 11px; background: linear-gradient(135deg, rgba(254, 249, 231, 0.97), rgba(253, 242, 213, 0.96)); }
-    .bubble.is-pinned::after { content: none; }
-    .bubble.is-pinned .bubble-text { -webkit-line-clamp: 3; font-size: 10px; line-height: 12.5px; }
+    .bubble.is-pinned {
+      position: absolute;
+      left: 50%;
+      bottom: 6px;
+      z-index: 4;
+      transform: translateX(-50%);
+      width: 188px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 6px 8px;
+      background: linear-gradient(135deg, rgba(241, 245, 249, 0.94), rgba(226, 232, 240, 0.92));
+      color: #334155;
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(8px);
+      text-align: center;
+      max-height: none;
+      max-width: none;
+      animation: bubble-in 200ms cubic-bezier(0.2, 0, 0, 1);
+    }
+    .bubble.is-pinned::after { content: none !important; }
+    .bubble.is-pinned .bubble-body { width: 100%; text-align: center; }
+    .bubble.is-pinned .bubble-text { display: block; -webkit-line-clamp: 1; font-size: 10px; font-weight: 700; line-height: 12px; color: #334155; }
+    .bubble.is-pinned .bubble-actions { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 4px; width: 100%; margin-top: 5px; justify-content: center; }
+    .bubble.is-pinned .bubble-action { flex: 1 1 auto; min-width: 0; padding: 3px 6px; font-size: 9px; font-weight: 700; line-height: 11px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; background: rgba(30, 58, 138, 0.08); color: #1e293b; transition: background 150ms ease; }
+    .bubble.is-pinned .bubble-action:hover { background: rgba(30, 58, 138, 0.14); }
+    .bubble.is-pinned .bubble-action.is-primary { background: #2563eb; color: #ffffff; }
+    .bubble.is-pinned .bubble-action.is-primary:hover { background: #1d4ed8; }
+    .bubble.is-pinned .bubble-action.is-danger { background: #ef4444; color: #ffffff; }
+    .bubble.is-pinned .bubble-action.is-danger:hover { background: #dc2626; }
+    .bubble.is-pinned.accent-blue { background: linear-gradient(135deg, rgba(219, 234, 254, 0.94), rgba(191, 219, 254, 0.92)); }
+    .bubble.is-pinned.accent-purple { background: linear-gradient(135deg, rgba(237, 233, 254, 0.94), rgba(221, 214, 254, 0.92)); }
+    .bubble.is-pinned.accent-green { background: linear-gradient(135deg, rgba(220, 252, 231, 0.94), rgba(187, 247, 208, 0.92)); }
+    .bubble.is-pinned.accent-amber { background: linear-gradient(135deg, rgba(254, 243, 199, 0.94), rgba(253, 230, 138, 0.92)); }
+    .bubble.is-pinned.accent-red { background: linear-gradient(135deg, rgba(254, 226, 226, 0.94), rgba(254, 202, 202, 0.92)); }
+    .bubble.is-pinned.accent-pink { background: linear-gradient(135deg, rgba(252, 231, 243, 0.94), rgba(251, 207, 232, 0.92)); }
+    .bubble.is-pinned.accent-slate { background: linear-gradient(135deg, rgba(241, 245, 249, 0.94), rgba(226, 232, 240, 0.92)); }
+    .stage.has-pinned .pet-hitbox { bottom: ${Math.max(0, petBottom - hitPadding) + 28}px; }
+    .stage.has-pinned .bubble:not(.is-pinned) { bottom: ${bubbleBottom + 28}px; }
     .bubble.is-plugin.accent-blue { background: linear-gradient(135deg, rgba(219, 234, 254, 0.97), rgba(191, 219, 254, 0.94)); }
     .bubble.is-plugin.accent-purple { background: linear-gradient(135deg, rgba(237, 233, 254, 0.97), rgba(221, 214, 254, 0.94)); }
     .bubble.is-plugin.accent-green { background: linear-gradient(135deg, rgba(220, 252, 231, 0.97), rgba(187, 247, 208, 0.94)); }

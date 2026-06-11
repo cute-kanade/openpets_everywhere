@@ -22,7 +22,7 @@ const v3Permissions = [
   "auth", "files", "system:openExternal", "system:metrics", "clipboard", "network:write",
 ];
 const configFieldTypesV2 = ["text", "textarea", "number", "boolean", "select", "time", "multiSelect", "list"];
-const configFieldTypesV3 = [...configFieldTypesV2, "date", "secret"];
+const configFieldTypesV3 = [...configFieldTypesV2, "date", "secret", "sound"];
 const assetKinds = ["icons", "images", "svgs", "sprites", "sounds"] as const;
 const assetExtensions: Record<string, readonly string[]> = {
   icons: [".png", ".webp", ".svg"],
