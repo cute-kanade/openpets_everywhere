@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, promises as fs } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 
 import { getCatalogPlugin, getPluginCatalog, type PluginCatalogOptions } from "./plugin-catalog.js";
 import type { PluginCatalogEntryV2 } from "./plugin-catalog-validation.js";
@@ -42,7 +42,7 @@ export type SafePluginRecord = {
 };
 
 export type PluginServiceSnapshot = { readonly plugins: readonly SafePluginRecord[] };
-export type SafeCatalogPluginRecord = { readonly id: string; readonly name: string; readonly version: string; readonly description: string; readonly runtime: "declarative" | "javascript"; readonly icon?: PluginIcon; readonly sdkVersion?: string; readonly permissions: readonly PluginPermission[]; readonly installed: boolean; readonly bundled?: boolean; readonly deprecated?: boolean; readonly statusReason?: string };
+export type SafeCatalogPluginRecord = { readonly id: string; readonly name: string; readonly version: string; readonly description: string; readonly runtime: "declarative" | "javascript"; readonly icon?: PluginIcon; readonly iconDataUrl?: string; readonly sdkVersion?: string; readonly permissions: readonly PluginPermission[]; readonly installed: boolean; readonly bundled?: boolean; readonly deprecated?: boolean; readonly statusReason?: string };
 export type PluginCatalogSnapshot = { readonly plugins: readonly SafeCatalogPluginRecord[] };
 export type PluginServiceResult = { readonly ok: true; readonly snapshot: PluginServiceSnapshot } | { readonly ok: false; readonly error: string; readonly snapshot: PluginServiceSnapshot };
 export type PluginConfigSoundPickResult = { readonly ok: true; readonly sound: { readonly kind: "user-sound"; readonly id: string; readonly name?: string }; readonly snapshot: PluginServiceSnapshot } | { readonly ok: true; readonly canceled: true; readonly snapshot: PluginServiceSnapshot } | { readonly ok: false; readonly error: string; readonly snapshot: PluginServiceSnapshot };
@@ -240,7 +240,7 @@ export class PluginService {
     try {
       const catalog = await getPluginCatalog({ ...this.#catalogOptions, fetchImpl: this.#fetchImpl ?? this.#catalogOptions?.fetchImpl, refresh });
       for (const entry of catalog.plugins) await this.#updateCatalogMetadata(entry);
-      return { plugins: catalog.plugins.filter((entry) => !isEntryDisabled(entry) && isCatalogEntryCompatible(entry.minOpenPetsVersion, getMaxVersion(entry), this.#currentAppVersion)).map((entry) => { const installed = this.stateStore.getRecord(entry.id); return { id: entry.id, name: entry.name, version: entry.version, description: entry.description, runtime: entry.runtime, icon: entry.icon, sdkVersion: getSdkVersion(entry), permissions: entry.permissions, installed: installed?.source === "catalog", bundled: installed?.bundled || undefined, deprecated: isEntryDeprecated(entry) || undefined, statusReason: getStatusReason(entry) }; }) };
+      return { plugins: catalog.plugins.filter((entry) => !isEntryDisabled(entry) && isCatalogEntryCompatible(entry.minOpenPetsVersion, getMaxVersion(entry), this.#currentAppVersion)).map((entry) => { const installed = this.stateStore.getRecord(entry.id); return { id: entry.id, name: entry.name, version: entry.version, description: entry.description, runtime: entry.runtime, icon: entry.icon, iconDataUrl: "iconDataUrl" in entry ? entry.iconDataUrl : undefined, sdkVersion: getSdkVersion(entry), permissions: entry.permissions, installed: installed?.source === "catalog", bundled: installed?.bundled || undefined, deprecated: isEntryDeprecated(entry) || undefined, statusReason: getStatusReason(entry) }; }) };
     } catch {
       return { plugins: [] };
     }
@@ -261,12 +261,18 @@ export class PluginService {
     const record = this.stateStore.getRecord(id);
     if (!record) return this.#error("Plugin is not installed.");
     if (record.bundled) return this.#error("Bundled plugins cannot be uninstalled. Disable the plugin instead.");
-    let realInstall: string;
+    let realInstall: string | undefined;
     try { realInstall = await resolveSafePluginInstallDir(this.#userDataPath, id, record.installPath, record.source); }
-    catch (error) { return this.#error(safeError(error)); }
+    catch (error) {
+      if (isMissingPluginInstall(error) && isExpectedMissingPluginInstallPath(this.#userDataPath, id, record.installPath, record.source)) {
+        this.#log("warn", "Removing stale plugin state with missing install directory.", { pluginId: id, source: record.source });
+      } else {
+        return this.#error(safeError(error));
+      }
+    }
     this.stateStore.removeRecord(id);
     await this.runtime.reloadPlugin(id);
-    try { this.#capabilities?.clearPlugin?.(id); await fs.rm(join(this.#userDataPath, "plugin-user-sounds", id), { recursive: true, force: true }); await fs.rm(realInstall, { recursive: true, force: true }); await fs.rm(join(this.#userDataPath, "plugin-storage", `${id}.json`), { force: true }); }
+    try { this.#capabilities?.clearPlugin?.(id); await fs.rm(join(this.#userDataPath, "plugin-user-sounds", id), { recursive: true, force: true }); if (realInstall) await fs.rm(realInstall, { recursive: true, force: true }); await fs.rm(join(this.#userDataPath, "plugin-storage", `${id}.json`), { force: true }); }
     catch (error) { return this.#error(safeError(error)); }
     return { ok: true, snapshot: await this.getSnapshot() };
   }
@@ -674,6 +680,15 @@ function isStringSubset(next: readonly string[], approved: readonly string[]): b
 
 function isUnderPath(child: string, parent: string): boolean {
   return child === parent || child.startsWith(`${parent}/`);
+}
+
+function isMissingPluginInstall(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+}
+
+function isExpectedMissingPluginInstallPath(userDataPath: string, id: string, installPath: string, source: PluginSource): boolean {
+  const root = resolve(userDataPath, source === "catalog" ? "plugins" : "plugins-dev");
+  return resolve(installPath) === resolve(root, id);
 }
 
 async function ensureRealDirectory(path: string): Promise<void> {

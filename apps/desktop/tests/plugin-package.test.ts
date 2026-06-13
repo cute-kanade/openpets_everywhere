@@ -33,6 +33,24 @@ assert.equal(readFileSync(join(jsInstalled.installPath, "index.mjs"), "utf8"), j
 await assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: jsCatalogEntry, zip: makeZipFiles([{ name: "openpets.plugin.json", data: Buffer.from(jsText) }]) }), /manifest and entry/);
 await assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: jsCatalogEntry, zip: makeZipFiles([{ name: "openpets.plugin.json", data: Buffer.from(jsText) }, { name: "index.mjs", data: Buffer.from(jsEntryText) }, { name: "extra.js", data: Buffer.from("") }]) }), /manifest and entry|too many entries/);
 
+const v3Manifest: OpenPetsPluginManifest = { manifestVersion: 3, id: "v3-plug", name: "V3 Plug", version: "1.0.0", runtime: "javascript", sdkVersion: "3.0.0", entry: "index.js", assets: { icons: { plug: "assets/plug.svg" } }, permissions: ["pet:speak"] };
+const v3Text = JSON.stringify(v3Manifest);
+const v3Zip = makeZipFiles([
+  { name: "openpets.plugin.json", data: Buffer.from(v3Text) },
+  { name: "index.js", data: Buffer.from("export function register() {}\n") },
+  { name: "assets/plug.svg", data: Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"><text>ok</text></svg>") },
+  { name: "locales/en.json", data: Buffer.from(JSON.stringify({ "plugin.name": "V3 Plug" })) },
+]);
+const v3CatalogEntry = { id: v3Manifest.id, name: v3Manifest.name, version: v3Manifest.version, description: "desc", runtime: "javascript" as const, sdkVersion: "3.0.0", permissions: v3Manifest.permissions, downloadUrl: "https://zip.openpets.dev/plugins/v3-plug.zip", sha256: createHash("sha256").update(v3Zip).digest("hex") };
+const v3Installed = await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: v3CatalogEntry, zip: v3Zip });
+assert.equal(readFileSync(join(v3Installed.installPath, "locales", "en.json"), "utf8"), JSON.stringify({ "plugin.name": "V3 Plug" }));
+
+await assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: v3CatalogEntry, zip: makeZipFiles([...[
+  { name: "openpets.plugin.json", data: Buffer.from(v3Text) },
+  { name: "index.js", data: Buffer.from("export function register() {}\n") },
+  { name: "assets/plug.svg", data: Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>") },
+], { name: "locales/fr.json", data: Buffer.from("{}") }]) }), /undeclared file/);
+
 const canonicalEntry = validatePluginCatalog({ version: 1, generatedAt: new Date().toISOString(), plugins: [{ ...entry, permissions: ["timer", "pet:speak"] }] }).plugins[0];
 await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: canonicalEntry, zip });
 

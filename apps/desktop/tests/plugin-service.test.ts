@@ -564,6 +564,20 @@ await localScenario("uninstall removes state reloads and rejects symlink deletio
   assert.equal(store.getRecord("root-link")?.id, "root-link");
 });
 
+await localScenario("uninstall removes stale local record when dev snapshot is missing", async ({ service, store, runtime, userData }) => {
+  const install = join(userData, "plugins-dev", "stale-local");
+  store.upsertRecord({ id: "stale-local", version: "1.0.0", installPath: install, manifestPath: join(install, OPENPETS_PLUGIN_MANIFEST_FILENAME), source: "local", enabled: true, brokenReason: "ENOENT: missing manifest", approvedPermissions: ["pet:speak", "schedule"], config: {} });
+  const result = await service.uninstall("stale-local");
+  assert.equal(result.ok, true);
+  assert.equal(store.getRecord("stale-local"), undefined);
+  assert.deepEqual(runtime.reloads, ["stale-local"]);
+
+  store.upsertRecord({ id: "outside-missing", version: "1.0.0", installPath: join(userData, "plugins-dev", "..", "outside-missing"), manifestPath: join(userData, "plugins-dev", "..", "outside-missing", OPENPETS_PLUGIN_MANIFEST_FILENAME), source: "local", enabled: true, brokenReason: "missing", approvedPermissions: ["pet:speak"], config: {} });
+  const rejected = await service.uninstall("outside-missing");
+  assert.equal(rejected.ok, false);
+  assert.equal(store.getRecord("outside-missing")?.id, "outside-missing");
+});
+
 await catalogRollbackScenario("catalog update rolls back manifest if state write fails", async ({ service, store, runtime, userData }) => {
   const oldManifest = manifest({ id: "rollback-plug", version: "1.0.0" });
   const install = join(userData, "plugins", "rollback-plug");
