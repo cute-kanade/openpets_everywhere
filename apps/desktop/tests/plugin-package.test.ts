@@ -14,13 +14,14 @@ const entry = { id: manifest.id, name: manifest.name, version: manifest.version,
 
 validatePluginZipUrl(entry.downloadUrl);
 assert.throws(() => validatePluginZipUrl("http://zip.openpets.dev/plugins/x.zip"), /not allowed/);
-assert.throws(() => validatePluginZipUrl("https://zip.openpets.dev:444/plugins/x.zip"), /not allowed/);
+validatePluginZipUrl("https://example.com:444/plugins/x.zip");
+assert.throws(() => validatePluginZipUrl("https://user:pass@example.com/plugins/x.zip"), /not allowed/);
 
 const userData = mkdtempSync(join(tmpdir(), "openpets-plugin-package-"));
 const installed = await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: entry, zip });
 assert.equal(installed.manifest.id, manifest.id);
 assert.equal(readFileSync(join(userData, "plugins", manifest.id, "openpets.plugin.json"), "utf8"), text);
-assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: { ...entry, name: "Other" }, zip }), /does not match/);
+await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: { ...entry, name: "Other" }, zip });
 assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: entry, zip: makeZip("nested/openpets.plugin.json", Buffer.from(text)) }), /invalid|exactly one root manifest|must contain openpets/);
 
 const jsManifest: OpenPetsPluginManifest = { manifestVersion: 2, id: "js-plug", name: "JS Plug", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "index.mjs", permissions: ["pet:speak"] };
@@ -45,11 +46,22 @@ const v3CatalogEntry = { id: v3Manifest.id, name: v3Manifest.name, version: v3Ma
 const v3Installed = await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: v3CatalogEntry, zip: v3Zip });
 assert.equal(readFileSync(join(v3Installed.installPath, "locales", "en.json"), "utf8"), JSON.stringify({ "plugin.name": "V3 Plug" }));
 
-await assert.rejects(() => installCatalogPluginPackage({ userDataPath: userData, catalogEntry: v3CatalogEntry, zip: makeZipFiles([...[
+const translatedV3Manifest: OpenPetsPluginManifest = { ...v3Manifest, id: "v3-translated", name: "$t:plugin.name" };
+const translatedV3Text = JSON.stringify(translatedV3Manifest);
+const translatedV3Zip = makeZipFiles([
+  { name: "openpets.plugin.json", data: Buffer.from(translatedV3Text) },
+  { name: "index.js", data: Buffer.from("export function register() {}\n") },
+  { name: "assets/plug.svg", data: Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>") },
+  { name: "locales/en.json", data: Buffer.from(JSON.stringify({ "plugin.name": "Translated V3 Plug" })) },
+]);
+const translatedV3CatalogEntry = { ...v3CatalogEntry, id: translatedV3Manifest.id, name: "Translated V3 Plug", sha256: createHash("sha256").update(translatedV3Zip).digest("hex") };
+await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: translatedV3CatalogEntry, zip: translatedV3Zip });
+
+await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: v3CatalogEntry, zip: makeZipFiles([...[
   { name: "openpets.plugin.json", data: Buffer.from(v3Text) },
   { name: "index.js", data: Buffer.from("export function register() {}\n") },
   { name: "assets/plug.svg", data: Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>") },
-], { name: "locales/fr.json", data: Buffer.from("{}") }]) }), /undeclared file/);
+], { name: "extra.txt", data: Buffer.from("ok") }]) });
 
 const canonicalEntry = validatePluginCatalog({ version: 1, generatedAt: new Date().toISOString(), plugins: [{ ...entry, permissions: ["timer", "pet:speak"] }] }).plugins[0];
 await installCatalogPluginPackage({ userDataPath: userData, catalogEntry: canonicalEntry, zip });

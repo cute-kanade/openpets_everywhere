@@ -241,7 +241,8 @@ export class PluginService {
       const catalog = await getPluginCatalog({ ...this.#catalogOptions, fetchImpl: this.#fetchImpl ?? this.#catalogOptions?.fetchImpl, refresh });
       for (const entry of catalog.plugins) await this.#updateCatalogMetadata(entry);
       return { plugins: catalog.plugins.filter((entry) => !isEntryDisabled(entry) && isCatalogEntryCompatible(entry.minOpenPetsVersion, getMaxVersion(entry), this.#currentAppVersion)).map((entry) => { const installed = this.stateStore.getRecord(entry.id); return { id: entry.id, name: entry.name, version: entry.version, description: entry.description, runtime: entry.runtime, icon: entry.icon, iconDataUrl: "iconDataUrl" in entry ? entry.iconDataUrl : undefined, sdkVersion: getSdkVersion(entry), permissions: entry.permissions, installed: installed?.source === "catalog", bundled: installed?.bundled || undefined, deprecated: isEntryDeprecated(entry) || undefined, statusReason: getStatusReason(entry) }; }) };
-    } catch {
+    } catch (error) {
+      this.#log("warn", "Plugin catalog snapshot failed.", { reason: safeDetailedError(error) });
       return { plugins: [] };
     }
   }
@@ -309,7 +310,7 @@ export class PluginService {
       return this.#error(safeError(error));
     }
     const wasEnabled = existing?.enabled === true;
-    const enabled = existing && !approvalsChanged ? existing.enabled : false;
+    const enabled = existing ? existing.enabled : true;
     this.stateStore.upsertRecord({
       id: loaded.manifest.id,
       version: loaded.manifest.version,
@@ -380,6 +381,8 @@ export class PluginService {
   }
 
   async #installOrUpdateCatalog(id: string, update: boolean): Promise<PluginServiceResult> {
+    const started = Date.now();
+    this.#log("info", update ? "Plugin catalog update requested." : "Plugin catalog install requested.", { pluginId: id });
     if (!this.#userDataPath) return this.#error("Catalog plugin installation is unavailable.");
     const existing = this.stateStore.getRecord(id);
     if (existing?.bundled) return this.#error(update ? "Bundled plugins update with OpenPets." : "Plugin is already installed as a bundled plugin.");
@@ -389,11 +392,14 @@ export class PluginService {
     const confirm = this.#confirmPermissions ?? defaultConfirmPermissions;
     try {
       const entry = await getCatalogPlugin(id, { ...this.#catalogOptions, fetchImpl: this.#fetchImpl ?? this.#catalogOptions?.fetchImpl, refresh: update });
+      this.#log("debug", "Plugin catalog entry selected.", { pluginId: id, version: entry.version, runtime: entry.runtime, sdkVersion: getSdkVersion(entry), currentAppVersion: this.#currentAppVersion });
       if (isEntryDisabled(entry)) throw new Error("Plugin is disabled in the catalog.");
       if (isEntryDeprecated(entry)) throw new Error("Plugin is deprecated in the catalog.");
       if (!isCatalogEntryCompatible(entry.minOpenPetsVersion, getMaxVersion(entry), this.#currentAppVersion)) throw new Error("Plugin is incompatible with this OpenPets version.");
       const zip = await downloadCatalogPluginZip(entry, this.#fetchImpl ?? this.#catalogOptions?.fetchImpl ?? fetch);
+      this.#log("debug", "Plugin catalog ZIP downloaded.", { pluginId: id, sizeBytes: zip.byteLength, downloadHost: safeUrlHost(entry.downloadUrl) });
       const preview = await readCatalogPluginManifestFromZip({ catalogEntry: entry, zip, maxManifestBytes: this.#maxManifestBytes });
+      this.#log("debug", "Plugin catalog manifest previewed.", { pluginId: id, manifestVersion: preview.manifest.manifestVersion, runtime: preview.manifest.runtime, sdkVersion: "sdkVersion" in preview.manifest ? preview.manifest.sdkVersion : undefined });
       const networkHosts = "network" in preview.manifest ? preview.manifest.network?.hosts : undefined;
       const approvalsChanged = existing ? !isPermissionSubset(preview.manifest.permissions, existing.approvedPermissions) || !isStringSubset(networkHosts ?? [], existing.approvedNetworkHosts ?? []) : true;
       if (approvalsChanged && !(await confirm(preview.manifest))) return { ok: true, snapshot: await this.getSnapshot() };
@@ -401,8 +407,9 @@ export class PluginService {
       if (previousInstallBackup && existing) await fs.cp(existing.installPath, previousInstallBackup, { recursive: true, force: true }).catch(() => undefined);
       const loaded = await installCatalogPluginPackage({ userDataPath: this.#userDataPath, catalogEntry: entry, zip, maxManifestBytes: this.#maxManifestBytes });
       const wasEnabled = existing?.enabled === true;
+      const enabled = existing ? existing.enabled : true;
       try {
-        this.stateStore.upsertRecord({ id: loaded.manifest.id, version: loaded.manifest.version, source: "catalog", installPath: loaded.installPath, manifestPath: loaded.manifestPath, manifestVersion: loaded.manifest.manifestVersion, runtime: loaded.manifest.runtime, sdkVersion: "sdkVersion" in loaded.manifest ? loaded.manifest.sdkVersion : getSdkVersion(entry), enabled: existing && !approvalsChanged ? existing.enabled : false, approvedPermissions: loaded.manifest.permissions, approvedNetworkHosts: networkHosts, config: existing?.config ?? {}, catalogDeprecated: isEntryDeprecated(entry) || undefined, catalogStatusReason: getStatusReason(entry) });
+        this.stateStore.upsertRecord({ id: loaded.manifest.id, version: loaded.manifest.version, source: "catalog", installPath: loaded.installPath, manifestPath: loaded.manifestPath, manifestVersion: loaded.manifest.manifestVersion, runtime: loaded.manifest.runtime, sdkVersion: "sdkVersion" in loaded.manifest ? loaded.manifest.sdkVersion : getSdkVersion(entry), enabled, approvedPermissions: loaded.manifest.permissions, approvedNetworkHosts: networkHosts, config: existing?.config ?? {}, catalogDeprecated: isEntryDeprecated(entry) || undefined, catalogStatusReason: getStatusReason(entry) });
       } catch (error) {
         if (previousInstallBackup && existing) { await fs.rm(loaded.installPath, { recursive: true, force: true }).catch(() => undefined); await fs.rename(previousInstallBackup, existing.installPath).catch(() => undefined); }
         else await fs.rm(loaded.installPath, { recursive: true, force: true }).catch(() => undefined);
@@ -410,9 +417,10 @@ export class PluginService {
       } finally {
         if (previousInstallBackup) await fs.rm(previousInstallBackup, { recursive: true, force: true }).catch(() => undefined);
       }
-      if (wasEnabled || (existing && !approvalsChanged && existing.enabled)) await this.runtime.reloadPlugin(id);
+      if (enabled || wasEnabled) await this.runtime.reloadPlugin(loaded.manifest.id);
+      this.#log("info", update ? "Plugin catalog update succeeded." : "Plugin catalog install succeeded.", { pluginId: id, version: loaded.manifest.version, durationMs: Date.now() - started });
       return { ok: true, snapshot: await this.getSnapshot() };
-    } catch (error) { return this.#error(safeError(error)); }
+    } catch (error) { this.#log("warn", update ? "Plugin catalog update failed." : "Plugin catalog install failed.", { pluginId: id, reason: safeDetailedError(error), uiReason: safeError(error), durationMs: Date.now() - started }); return this.#error(safeError(error)); }
   }
 
   async #safeRecord(record: PluginStateRecord): Promise<SafePluginRecord> {
@@ -577,14 +585,62 @@ export function setPluginServiceForTests(service: PluginService | null): void {
 
 function safeError(error: unknown): string {
   const message = error instanceof Error ? error.message : "Plugin manifest is unavailable.";
-  if (/manifest validation failed/i.test(message)) return "Plugin manifest validation failed.";
-  if (/too large/i.test(message)) return "Plugin manifest is too large.";
-  if (/outside allowed/i.test(message)) return "Plugin install path is outside allowed plugin roots.";
-  if (/outside install/i.test(message)) return "Plugin manifest path is outside install path.";
-  if (/path is invalid/i.test(message)) return "Plugin manifest path is invalid.";
-  if (/id\/version/i.test(message)) return "Plugin manifest id/version does not match installed state.";
-  if (/newer OpenPets version|incompatible with this OpenPets version/i.test(message)) return "Plugin requires a newer OpenPets version.";
-  return "Plugin manifest is unavailable.";
+  return redactErrorPaths(message).slice(0, 240) || "Plugin install failed.";
+}
+
+function redactErrorPaths(message: string): string {
+  return message
+    .replace(/'\/[^"]*?'/g, "[path]")
+    .replace(/"\/[^"]*?"/g, "[path]")
+    .replace(/(?:[A-Za-z]:\\|\/)[^\s,)]+/g, "[path]");
+}
+
+function resolvePermissionDialogManifest(manifest: OpenPetsPluginManifest, files?: ReadonlyMap<string, Buffer>, catalogName?: string, catalogDescription?: string): OpenPetsPluginManifest {
+  const locales = readEnglishLocaleCatalog(files);
+  return {
+    ...manifest,
+    name: catalogName ?? resolveManifestText(manifest.name, locales) ?? manifest.id,
+    description: catalogDescription ?? resolveManifestText(manifest.description, locales) ?? manifest.description,
+  };
+}
+
+function resolveManifestText(value: string | undefined, locales: Record<string, string>): string | undefined {
+  if (!value) return undefined;
+  if (!value.startsWith("$t:")) return value;
+  return locales[value.slice(3)];
+}
+
+function readEnglishLocaleCatalog(files?: ReadonlyMap<string, Buffer>): Record<string, string> {
+  const bytes = files?.get("locales/en.json");
+  if (!bytes) return {};
+  try { return flattenLocaleCatalog(JSON.parse(bytes.toString("utf8")) as unknown); }
+  catch { return {}; }
+}
+
+function flattenLocaleCatalog(value: unknown, prefix = ""): Record<string, string> {
+  if (!isRecord(value)) return {};
+  const output: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    if (isRecord(entry)) Object.assign(output, flattenLocaleCatalog(entry, nextKey));
+    else if (typeof entry === "string") output[nextKey] = entry;
+  }
+  return output;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeDetailedError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message || looksPathLike(message)) return safeError(error);
+  return message.slice(0, 220);
+}
+
+function safeUrlHost(value: string): string | undefined {
+  try { return new URL(value).hostname; }
+  catch { return undefined; }
 }
 
 const pluginIconDataUrlMaxBytes = 64 * 1024;
@@ -759,6 +815,7 @@ function isDialogOptions(value: unknown): value is OpenDialogOptions {
 async function defaultConfirmPermissions(manifest: OpenPetsPluginManifest): Promise<boolean> {
   const { dialog } = await import("electron");
   const permissions = manifest.permissions.length === 0 ? "No permissions" : manifest.permissions.join(", ");
-  const result = await dialog.showMessageBox({ type: "question", buttons: ["Load plugin", "Cancel"], defaultId: 0, cancelId: 1, title: "Load local OpenPets plugin?", message: `Load ${manifest.name}?`, detail: `Permissions: ${permissions}` });
+  const name = manifest.name.startsWith("$t:") ? manifest.id : manifest.name;
+  const result = await dialog.showMessageBox({ type: "question", buttons: ["Load plugin", "Cancel"], defaultId: 0, cancelId: 1, title: "Load OpenPets plugin?", message: `Load ${name}?`, detail: `Permissions: ${permissions}` });
   return result.response === 0;
 }

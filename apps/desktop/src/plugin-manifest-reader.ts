@@ -31,7 +31,7 @@ export async function readSafePluginManifest(options: ReadPluginManifestOptions)
   const manifestText = await readBoundedUtf8(realManifestPath, maxBytes);
   const parsed = JSON.parse(manifestText) as unknown;
   const result = validatePluginManifest(parsed);
-  if (!result.ok) throw new Error(`Plugin manifest validation failed: ${result.errors.map((error) => error.code).join(", ")}`);
+  if (!result.ok) throw new Error(`Plugin manifest validation failed: ${formatManifestValidationErrors(result.errors)}`);
   if ((options.expectedId !== undefined && result.manifest.id !== options.expectedId) || (options.expectedVersion !== undefined && result.manifest.version !== options.expectedVersion)) throw new Error("Plugin manifest id/version does not match installed state.");
   return result.manifest;
 }
@@ -54,4 +54,8 @@ export function isUnderPath(child: string, parent: string): boolean {
   const normalizedParent = resolve(parent);
   const path = relative(normalizedParent, normalizedChild);
   return path === "" || (!path.startsWith("..") && !isAbsolute(path));
+}
+
+function formatManifestValidationErrors(errors: readonly { readonly path: string; readonly code: string; readonly message: string }[]): string {
+  return errors.slice(0, 6).map((error) => `${error.path} ${error.code}: ${error.message}`).join("; ");
 }

@@ -40,7 +40,8 @@ assert.equal(preferencePatch.openDefaultPetOnLaunch, true);
 assert.equal(preferencePatch.speechBubblesEnabled, true);
 
 assert.equal(defaultPetScale, 1);
-assert.deepEqual(petScaleOptions.map((option) => option.value), [0.75, 1, 1.25, 1.5]);
+assert.deepEqual(petScaleOptions.map((option) => option.value), [0.5, 0.75, 1, 1.25, 1.5]);
+assert.equal(normalizePetScale(0.5), 0.5);
 assert.equal(normalizePetScale(0.75), 0.75);
 assert.equal(normalizePetScale(1), 1);
 assert.equal(normalizePetScale(1.25), 1.25);

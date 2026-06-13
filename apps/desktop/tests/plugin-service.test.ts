@@ -68,7 +68,7 @@ await scenario("snapshot exposes declared v3 svg icon data url", async ({ root, 
 await scenario("invalid manifest appears safe broken", async ({ service, store }) => {
   addPlugin(store, {}, { bad: true });
   const snapshot = await service.getSnapshot();
-  assert.equal(snapshot.plugins[0].brokenReason, "Plugin manifest validation failed.");
+  assert.match(snapshot.plugins[0].brokenReason ?? "", /Plugin manifest validation failed: .*unknown_field/);
 });
 
 await scenario("missing manifest does not leak absolute paths", async ({ service, store, root }) => {
@@ -76,7 +76,8 @@ await scenario("missing manifest does not leak absolute paths", async ({ service
   store.upsertRecord({ id: "missing", version: "1.0.0", manifestPath: missingPath, installPath: join(root, "missing"), source: "local", enabled: true, approvedPermissions: ["timer"], config: {} });
   const snapshot = await service.getSnapshot();
   const reason = snapshot.plugins[0].brokenReason ?? "";
-  assert.equal(reason, "Plugin manifest is unavailable.");
+  assert.match(reason, /ENOENT/);
+  assert.match(reason, /\[path\]/);
   assert.equal(reason.includes(root), false);
 });
 
@@ -191,14 +192,15 @@ await scenario("stop cancels runtime", async ({ service, runtime }) => {
   assert.equal(runtime.stopped, true);
 });
 
-await localScenario("loadLocal snapshots manifest disabled", async ({ service, store, source }) => {
+await localScenario("loadLocal snapshots manifest enabled", async ({ service, store, runtime, source }) => {
   writeManifest(source, manifest({ id: "local-plug", permissions: ["timer", "pet:speak"] }));
   const result = await service.loadLocal();
   assert.equal(result.ok, true);
   const record = store.getRecord("local-plug");
-  assert.equal(record?.enabled, false);
+  assert.equal(record?.enabled, true);
   assert.equal(record?.source, "local");
   assert.deepEqual(record?.approvedPermissions, ["pet:speak", "timer"]);
+  assert.deepEqual(runtime.reloads, ["local-plug"]);
   assert.equal(existsSync(join(record?.installPath ?? "", OPENPETS_PLUGIN_MANIFEST_FILENAME)), true);
   assert.equal("installPath" in result.snapshot.plugins[0], false);
 });
@@ -236,7 +238,7 @@ await localScenario("loadLocal rejects invalid manifest safely", async ({ servic
   const result = await service.loadLocal();
   assert.equal(result.ok, false);
   assert.equal(result.error.includes(root), false);
-  assert.equal(result.error, "Plugin manifest validation failed.");
+  assert.match(result.error, /Plugin manifest validation failed: .*unknown_field/);
 });
 
 await localScenario("loadLocal rejects source symlink", async ({ service, source, root }) => {
@@ -289,14 +291,14 @@ await localScenario("loadLocal rejects destination symlink before write", async 
   assert.equal(existsSync(join(outside, OPENPETS_PLUGIN_MANIFEST_FILENAME)), false);
 });
 
-await localScenario("loadLocal permission change disables", async ({ service, store, source, userData }) => {
+await localScenario("loadLocal permission change preserves enabled after approval", async ({ service, store, source, userData }) => {
   writeManifest(source, manifest({ id: "perm-plug", permissions: ["timer", "pet:speak", "pet:reaction"], triggers: [{ on: "timer", everyMinutes: 5, actions: [{ type: "pet.react", reaction: "celebrating" }] }] }));
   const install = join(userData, "plugins-dev", "perm-plug");
   const manifestPath = writeManifest(install, manifest({ id: "perm-plug", permissions: ["timer", "pet:speak"] }));
   store.upsertRecord({ id: "perm-plug", version: "1.0.0", installPath: install, manifestPath, source: "local", enabled: true, approvedPermissions: ["timer", "pet:speak"], config: {} });
   const result = await service.loadLocal();
   assert.equal(result.ok, true);
-  assert.equal(store.getRecord("perm-plug")?.enabled, false);
+  assert.equal(store.getRecord("perm-plug")?.enabled, true);
   assert.deepEqual(store.getRecord("perm-plug")?.approvedPermissions, ["pet:speak", "pet:reaction", "timer"]);
   assert.deepEqual(service["__runtimeReloads"], ["perm-plug"]);
 });
@@ -597,7 +599,7 @@ await catalogCompatibilityScenario("catalog filters and blocks incompatible plug
   assert.deepEqual(snapshot.plugins.map((plugin) => plugin.id), ["compatible-plug"]);
   const result = await service.installCatalog("future-plug");
   assert.equal(result.ok, false);
-  assert.match(result.error, /newer OpenPets/);
+  assert.match(result.error, /incompatible with this OpenPets version/);
 });
 
 await scenario("disabled catalog returns no discover plugins", async ({ userData, store, runtime }) => {

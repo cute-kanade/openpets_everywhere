@@ -3,6 +3,7 @@ export interface OnboardingPreferenceLike {
 }
 
 export const petScaleOptions = [
+  { label: "XS", value: 0.5 },
   { label: "Small", value: 0.75 },
   { label: "Medium", value: 1 },
   { label: "Large", value: 1.25 },

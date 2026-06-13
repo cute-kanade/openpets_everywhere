@@ -35,7 +35,7 @@ export async function readLocalPluginSourceManifest(options: { readonly sourceFo
     const text = await readBoundedUtf8(handle, maxBytes);
     const parsed = JSON.parse(text) as unknown;
     const result = validatePluginManifest(parsed);
-    if (!result.ok) throw new Error("Plugin manifest validation failed.");
+    if (!result.ok) throw new Error(`Plugin manifest validation failed: ${formatManifestValidationErrors(result.errors)}`);
     if (!isSafePluginDirectoryName(result.manifest.id)) throw new Error("Plugin id is reserved.");
     if (result.manifest.manifestVersion !== 2 && result.manifest.manifestVersion !== 3) return { manifest: result.manifest, manifestText: text };
     const entryPath = join(realSourceFolder, result.manifest.entry);
@@ -122,4 +122,8 @@ async function readBoundedUtf8(handle: FileHandle, maxBytes: number): Promise<st
 
 function isSafePluginDirectoryName(id: string): boolean {
   return id !== "." && id !== ".." && !id.startsWith(".") && !/[\\/]/.test(id);
+}
+
+function formatManifestValidationErrors(errors: readonly { readonly path: string; readonly code: string; readonly message: string }[]): string {
+  return errors.slice(0, 6).map((error) => `${error.path} ${error.code}: ${error.message}`).join("; ");
 }

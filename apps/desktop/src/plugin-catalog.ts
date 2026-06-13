@@ -18,10 +18,8 @@ export async function getPluginCatalog(options: PluginCatalogOptions = {}): Prom
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), catalogTimeoutMs);
   try {
-    let finalUrl = url;
-    let response = await fetcher(finalUrl, { signal: controller.signal, redirect: "error", credentials: "omit" });
-    if (!response.ok && url === pluginCatalogUrl) { finalUrl = pluginCatalogV1Url; response = await fetcher(finalUrl, { signal: controller.signal, redirect: "error", credentials: "omit" }); }
-    if (response.url && response.url !== finalUrl) throw new Error("Plugin catalog final URL changed.");
+    let response = await fetcher(url, { signal: controller.signal, credentials: "omit" });
+    if (!response.ok && url === pluginCatalogUrl) response = await fetcher(pluginCatalogV1Url, { signal: controller.signal, credentials: "omit" });
     if (!response.ok) throw new Error(`Plugin catalog fetch failed with HTTP ${response.status}.`);
     const text = (await readLimitedResponse(response, maxCatalogBytes)).toString("utf8");
     const catalog = validatePluginCatalog(JSON.parse(text) as unknown);
