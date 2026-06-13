@@ -74,3 +74,11 @@ For Linux GUI bug reproduction or Electron desktop testing:
 4. Check guest logs at `~/.config/@open-pets/desktop/logs/openpets.log`.
 
 The VM is configured to boot into the Ubuntu desktop (`graphical.target`) with GDM auto-login for the `vagrant` user. Prefer this VM when validating Linux-specific renderer, Electron, tray, pet-window, IPC, plugin, or packaging behavior.
+
+## Cloned Dependency Source
+
+Read-only dependency source repositories are available under
+`.slim/clonedeps/repos/` for inspection. Do not edit these clones.
+
+- `.slim/clonedeps/repos/electron__electron/` — `electron/electron` at `v42.0.0`; inspect Electron BrowserWindow, Linux, and Wayland geometry behavior used by OpenPets drag handling.
+- `.slim/clonedeps/repos/KDE__kwin/` — `KDE/kwin` at `master` (`10273ea5f8c43f9a17825e9560f9616b23cef1ba`); inspect KDE Wayland compositor handling of xdg toplevel movement, activation, and geometry constraints.

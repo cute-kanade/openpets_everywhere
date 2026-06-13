@@ -30,6 +30,7 @@ app.commandLine.appendSwitch("password-store", "basic");
 // above normal windows and dragging to a user-chosen screen position. Prefer
 // X11/Xwayland on Linux unless the user explicitly chooses another Ozone
 // backend at launch.
+const hasExplicitOzonePlatformArg = process.argv.some((arg) => arg === "--ozone-platform" || arg.startsWith("--ozone-platform="));
 if (process.platform === "linux" && !app.commandLine.hasSwitch("ozone-platform")) {
   app.commandLine.appendSwitch("ozone-platform", "x11");
 }

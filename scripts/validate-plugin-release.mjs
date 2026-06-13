@@ -35,7 +35,9 @@ async function readJson(path) {
 }
 
 async function fetchBytes(url) {
-  const response = await fetch(url, { redirect: "error" });
+  const requestUrl = new URL(url);
+  if (useLive) requestUrl.searchParams.set("openpetsValidate", `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const response = await fetch(requestUrl, { redirect: "error", cache: "no-store" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return Buffer.from(await response.arrayBuffer());
 }

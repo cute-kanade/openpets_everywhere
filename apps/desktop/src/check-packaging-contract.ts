@@ -62,6 +62,7 @@ assert.ok(existsSync(join(appDir, "assets", "app-icon.icns")), "app icon must ex
 assert.ok(existsSync(join(appDir, "assets", "app-icon.ico")), "Windows app icon must exist for packaging.");
 assertNonEmptyFile(join(appDir, "assets", "default-pet-spritesheet.webp"), "default pet spritesheet must exist for packaging.");
 assertNonEmptyFile(join(appDir, "assets", "default-pet-thumbnail.png"), "default pet thumbnail must exist for Pet Manager preview.");
+assertNonEmptyFile(join(appDir, "assets", "NotoColorEmoji.ttf"), "pet windows must bundle an emoji font so fresh Linux installs render plugin emoji icons.");
 for (const icon of ["claude.svg", "cursor.svg", "opencode.svg", "pi.svg", "vscode.svg", "windsurf.svg", "zed.svg"]) {
   assertSafeBundledSvg(join(appDir, "assets", "integrations", icon), `integration icon must be safe and packaged: ${icon}`);
 }
@@ -127,6 +128,11 @@ assert.match(petWindowSource, /is-long-message/, "pet bubbles must have a long-m
 assert.match(petWindowSource, /is-very-long-message/, "pet bubbles must have a very-long-message layout for 140-character say messages.");
 assert.match(petWindowSource, /body \{ -webkit-app-region: no-drag; pointer-events: none; \}/, "transparent pet window background must not capture clicks or drags.");
 assert.match(petWindowSource, /function installMousePassthroughAndDrag/, "pet windows must install real mouse passthrough and controlled drag behavior.");
+assert.match(petWindowSource, /export function shouldUseWaylandNativePetDrag/, "Wayland sessions must use compositor-native pet dragging.");
+assert.doesNotMatch(petWindowSource, /OPENPETS_WAYLAND_NATIVE_DRAG/, "Wayland native pet dragging must not depend on a debug experiment flag.");
+assert.match(petWindowSource, /shouldUseWaylandNativePetDrag\(\) \? "drag" : "no-drag"/, "native pet drag regions must be scoped to actual Wayland sessions.");
+assert.match(petWindowSource, /font-src file:/, "pet window CSP must allow the bundled emoji font file.");
+assert.match(petWindowSource, /OpenPets Emoji/, "pet windows must use the bundled emoji font for host/plugin icon glyphs.");
 assert.match(petWindowSource, /setIgnoreMouseEvents\(true, \{ forward: true \}\)/, "transparent pet window background must use OS-level mouse passthrough.");
 assert.match(petWindowSource, /setIgnoreMouseEvents\(false\)/, "visible pet and bubble hit targets must re-enable mouse handling.");
 assert.match(petWindowSource, /openpets:pet-ready/, "pet windows must resync passthrough after each renderer reload.");
@@ -148,7 +154,7 @@ assert.match(petWindowSource, /next\.catch\(\(\) => \{\}\)\.finally/, "pet conte
 assert.match(petWindowSource, /destroyed-after-write/, "pet content reloads must re-check destroyed windows after writing HTML.");
 assert.match(petWindowSource, /process\.platform === "win32" \? "none" : "drop-shadow/, "Windows pet windows must avoid CSS drop-shadow on transparent layered windows.");
 assert.match(petWindowSource, /process\.platform === "win32" \? "none" : "blur\(10px\)"/, "Windows pet windows must avoid backdrop-filter on transparent layered windows.");
-assert.match(petWindowSource, /\.pet-shell[\s\S]*?-webkit-app-region: no-drag; cursor: grab;/, "pet dragging must avoid Electron draggable regions so right-click context menus work.");
+assert.match(petWindowSource, /const petDragRegion = shouldUseWaylandNativePetDrag\(\) \? "drag" : "no-drag";/, "pet dragging must default away from Electron draggable regions so right-click context menus work.");
 assert.match(petPreloadSource, /openpets:pet-hit-test/, "pet preload must report visible pet and bubble hit testing for passthrough.");
 assert.match(petPreloadSource, /openpets:pet-ready/, "pet preload must report readiness after installing mouse handlers.");
 assert.match(petPreloadSource, /openpets:pet-drag-start/, "pet preload must start controlled pet dragging from the sprite.");

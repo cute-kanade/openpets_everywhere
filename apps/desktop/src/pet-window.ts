@@ -76,6 +76,13 @@ const windowLoadSequences = new WeakMap<BrowserWindow, number>();
 const petMouseInteropRecovery = new WeakMap<BrowserWindow, (reason: string) => void>();
 const petWindowDragging = new WeakMap<BrowserWindow, boolean>();
 
+export function shouldUseWaylandNativePetDrag(): boolean {
+  return (
+    process.platform === "linux" &&
+    (process.env.XDG_SESSION_TYPE === "wayland" || Boolean(process.env.WAYLAND_DISPLAY))
+  );
+}
+
 export function isPetWindowDragging(window: BrowserWindow): boolean {
   return petWindowDragging.get(window) === true;
 }
@@ -242,13 +249,17 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 
 function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowInteractionHooks = {}): void {
   const { onBubbleDismissed, onBubbleAction, onBubbleSubmit, onPetEvent } = hooks;
+  const windowId = window.id;
+  const useWaylandNativeDrag = shouldUseWaylandNativePetDrag();
+  if (useWaylandNativeDrag) {
+    debug("pet.window", "Wayland native pet drag enabled", { windowId });
+  }
   let dragging: { readonly startScreenX: number; readonly startScreenY: number; readonly startWindowX: number; readonly startWindowY: number; readonly width: number; readonly height: number } | null = null;
   let rendererReady = false;
   let listenersRemoved = false;
   let lastInteractive = false;
   let forwardingWatchTimer: NodeJS.Timeout | null = null;
   const rearmTimers = new Set<NodeJS.Timeout>();
-  const windowId = window.id;
   const webContents = window.webContents;
   const canForwardMouseEvents = process.platform === "darwin" || process.platform === "win32";
 
@@ -392,6 +403,10 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
 
   const handleDragStart = (event: IpcMainEvent, point: unknown): void => {
     if (!isFromWindow(event) || !isScreenPoint(point) || window.isDestroyed()) return;
+    if (useWaylandNativeDrag) {
+      debug("pet.window", "manual drag start ignored on Wayland native drag", { windowId });
+      return;
+    }
     const startBounds = window.getBounds();
     dragging = { startScreenX: point.screenX, startScreenY: point.screenY, startWindowX: startBounds.x, startWindowY: startBounds.y, width: startBounds.width, height: startBounds.height };
     petWindowDragging.set(window, true);
@@ -403,6 +418,10 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
 
   const handleDragMove = (event: IpcMainEvent, point: unknown): void => {
     if (!isFromWindow(event) || !dragging || !isScreenPoint(point) || window.isDestroyed()) return;
+    if (useWaylandNativeDrag) {
+      debug("pet.window", "manual drag move ignored on Wayland native drag", { windowId });
+      return;
+    }
     const nextX = dragging.startWindowX + Math.round(point.screenX - dragging.startScreenX);
     const nextY = dragging.startWindowY + Math.round(point.screenY - dragging.startScreenY);
     window.setBounds({ x: nextX, y: nextY, width: dragging.width, height: dragging.height }, false);
@@ -410,6 +429,10 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
 
   const handleDragEnd = (event: IpcMainEvent): void => {
     if (!isFromWindow(event)) return;
+    if (useWaylandNativeDrag) {
+      debug("pet.window", "manual drag end ignored on Wayland native drag", { windowId });
+      return;
+    }
     const wasDragging = dragging !== null;
     dragging = null;
     petWindowDragging.set(window, false);
@@ -782,10 +805,10 @@ async function createDefaultPetRender(paused: boolean, display: PetTransientDisp
     bodyHtml,
     reactionState,
     html: `<!doctype html>
-    <html lang="${getActiveLocaleLang()}" data-reaction-state="${reactionState}" data-motion-state="idle">
+    <html lang="${getActiveLocaleLang()}" data-reaction-state="${reactionState}" data-motion-state="idle" data-native-pet-drag="${shouldUseWaylandNativePetDrag() ? "wayland" : "manual"}">
       <head>
         <meta charset="utf-8" />
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; font-src file:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>OpenPets Default Pet</title>
         <style>
@@ -859,10 +882,10 @@ async function createInstalledPetRender(petId: string, displayName: string, paus
     bodyHtml,
     reactionState,
     html: `<!doctype html>
-      <html lang="${getActiveLocaleLang()}" data-reaction-state="${reactionState}" data-motion-state="idle">
+      <html lang="${getActiveLocaleLang()}" data-reaction-state="${reactionState}" data-motion-state="idle" data-native-pet-drag="${shouldUseWaylandNativePetDrag() ? "wayland" : "manual"}">
         <head>
           <meta charset="utf-8" />
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; font-src file:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <title>OpenPets Default Pet</title>
           <style>
@@ -921,16 +944,19 @@ function createPetWindowCss(paused: boolean, scale: PetScaleValue): string {
   const petBottom = 22;
   const hitPadding = 18;
   const bubbleBottom = Math.ceil(petBottom + scaledHeight + 8);
+  const emojiFontUrl = pathToFileURL(join(app.getAppPath(), "assets", "NotoColorEmoji.ttf")).toString();
   const petShellFilter = process.platform === "win32" ? "none" : "drop-shadow(0 10px 12px rgba(15, 23, 42, 0.24)) drop-shadow(0 2px 3px rgba(15, 23, 42, 0.18))";
   const bubbleBackdropFilter = process.platform === "win32" ? "none" : "blur(10px)";
+  const petDragRegion = shouldUseWaylandNativePetDrag() ? "drag" : "no-drag";
   return `
+    @font-face { font-family: "OpenPets Emoji"; src: url("${escapeCssUrl(emojiFontUrl)}") format("truetype"); font-display: block; }
     :root { color-scheme: dark; --pet-opacity: ${opacity}; --play-state: ${playState}; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; user-select: none; -webkit-font-smoothing: antialiased; }
     html { color: #172033; }
     body { -webkit-app-region: no-drag; pointer-events: none; }
     .stage { width: 100%; height: 100%; position: relative; box-sizing: border-box; overflow: visible; }
-    .pet-hitbox { position: absolute; left: 50%; bottom: ${Math.max(0, petBottom - hitPadding)}px; z-index: 1; width: ${scaledWidth + hitPadding * 2}px; height: ${scaledHeight + hitPadding * 2}px; display: grid; place-items: center; transform: translateX(-50%); pointer-events: auto; -webkit-app-region: no-drag; cursor: grab; }
-    .pet-shell { position: relative; width: ${scaledWidth}px; height: ${scaledHeight}px; display: block; opacity: var(--pet-opacity); filter: ${petShellFilter}; transition-property: opacity, filter; transition-duration: 180ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); pointer-events: auto; -webkit-app-region: no-drag; cursor: grab; }
+    .pet-hitbox { position: absolute; left: 50%; bottom: ${Math.max(0, petBottom - hitPadding)}px; z-index: 1; width: ${scaledWidth + hitPadding * 2}px; height: ${scaledHeight + hitPadding * 2}px; display: grid; place-items: center; transform: translateX(-50%); pointer-events: auto; -webkit-app-region: ${petDragRegion}; cursor: grab; }
+    .pet-shell { position: relative; width: ${scaledWidth}px; height: ${scaledHeight}px; display: block; opacity: var(--pet-opacity); filter: ${petShellFilter}; transition-property: opacity, filter; transition-duration: 180ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); pointer-events: auto; -webkit-app-region: ${petDragRegion}; cursor: grab; }
     .bubble { position: absolute; left: 50%; bottom: ${bubbleBottom}px; z-index: 4; box-sizing: border-box; display: inline-flex; flex-direction: column; width: fit-content; min-width: 92px; max-width: min(220px, calc(100vw - 18px)); max-height: 128px; padding: 10px 12px; background: linear-gradient(135deg, rgba(239, 246, 255, 0.97), rgba(237, 233, 254, 0.96)); color: #172033; font: 760 11px/14px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: left; border: 1px solid rgba(255, 255, 255, 0.78); border-radius: 14px; box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16), 0 2px 5px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.82); white-space: normal; overflow-wrap: break-word; word-break: normal; overflow: visible; pointer-events: auto; -webkit-app-region: no-drag; opacity: 1; backdrop-filter: ${bubbleBackdropFilter}; transform: translateX(-50%); transform-origin: 64% 100%; animation: bubble-in 180ms cubic-bezier(0.2, 0, 0, 1); }
     .bubble[data-dismiss-token] { cursor: pointer; }
     .bubble::after { content: ""; position: absolute; left: 64%; bottom: -7px; width: 12px; height: 12px; background: inherit; border-right: 1px solid rgba(255, 255, 255, 0.56); border-bottom: 1px solid rgba(255, 255, 255, 0.56); border-bottom-right-radius: 3px; transform: translateX(-50%) rotate(45deg); box-shadow: 3px 3px 7px rgba(15, 23, 42, 0.08); }
@@ -969,6 +995,7 @@ function createPetWindowCss(paused: boolean, scale: PetScaleValue): string {
     .bubble.is-plugin .bubble-markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; background: rgba(30, 58, 138, 0.08); border-radius: 4px; padding: 0 3px; }
     .bubble-media { display: block; max-width: 96px; max-height: 64px; margin: 0 auto 2px; pointer-events: none; }
     .bubble-plugin-icon { display: inline-block; font-size: 13px; line-height: 14px; margin-bottom: 2px; }
+    .bubble-hud-item-icon, .bubble-plugin-icon, .bubble-status-icon::before, .bubble-action [aria-hidden="true"] { font-family: "OpenPets Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif; }
     .bubble-actions { display: flex; flex-wrap: nowrap; gap: 5px; width: 100%; margin-top: 6px; min-width: 0; }
     .bubble-action { flex: 1 1 0; min-width: 0; border: 0; border-radius: 8px; padding: 4px 7px; font: 760 10px/12px Inter, ui-sans-serif, system-ui, sans-serif; background: rgba(30, 58, 138, 0.10); color: #172033; cursor: pointer; pointer-events: auto; -webkit-app-region: no-drag; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .bubble-action:hover { background: rgba(30, 58, 138, 0.18); }
@@ -1057,7 +1084,7 @@ function createPetWindowCss(paused: boolean, scale: PetScaleValue): string {
       justify-content: center;
       font-size: 11px;
       line-height: 1;
-      font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif;
+      font-family: "OpenPets Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif;
     }
     .bubble-hud-item-icon img, .bubble-hud-item-icon svg {
       width: 12px;

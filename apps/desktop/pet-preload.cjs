@@ -345,6 +345,8 @@ const installMouseInterop = () => {
   lastInteractiveHit = null;
   dragging = false;
 
+  const usesNativePetDrag = () => document.documentElement?.dataset?.nativePetDrag === "wayland";
+
   document.addEventListener("click", (event) => {
     if (handleBubbleInteraction(event)) return;
     dismissBubble(event);
@@ -355,13 +357,14 @@ const installMouseInterop = () => {
 
   document.addEventListener("mousemove", (event) => {
     updateInteractiveHit(event);
-    if (dragging) ipcRenderer.send("openpets:pet-drag-move", { screenX: event.screenX, screenY: event.screenY });
+    if (dragging && !usesNativePetDrag()) ipcRenderer.send("openpets:pet-drag-move", { screenX: event.screenX, screenY: event.screenY });
   }, { passive: true });
 
   document.addEventListener("mousedown", (event) => {
     const target = getInteractiveTarget(event);
     setInteractiveHit(Boolean(target));
     if (event.button !== 0 || !target?.closest(".pet-hitbox, .pet-shell")) return;
+    if (usesNativePetDrag()) return;
     event.preventDefault();
     dragging = true;
     dragStartPoint = { screenX: event.screenX, screenY: event.screenY };
@@ -376,7 +379,7 @@ const installMouseInterop = () => {
       suppressClickUntil = Date.now() + 300;
     }
     dragStartPoint = null;
-    ipcRenderer.send("openpets:pet-drag-end");
+    if (!usesNativePetDrag()) ipcRenderer.send("openpets:pet-drag-end");
   });
 
   document.addEventListener("mouseleave", () => {
