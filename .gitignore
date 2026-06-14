@@ -1,7 +1,8 @@
 v1
-web
 node_modules
 dist
+web
+remotion
 dist-electron
 .test-dist
 apps/desktop/dist-electron
