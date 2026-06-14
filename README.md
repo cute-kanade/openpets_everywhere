@@ -167,6 +167,13 @@ When you configure an agent, OpenPets exposes standard MCP tools. The agent can 
   <img src="assets/claude.png" alt="Claude Code integration with OpenPets" width="100%" />
 </p>
 
+### Diagnose your setup
+Check whether the Claude hook and project Cursor MCP integrations are installed, need an update, or are broken, and whether the desktop app is reachable:
+```bash
+npx @open-pets/cli doctor
+```
+Pass `--cwd <path>` to inspect a different project's `.cursor/mcp.json`, or `--json` for machine-readable output. The command exits non-zero only when an integration is broken, so it is safe to run before reporting a bug.
+
 ### MCP Server Configuration
 To run OpenPets as an MCP tool, add the server to your agent's configuration:
 ```json

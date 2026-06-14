@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 
-import { assertSafeProjectHookPath, cliPackageName, configureProject, createClaudeMcpAddJsonArgs, createLocalDevCliCommand, createVersionPinnedCliCommand, installProjectLocalHooks, parseConfigureArgs, parseInstallArgs, parsePluginNewArgs, parseReactArgs, parseSayArgs, resolveConfiguredPet, runClaudeMcpAddJson, scaffoldPlugin } from "./index.js";
+import { assertSafeProjectHookPath, cliPackageName, configureProject, createClaudeMcpAddJsonArgs, createLocalDevCliCommand, createVersionPinnedCliCommand, installProjectLocalHooks, parseConfigureArgs, parseDoctorArgs, parseInstallArgs, parsePluginNewArgs, parseReactArgs, parseSayArgs, resolveConfiguredPet, runClaudeMcpAddJson, runDoctor, scaffoldPlugin } from "./index.js";
 import { pluginTemplateNames } from "./plugin-templates.js";
 import { validatePluginFolder } from "./plugin-validate.js";
 
@@ -41,6 +41,14 @@ assert.deepEqual(parseSayArgs(["--reaction=success", "Tests", "passed"]), { mess
 assert.throws(() => parseSayArgs([]));
 assert.throws(() => parseSayArgs(["Hello", "--reaction", "bad"]));
 assert.throws(() => parseSayArgs(["Hello", "--unknown"]));
+
+assert.deepEqual(parseDoctorArgs([]), { cwd: process.cwd(), json: false });
+assert.equal(parseDoctorArgs(["--json"]).json, true);
+assert.equal(parseDoctorArgs(["--cwd", "/tmp/project"]).cwd, "/tmp/project");
+assert.equal(parseDoctorArgs(["--cwd=/tmp/project"]).cwd, "/tmp/project");
+assert.deepEqual(parseDoctorArgs(["--cwd=/tmp/project", "--json"]), { cwd: "/tmp/project", json: true });
+assert.throws(() => parseDoctorArgs(["--unknown"]));
+assert.throws(() => parseDoctorArgs(["--cwd"]));
 
 assert.deepEqual(parsePluginNewArgs(["My Plugin"]), { name: "My Plugin", id: "local.my-plugin", dir: "my-plugin", author: undefined, template: "blank" });
 assert.equal(parsePluginNewArgs(["My Plugin", "--id", "acme.my-plugin"]).id, "acme.my-plugin");
@@ -313,15 +321,50 @@ try {
   rmSync(dir, { recursive: true, force: true });
 }
 
+async function captureDoctorJson(cwd: string): Promise<Record<string, unknown>> {
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  let captured = "";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  process.stdout.write = ((chunk: any) => { captured += typeof chunk === "string" ? chunk : String(chunk); return true; }) as typeof process.stdout.write;
+  try {
+    await runDoctor({ cwd, json: true });
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  return JSON.parse(captured) as Record<string, unknown>;
+}
+
+const doctorInstalledProject = mkdtempSync(join(tmpdir(), "openpets-doctor-installed-"));
+mkdirSync(join(doctorInstalledProject, ".cursor"), { recursive: true });
+writeFileSync(
+  join(doctorInstalledProject, ".cursor", "mcp.json"),
+  JSON.stringify({ mcpServers: { openpets: { type: "stdio", command: "npx", args: ["-y", `@open-pets/mcp@${packageVersion}`] } } }, null, 2),
+  "utf8"
+);
+const doctorInstalledReport = await captureDoctorJson(doctorInstalledProject);
+assert.equal((doctorInstalledReport.cursor as { status?: string }).status, "installed");
+// The OpenPets app IPC is unreachable in CI, so doctor must report app state without throwing.
+assert.equal((doctorInstalledReport.app as { running?: boolean }).running, false);
+rmSync(doctorInstalledProject, { recursive: true, force: true });
+
+const doctorMissingProject = mkdtempSync(join(tmpdir(), "openpets-doctor-missing-"));
+const doctorMissingReport = await captureDoctorJson(doctorMissingProject);
+assert.equal((doctorMissingReport.cursor as { status?: string }).status, "missing");
+rmSync(doctorMissingProject, { recursive: true, force: true });
+
 const invalidHook = spawnSync(process.execPath, [new URL("./index.js", import.meta.url).pathname, "hook", "--openpets-managed", "--pet", "bad/pet"], { input: JSON.stringify({ hook_event_name: "Notification" }), encoding: "utf8" });
 assert.equal(invalidHook.status, 1);
 const missingPetHook = spawnSync(process.execPath, [new URL("./index.js", import.meta.url).pathname, "hook", "--openpets-managed", "--pet"], { input: JSON.stringify({ hook_event_name: "Notification" }), encoding: "utf8" });
 assert.equal(missingPetHook.status, 1);
 
-for (const args of [["--help"], ["-h"], ["status", "--help"], ["pets", "--help"], ["react", "--help"], ["say", "--help"], ["install", "--help"], ["configure", "--help"], ["configure", "-h"], ["plugin", "--help"], ["plugin", "new", "--help"], ["mcp", "--help"], ["hook", "--help"]]) {
+for (const args of [["--help"], ["-h"], ["status", "--help"], ["doctor", "--help"], ["pets", "--help"], ["react", "--help"], ["say", "--help"], ["install", "--help"], ["configure", "--help"], ["configure", "-h"], ["plugin", "--help"], ["plugin", "new", "--help"], ["mcp", "--help"], ["hook", "--help"]]) {
   const help = spawnSync(process.execPath, [new URL("./index.js", import.meta.url).pathname, ...args], { encoding: "utf8" });
   assert.equal(help.status, 0);
   assert.match(help.stdout, /Usage:/);
 }
+
+const doctorHelp = spawnSync(process.execPath, [new URL("./index.js", import.meta.url).pathname, "doctor", "--help"], { encoding: "utf8" });
+assert.equal(doctorHelp.status, 0);
+assert.match(doctorHelp.stdout, /doctor/);
 
 console.error("CLI contract validation passed.");

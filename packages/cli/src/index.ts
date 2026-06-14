@@ -8,7 +8,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { allowedReactions, createOpenPetsClient, OpenPetsClientError, type OpenPetsPetListItem, type OpenPetsReaction } from "@open-pets/client";
-import { claudeHookEvents, openPetsHookMarker, removeOpenPetsHooks, runClaudeHookFromStdin, validateOpenPetsPetArg } from "@open-pets/claude";
+import { claudeHookEvents, doctorClaudeHooks, openPetsHookMarker, removeOpenPetsHooks, runClaudeHookFromStdin, validateOpenPetsPetArg } from "@open-pets/claude";
 import { buildCursorRulesPreview, buildOpenPetsOnlyPreview, classifyCursorMcpStatus, classifyCursorRulesStatus, executeCursorMcpWrite, executeCursorRulesWrite, getCursorProjectMcpPath, getCursorProjectRulesPath, planCursorMcpInstall, planCursorMcpReplace, planCursorRulesInstall, planCursorRulesRemove, planCursorRulesReplace, readCursorMcpConfig, readCursorOpenPetsRules } from "@open-pets/cursor";
 import { prepareOpenCodeProjectSetup, writePreparedOpenCodeProjectSetup } from "@open-pets/opencode";
 
@@ -38,6 +38,11 @@ interface ReactOptions {
 interface SayOptions {
   readonly message: string;
   readonly reaction?: OpenPetsReaction;
+}
+
+interface DoctorOptions {
+  readonly cwd: string;
+  readonly json: boolean;
 }
 
 interface CommandSpec {
@@ -101,6 +106,14 @@ async function main(): Promise<void> {
       return;
     }
     await showPets(args);
+    return;
+  }
+  if (command === "doctor") {
+    if (hasHelp(args)) {
+      printDoctorUsage();
+      return;
+    }
+    await runDoctor(parseDoctorArgs(args));
     return;
   }
   if (command === "react") {
@@ -182,6 +195,45 @@ async function showStatus(args: readonly string[]): Promise<void> {
   const result = await createOpenPetsClient().status();
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (!result.ok || !result.appRunning) process.exitCode = 1;
+}
+
+export function parseDoctorArgs(args: readonly string[]): DoctorOptions {
+  let cwd = process.cwd();
+  let json = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--json") json = true;
+    else if (arg === "--cwd") { cwd = readRequiredArg(args, index, "--cwd"); index += 1; }
+    else if (arg.startsWith("--cwd=")) cwd = arg.slice("--cwd=".length);
+    else throw new CliError(`Unknown doctor option: ${arg}`);
+  }
+  return { cwd, json };
+}
+
+export async function runDoctor(options: DoctorOptions): Promise<void> {
+  const claude = doctorClaudeHooks();
+
+  const projectDir = resolveProjectDir(options.cwd);
+  const cursorConfigPath = getCursorProjectMcpPath(projectDir);
+  const cursorRead = readCursorMcpConfig(cursorConfigPath);
+  const cursor = classifyCursorMcpStatus(cursorRead, cursorConfigPath, { mcpVersion: getPackageVersion() });
+
+  const appStatus = await createOpenPetsClient().status();
+  const app = { running: appStatus.appRunning, reason: appStatus.unavailableReason };
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify({
+      claude: { status: claude.status, settingsPath: claude.settingsPath, asyncSupported: claude.asyncSupported },
+      cursor: { status: cursor.status, configPath: cursor.configPath },
+      app,
+    }, null, 2)}\n`);
+  } else {
+    process.stdout.write(`Claude hooks: ${claude.status} (${claude.settingsPath})\n`);
+    process.stdout.write(`Cursor MCP: ${cursor.status} (${cursor.configPath})\n`);
+    process.stdout.write(`OpenPets app: ${app.running ? "running" : `not running${app.reason ? ` (${app.reason})` : ""}`}\n`);
+  }
+
+  if (claude.status === "error" || cursor.status === "error" || cursor.status === "invalid") process.exitCode = 1;
 }
 
 async function showPets(args: readonly string[]): Promise<void> {
@@ -727,7 +779,7 @@ function getPackageVersion(): string {
 }
 
 function printUsage(): void {
-  process.stdout.write("Usage:\n  openpets status\n  openpets pets\n  openpets react <reaction>\n  openpets say <message> [--reaction <reaction>]\n  openpets install <pet-id>\n  openpets configure [--agent claude|opencode|cursor] [--pet <id>] [--cwd <path>] [--yes] [--force] [--with-rules|--rules-only|--remove-rules]\n  openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]\n  openpets mcp [--pet <id>]\n  openpets hook --openpets-managed [--pet <id>]\n\nRun `openpets <command> --help` for command options.\n");
+  process.stdout.write("Usage:\n  openpets status\n  openpets doctor [--cwd <path>] [--json]\n  openpets pets\n  openpets react <reaction>\n  openpets say <message> [--reaction <reaction>]\n  openpets install <pet-id>\n  openpets configure [--agent claude|opencode|cursor] [--pet <id>] [--cwd <path>] [--yes] [--force] [--with-rules|--rules-only|--remove-rules]\n  openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]\n  openpets mcp [--pet <id>]\n  openpets hook --openpets-managed [--pet <id>]\n\nRun `openpets <command> --help` for command options.\n");
 }
 
 function printPluginUsage(): void {
@@ -754,6 +806,10 @@ function printInstallUsage(): void {
 
 function printStatusUsage(): void {
   process.stdout.write("Usage:\n  openpets status\n\nChecks whether the OpenPets desktop app is reachable and prints the status response as JSON.\n");
+}
+
+function printDoctorUsage(): void {
+  process.stdout.write("Usage:\n  openpets doctor [--cwd <path>] [--json]\n\nReports whether the Claude hook and project Cursor MCP integrations are installed, need an update, or are broken, and whether the OpenPets desktop app is reachable.\n\nOptions:\n  --cwd <path>   Project directory to inspect for .cursor/mcp.json. Defaults to current directory.\n  --json         Print the report as JSON instead of labeled lines.\n  -h, --help     Show this help.\n");
 }
 
 function printPetsUsage(): void {
