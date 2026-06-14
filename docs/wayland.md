@@ -1,0 +1,58 @@
+# Linux Wayland drag notes
+
+OpenPets supports pet dragging on Linux Wayland by using Electron/Chromium's
+native draggable region path for the visible pet sprite. This lets the compositor
+move the window with `xdg_toplevel.move` instead of relying on manual
+`BrowserWindow.setBounds()` calls from renderer mouse coordinates.
+
+## Why manual dragging is not reliable
+
+The normal OpenPets drag path tracks renderer `screenX/screenY` and applies
+window bounds in the main process. That works on platforms where Electron can
+read and set stable global window coordinates. On KDE Plasma Wayland, the pet
+receives mouse events, but compositor-managed global positioning makes the manual
+`setBounds()` loop unreliable.
+
+Source inspection confirmed the expected Wayland path:
+
+- Electron `v42.0.0` maps draggable regions to Chromium non-client hit testing.
+- Chromium's Wayland toplevel window sends compositor-managed movement requests.
+- KWin accepts move requests via `XdgToplevelInterface::moveRequested` and starts
+  interactive move/resize from a valid pointer serial.
+
+## Accepted Wayland trade-offs
+
+Using native draggable regions fixes the important failure: the pet can be moved
+on KDE Wayland. It has two accepted limitations:
+
+- The pet sprite does not receive normal drag mouse events while the compositor
+  owns the move, so drag-time sprite animation is not available.
+- Right-click on the draggable sprite region is handled as non-client/system
+  input by Electron/KWin. We tried intercepting Electron's Linux
+  `system-context-menu` event and showing the OpenPets menu, but the menu did not
+  appear reliably in the KDE Wayland VM. Treat right-click on the sprite as a
+  known Wayland limitation.
+
+Speech bubbles and other non-drag UI remain regular client content. Emoji/status
+glyph rendering is handled by the bundled `NotoColorEmoji.ttf`, so fresh Linux
+installs do not depend on system emoji fonts.
+
+## Reproduction and validation notes
+
+The KDE Wayland repro VM lives at:
+
+```text
+/Volumes/external/vmware/ubuntu24-kde-wayland
+```
+
+Validated behavior in KDE Plasma Wayland:
+
+- Default/manual `setBounds()` drag path: pet appears, but dragging is unreliable.
+- Forced X11/XWayland inside a Plasma Wayland session: Electron starts, but the
+  pet was not a usable workaround in the VM.
+- Native draggable sprite region on real Wayland: pet dragging works; drag-time
+  sprite animation and right-click menu on the sprite do not.
+
+Do not document a stronger Wayland workaround unless it has been verified in the
+VM. For deeper source inspection, the relevant local read-only clones are listed
+in `AGENTS.md` under "Cloned Dependency Source".
