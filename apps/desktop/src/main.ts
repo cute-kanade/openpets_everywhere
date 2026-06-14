@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 
 import { getAppStateSnapshot, initializeAppState, releaseStartupInstallLock } from "./app-state.js";
+import { initializeDesktopAnalytics, trackDesktopEvent, trackDesktopStartup } from "./analytics.js";
 import { createAppIcon } from "./assets.js";
 import { setLocaleFromPreference } from "./i18n/index.js";
 import { installDefaultPetDisplayHandlers, shouldOpenDefaultPetOnLaunch, showDefaultPet } from "./default-pet-controller.js";
@@ -56,6 +57,8 @@ if (!gotSingleInstanceLock) {
     }
 
     initializeAppState();
+    initializeDesktopAnalytics();
+    trackDesktopStartup();
     // Resolve the UI language before any window or the tray is built.
     setLocaleFromPreference(getAppStateSnapshot().preferences.locale);
     installInternalUiProtocol();
@@ -63,6 +66,7 @@ if (!gotSingleInstanceLock) {
     createAppTray();
     installDefaultPetDisplayHandlers();
     await startLocalIpcServer();
+    trackDesktopEvent("desktop_ipc_server_started");
     releaseStartupInstallLock();
     const roots = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_ROOTS);
     const paths = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_PATHS);
@@ -74,6 +78,7 @@ if (!gotSingleInstanceLock) {
     powerMonitor.on("resume", () => pluginService.runtime.resyncSchedules());
     if (shouldOpenDefaultPetOnLaunch()) {
       showDefaultPet();
+      trackDesktopEvent("desktop_default_pet_shown", { reason: "launch" });
     }
     refreshTrayMenu();
     void (async () => {

@@ -4,6 +4,7 @@ const api = {
   getPetsState: () => ipcRenderer.invoke("openpets:get-pets-state"),
   getDashboardSnapshot: () => ipcRenderer.invoke("openpets:get-dashboard-snapshot"),
   getSettingsState: () => ipcRenderer.invoke("openpets:get-settings-state"),
+  setDesktopAnalyticsConsent: (consent) => ipcRenderer.invoke("openpets:set-desktop-analytics-consent", consent),
   getI18n: () => ipcRenderer.invoke("openpets:get-i18n"),
   updatePreferences: (patch) => ipcRenderer.invoke("openpets:update-preferences", patch),
   getReactionAnimationSettings: () => ipcRenderer.invoke("openpets:get-reaction-animation-settings"),

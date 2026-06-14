@@ -5,6 +5,7 @@
 !.slim/deepwork/
 !.slim/deepwork/**
 !docs
+!opencode.json
 
 # BEGIN oh-my-opencode-slim clonedeps
 !.slim/

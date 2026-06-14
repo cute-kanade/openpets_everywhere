@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
@@ -56,11 +57,21 @@ export interface OpenPetsStateV1 {
 }
 
 export interface OpenPetsAnalyticsState {
+  readonly distinctId: string;
+  readonly consent: "unset" | "granted" | "denied";
+  readonly appStartedCount: number;
+  readonly firstRunTrackedAt?: number;
+  readonly firstAgentReactionTrackedAt?: number;
   readonly messagesSent: number;
   readonly reactionsSent: number;
   readonly reactionCounts: Record<OpenPetsReaction, number>;
   readonly perPetActivityCounts: Record<string, number>;
   readonly lastActivityAt?: number;
+}
+
+export interface DesktopAnalyticsConsentState {
+  readonly consent: OpenPetsAnalyticsState["consent"];
+  readonly enabled: boolean;
 }
 
 export type OpenPetsActivityRecord =
@@ -121,6 +132,56 @@ export function completeOnboarding(): OpenPetsStateV1 {
   return getAppStateSnapshot();
 }
 
+export function getDesktopAnalyticsConsentState(): DesktopAnalyticsConsentState {
+  const { consent } = getInitializedState().analytics;
+  return { consent, enabled: consent === "granted" };
+}
+
+export function setDesktopAnalyticsConsent(consent: OpenPetsAnalyticsState["consent"]): OpenPetsStateV1 {
+  if (consent !== "unset" && consent !== "granted" && consent !== "denied") {
+    throw new Error("Invalid desktop analytics consent value.");
+  }
+  const state = getInitializedState();
+  const nextState = normalizeState({
+    ...state,
+    analytics: {
+      ...state.analytics,
+      consent,
+    },
+  });
+  commitState(nextState);
+  return getAppStateSnapshot();
+}
+
+export function recordDesktopAppStarted(now: number = Date.now(), markFirstRunTracked = true): { readonly state: OpenPetsStateV1; readonly firstRun: boolean } {
+  const state = getInitializedState();
+  const firstRun = !state.analytics.firstRunTrackedAt;
+  const nextState = normalizeState({
+    ...state,
+    analytics: {
+      ...state.analytics,
+      appStartedCount: state.analytics.appStartedCount + 1,
+      firstRunTrackedAt: markFirstRunTracked ? state.analytics.firstRunTrackedAt ?? now : state.analytics.firstRunTrackedAt,
+    },
+  });
+  commitState(nextState);
+  return { state: getAppStateSnapshot(), firstRun };
+}
+
+export function markFirstAgentReactionTracked(now: number = Date.now()): boolean {
+  const state = getInitializedState();
+  if (state.analytics.firstAgentReactionTrackedAt) return false;
+  const nextState = normalizeState({
+    ...state,
+    analytics: {
+      ...state.analytics,
+      firstAgentReactionTrackedAt: now,
+    },
+  });
+  commitState(nextState);
+  return true;
+}
+
 export function setDefaultPet(defaultPetId: string): OpenPetsStateV1 {
   const state = getInitializedState();
   const targetPet = state.pets.installed.find((pet) => pet.id === defaultPetId);
@@ -177,6 +238,7 @@ export function recordOpenPetsActivity(activity: OpenPetsActivityRecord, now: nu
   const nextState = normalizeState({
     ...state,
     analytics: {
+      ...analytics,
       messagesSent: analytics.messagesSent + (activity.kind === "say" ? 1 : 0),
       reactionsSent: analytics.reactionsSent + (reaction ? 1 : 0),
       reactionCounts: reaction
@@ -329,12 +391,25 @@ function normalizeState(value: unknown): OpenPetsStateV1 {
 function normalizeAnalytics(value: unknown): OpenPetsAnalyticsState {
   const record = isRecord(value) ? value : {};
   return {
+    distinctId: normalizeDistinctId(record.distinctId),
+    consent: normalizeAnalyticsConsent(record.consent),
+    appStartedCount: normalizeCount(record.appStartedCount),
+    firstRunTrackedAt: normalizeTimestamp(record.firstRunTrackedAt),
+    firstAgentReactionTrackedAt: normalizeTimestamp(record.firstAgentReactionTrackedAt),
     messagesSent: normalizeCount(record.messagesSent),
     reactionsSent: normalizeCount(record.reactionsSent),
     reactionCounts: normalizeReactionCounts(record.reactionCounts),
     perPetActivityCounts: normalizePerPetActivityCounts(record.perPetActivityCounts),
     lastActivityAt: normalizeTimestamp(record.lastActivityAt),
   };
+}
+
+function normalizeDistinctId(value: unknown): string {
+  return typeof value === "string" && /^[a-f0-9-]{36}$/.test(value) ? value : randomUUID();
+}
+
+function normalizeAnalyticsConsent(value: unknown): OpenPetsAnalyticsState["consent"] {
+  return value === "granted" || value === "denied" || value === "unset" ? value : "unset";
 }
 
 function normalizeReactionCounts(value: unknown): Record<OpenPetsReaction, number> {
@@ -466,6 +541,11 @@ function createDefaultState(): OpenPetsStateV1 {
     },
     defaultPet: {},
     analytics: {
+      distinctId: randomUUID(),
+      consent: "unset",
+      appStartedCount: 0,
+      firstRunTrackedAt: undefined,
+      firstAgentReactionTrackedAt: undefined,
       messagesSent: 0,
       reactionsSent: 0,
       reactionCounts: normalizeReactionCounts(undefined),

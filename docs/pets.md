@@ -54,7 +54,9 @@ reaction into something visible:
 1. `reaction-animation-mapping.ts` resolves a reaction to a **sprite animation
    state** (`resolveReactionSpriteState`). This mapping is **user-configurable** —
    users can override which animation a reaction plays, and overrides persist in
-   app state.
+   app state. The selectable animation states include idle, review, running,
+   waiting, waving, jumping, and failed; `waving` covers attention/notification
+   style reactions.
 2. `reaction-messages.ts` picks a **speech message** from the pool for that
    reaction; `i18n/reactions/` provides the localized pools so speech matches the
    active locale (see [i18n.md](i18n.md)).

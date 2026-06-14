@@ -23,7 +23,8 @@ type CodexState = { pets: PetEntry[]; error?: string };
 type PetScaleOption = { label: string; value: number };
 type UserSelectableAnimationState = "idle" | "review" | "running" | "waiting" | "waving" | "jumping" | "failed";
 type ReactionAnimationOverrides = Record<string, UserSelectableAnimationState>;
-type SettingsState = { preferences: { openDefaultPetOnLaunch: boolean; locale?: "system" | string; petScale: number; reactionAnimationOverrides?: ReactionAnimationOverrides }; petScaleOptions: PetScaleOption[] };
+type AnalyticsConsent = "unset" | "granted" | "denied";
+type SettingsState = { preferences: { openDefaultPetOnLaunch: boolean; locale?: "system" | string; petScale: number; reactionAnimationOverrides?: ReactionAnimationOverrides }; petScaleOptions: PetScaleOption[]; analytics: { consent: AnalyticsConsent; enabled: boolean } };
 type LaunchAtLoginState = { supported: boolean; enabled: boolean };
 type UpdateStatus = { state: "idle" | "checking" | "available" | "current" | "error"; currentVersion: string; latestVersion?: string; releaseUrl?: string; checkedAt?: number; error?: string };
 type DashboardActivity = { messagesSent: number; reactionsSent: number; reactionCounts: Record<string, number>; perPetActivityCounts: Record<string, number>; lastActivityAt?: number };
@@ -65,6 +66,7 @@ type ControlCenterApi = {
   getPetsState(): Promise<StateSnapshot>;
   getDashboardSnapshot(): Promise<DashboardSnapshot>;
   getSettingsState(): Promise<SettingsState>;
+  setDesktopAnalyticsConsent(consent: AnalyticsConsent): Promise<SettingsState>;
   getI18n(): Promise<I18nSnapshot>;
   updatePreferences(patch: Partial<SettingsState["preferences"]>): Promise<SettingsState>;
   getReactionAnimationSettings(): Promise<ReactionAnimationSettings>;
@@ -966,6 +968,13 @@ function SettingsView() {
     });
   }
 
+  function setAnalyticsConsent(enabled: boolean) {
+    void run(t("settings.busy.saving"), async () => {
+      setSettings(await api.setDesktopAnalyticsConsent(enabled ? "granted" : "denied"));
+      setMessage(t("settings.toast.analyticsSaved"));
+    });
+  }
+
   function changeLocale(value: string) {
     void run(t("settings.busy.saving"), async () => {
       await api.updatePreferences({ locale: value });
@@ -1038,6 +1047,13 @@ function SettingsView() {
                 checked={launchAtLogin?.enabled ?? false}
                 disabled={!launchAtLogin?.supported || !!busy}
                 onChange={(checked) => void run(t("settings.busy.saving"), async () => { setLaunchAtLogin(await api.setLaunchAtLogin(checked)); setMessage(t("settings.toast.loginStartupSaved")); })}
+              />
+              <ToggleRow
+                title={t("settings.general.analytics.title")}
+                description={t("settings.general.analytics.description")}
+                checked={settings?.analytics.enabled ?? false}
+                disabled={!settings || !!busy}
+                onChange={setAnalyticsConsent}
               />
               <div className="settings-row">
                 <div className="settings-row-info">

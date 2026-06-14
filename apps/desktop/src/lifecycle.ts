@@ -1,6 +1,7 @@
 import { app } from "electron";
 
 import { closeAllAgentPets } from "./agent-pet-controller.js";
+import { shutdownDesktopAnalytics } from "./analytics.js";
 import { destroyDefaultPet } from "./default-pet-controller.js";
 import { info } from "./logger.js";
 import { stopLocalIpcServer } from "./local-ipc.js";
@@ -37,6 +38,7 @@ export function installAppLifecycle(): void {
     stopLocalIpcServer();
     closeAllAgentPets();
     destroyDefaultPet();
+    shutdownDesktopAnalytics();
   });
 }
 

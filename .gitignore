@@ -10,7 +10,9 @@ apps/desktop/dist-electron
 .DS_Store
 local/
 .slim/deepwork/
+opencode.json
 
 # BEGIN oh-my-opencode-slim clonedeps
 .slim/clonedeps/repos/
 # END oh-my-opencode-slim clonedeps
+
