@@ -5,11 +5,12 @@ import { app, BrowserWindow, dialog, ipcMain, protocol, shell, type IpcMainInvok
 
 import { getAgentSetupSnapshot, runAgentSetupAction, updateAgentSetupCommandPaths } from "./agent-setup.js";
 import { refreshAgentPetContent } from "./agent-pet-controller.js";
-import { getAppStateSnapshot, getDesktopAnalyticsConsentState, normalizePetScale, petScaleOptions, setDesktopAnalyticsConsent, updatePreferences } from "./app-state.js";
+import { getAppStateSnapshot, getDesktopAnalyticsConsentState, normalizePetPoolOrder, normalizePetScale, petScaleOptions, setDesktopAnalyticsConsent, setPetPoolOrder, updatePreferences } from "./app-state.js";
 import { trackDesktopAnalyticsConsentChanged, trackDesktopEvent } from "./analytics.js";
 import { createAppIcon } from "./assets.js";
 import { getCatalogPageUiState, getCatalogSearchUiState, getCatalogUiState } from "./catalog.js";
 import { getCodexPetsUiState, importCodexPet, readCodexPetSpritesheet } from "./codex-pets.js";
+import { setConfinementEnabled } from "./confinement-manager.js";
 import { getActiveLocale, getActiveMessages, isSupportedLocale, LOCALE_LABELS, SUPPORTED_LOCALES, setLocaleFromPreference, t, type Locale, type LocalePreference } from "./i18n/index.js";
 import { recoverDefaultPetMouseInterop, refreshDefaultPetContent, resetDefaultPetToInitialPosition } from "./default-pet-controller.js";
 import { installPet, installPetFromFolder, installPetFromZipFile, removePet, setDefaultInstalledPet } from "./pet-installation.js";
@@ -65,9 +66,11 @@ function getPetsStateSnapshot(): { preferences: { defaultPetId: string }; pets: 
 }
 
 function getSettingsStateSnapshot(): {
-  preferences: Pick<ReturnType<typeof getAppStateSnapshot>["preferences"], "openDefaultPetOnLaunch" | "petScale" | "reactionAnimationOverrides">;
+  preferences: Pick<ReturnType<typeof getAppStateSnapshot>["preferences"], "openDefaultPetOnLaunch" | "petScale" | "reactionAnimationOverrides" | "petPoolOrder" | "petPoolEnabled" | "petConfinementEnabled">;
   petScaleOptions: typeof petScaleOptions;
   analytics: ReturnType<typeof getDesktopAnalyticsConsentState>;
+  /** Non-broken, non-built-in installed pets available for pool selection. */
+  petPoolCandidates: ReadonlyArray<{ readonly id: string; readonly displayName: string }>;
 } {
   const state = getAppStateSnapshot();
   return {
@@ -75,9 +78,15 @@ function getSettingsStateSnapshot(): {
       openDefaultPetOnLaunch: state.preferences.openDefaultPetOnLaunch,
       petScale: state.preferences.petScale,
       reactionAnimationOverrides: state.preferences.reactionAnimationOverrides,
+      petPoolOrder: state.preferences.petPoolOrder,
+      petPoolEnabled: state.preferences.petPoolEnabled,
+      petConfinementEnabled: state.preferences.petConfinementEnabled,
     },
     petScaleOptions,
     analytics: getDesktopAnalyticsConsentState(),
+    petPoolCandidates: state.pets.installed
+      .filter((p) => !p.builtIn && !p.broken && p.id !== state.preferences.defaultPetId)
+      .map(({ id, displayName }) => ({ id, displayName })),
   };
 }
 
@@ -151,6 +160,10 @@ export function installInternalUiHandlers(): void {
   }
 
   internalUiHandlersInstalled = true;
+
+  // Apply the persisted petConfinementEnabled preference as the initial value
+  // for the confinement-manager flag. This runs once after app-state is loaded.
+  setConfinementEnabled(getAppStateSnapshot().preferences.petConfinementEnabled);
 
   ipcMain.handle("openpets:get-pets-state", (event) => {
     assertAllowedSender(event, ["control-center"]);
@@ -349,6 +362,8 @@ export function installInternalUiHandlers(): void {
       // SafePluginRecords so manifest/config labels re-render in the new language.
       broadcastPluginRecordsRefresh();
     }
+    // Propagate petConfinementEnabled into the confinement-manager flag on every pref update.
+    setConfinementEnabled(state.preferences.petConfinementEnabled);
     return getInternalUiWindowKindForWebContents(event.sender.id) === "control-center" ? getSettingsStateSnapshot() : state;
   });
 
@@ -395,6 +410,14 @@ export function installInternalUiHandlers(): void {
     recoverDefaultPetMouseInterop("default-pet-changed");
     setTimeout(() => recoverDefaultPetMouseInterop("default-pet-changed+500ms"), 500).unref?.();
     return getInternalUiWindowKindForWebContents(event.sender.id) === "control-center" ? getPetsStateSnapshot() : state;
+  });
+
+  ipcMain.handle("openpets:set-pet-pool-order", (event, ids: unknown) => {
+    assertAllowedSender(event, ["control-center"]);
+    if (!Array.isArray(ids)) throw new Error("Invalid pet pool order: expected an array.");
+    const normalized = normalizePetPoolOrder(ids);
+    setPetPoolOrder(normalized ?? []);
+    return getSettingsStateSnapshot();
   });
 
   ipcMain.handle("openpets:install-pet", async (event, petId: unknown) => {
@@ -802,16 +825,26 @@ async function getDefaultPetPreviewSpriteInfo(): Promise<{ readonly path: string
   return { path: builtInPath, version: `builtin-${Math.round(fallback.mtimeMs)}-${fallback.size}` };
 }
 
-function validatePreferencePatch(value: unknown): { openDefaultPetOnLaunch?: boolean; locale?: LocalePreference; petScale?: number; reactionAnimationOverrides?: ReturnType<typeof validateReactionAnimationOverrides> } {
+function validatePreferencePatch(value: unknown): { openDefaultPetOnLaunch?: boolean; locale?: LocalePreference; petScale?: number; reactionAnimationOverrides?: ReturnType<typeof validateReactionAnimationOverrides>; petPoolEnabled?: boolean; petConfinementEnabled?: boolean } {
   if (!isRecord(value)) {
     throw new Error("Invalid preferences patch.");
   }
 
-  const patch: { openDefaultPetOnLaunch?: boolean; locale?: LocalePreference; petScale?: number; reactionAnimationOverrides?: ReturnType<typeof validateReactionAnimationOverrides> } = {};
+  const patch: { openDefaultPetOnLaunch?: boolean; locale?: LocalePreference; petScale?: number; reactionAnimationOverrides?: ReturnType<typeof validateReactionAnimationOverrides>; petPoolEnabled?: boolean; petConfinementEnabled?: boolean } = {};
 
   if ("openDefaultPetOnLaunch" in value) {
     if (typeof value.openDefaultPetOnLaunch !== "boolean") throw new Error("Invalid open-on-launch value.");
     patch.openDefaultPetOnLaunch = value.openDefaultPetOnLaunch;
+  }
+
+  if ("petPoolEnabled" in value) {
+    if (typeof value.petPoolEnabled !== "boolean") throw new Error("Invalid pet-pool-enabled value.");
+    patch.petPoolEnabled = value.petPoolEnabled;
+  }
+
+  if ("petConfinementEnabled" in value) {
+    if (typeof value.petConfinementEnabled !== "boolean") throw new Error("Invalid pet-confinement-enabled value.");
+    patch.petConfinementEnabled = value.petConfinementEnabled;
   }
 
   if ("locale" in value) {

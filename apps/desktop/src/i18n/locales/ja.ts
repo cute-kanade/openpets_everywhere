@@ -36,6 +36,10 @@ export const ja: Partial<Messages> = {
   "pet.menu.hidePet": "ペットを隠す",
   "pet.menu.closePet": "ペットを閉じる",
   "pet.menu.openControlCenter": "コントロールセンターを開く",
+  "pet.menu.focusSessionWindow": "セッションウィンドウにフォーカス",
+  "pet.menu.focusSessionWindowNoA11y": "セッションウィンドウにフォーカス（アクセシビリティが必要）",
+  "pet.fallback.unavailableTitle": "ペット「{petId}」は利用できません",
+  "pet.fallback.unavailableBody": "{petId} はインストールされていないため、デフォルトのペットを使用します。ウィンドウの制限はインストール済みのペットにのみ有効です。実行してください: openpets mcp --pet <installed-pet-id>",
 
   // --- Common (renderer, shared across views) ---
   "common.retry": "再試行",

@@ -34,3 +34,11 @@ export function shouldShowDefaultPetForExternalEvent(_visible: boolean, _openOnL
   // Agent activity is an explicit display trigger; open-on-launch only controls startup.
   return !paused;
 }
+
+/**
+ * Normalize the petConfinementEnabled preference value.
+ * Default is true (confinement on). Non-boolean values fall back to the default.
+ */
+export function normalizePetConfinementEnabled(value: unknown, defaultValue = true): boolean {
+  return typeof value === "boolean" ? value : defaultValue;
+}

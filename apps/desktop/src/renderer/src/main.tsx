@@ -24,7 +24,8 @@ type PetScaleOption = { label: string; value: number };
 type UserSelectableAnimationState = "idle" | "review" | "running" | "waiting" | "waving" | "jumping" | "failed";
 type ReactionAnimationOverrides = Record<string, UserSelectableAnimationState>;
 type AnalyticsConsent = "unset" | "granted" | "denied";
-type SettingsState = { preferences: { openDefaultPetOnLaunch: boolean; locale?: "system" | string; petScale: number; reactionAnimationOverrides?: ReactionAnimationOverrides }; petScaleOptions: PetScaleOption[]; analytics: { consent: AnalyticsConsent; enabled: boolean } };
+type PetPoolCandidate = { id: string; displayName: string };
+type SettingsState = { preferences: { openDefaultPetOnLaunch: boolean; locale?: "system" | string; petScale: number; reactionAnimationOverrides?: ReactionAnimationOverrides; petPoolEnabled: boolean; petPoolOrder?: readonly string[]; petConfinementEnabled: boolean }; petScaleOptions: PetScaleOption[]; analytics: { consent: AnalyticsConsent; enabled: boolean }; petPoolCandidates: ReadonlyArray<PetPoolCandidate> };
 type LaunchAtLoginState = { supported: boolean; enabled: boolean };
 type UpdateStatus = { state: "idle" | "checking" | "available" | "current" | "error"; currentVersion: string; latestVersion?: string; releaseUrl?: string; checkedAt?: number; error?: string };
 type DashboardActivity = { messagesSent: number; reactionsSent: number; reactionCounts: Record<string, number>; perPetActivityCounts: Record<string, number>; lastActivityAt?: number };
@@ -76,6 +77,7 @@ type ControlCenterApi = {
   checkForUpdates(): Promise<UpdateStatus>;
   openUpdateReleasePage(): Promise<void>;
   resetDefaultPetPosition(): Promise<SettingsState>;
+  setPetPoolOrder(ids: string[]): Promise<SettingsState>;
   getPluginsSnapshot(): Promise<PluginServiceSnapshot>;
   getPluginCatalogSnapshot(refresh?: boolean): Promise<PluginCatalogSnapshot>;
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginServiceResult>;
@@ -873,10 +875,130 @@ function PetImage({ src, alt = "", debugLabel }: { src?: string; alt?: string; d
   return <img src={safeSrc} alt={alt} draggable="false" onError={() => logPetsError("image-failed", { label: debugLabel, src: imageDebug(safeSrc) })} />;
 }
 
-function ToggleRow({ title, description, checked, disabled, onChange }: { title: string; description: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
+function PetPoolOrderList({
+  order,
+  candidates,
+  disabled,
+  onChangeOrder,
+}: {
+  order: readonly string[];
+  candidates: ReadonlyArray<PetPoolCandidate>;
+  disabled: boolean;
+  onChangeOrder: (newOrder: string[]) => void;
+}) {
+  const [addValue, setAddValue] = useState("");
+  const nameFor = (id: string) => candidates.find((c) => c.id === id)?.displayName ?? id;
+  const available = candidates.filter((c) => !order.includes(c.id));
+
+  function handleAdd() {
+    const val = addValue || available[0]?.id;
+    if (!val) return;
+    onChangeOrder([...order, val]);
+    setAddValue("");
+  }
+
+  function handleRemove(idx: number) {
+    onChangeOrder([...order.slice(0, idx), ...order.slice(idx + 1)]);
+  }
+
+  function handleMoveUp(idx: number) {
+    if (idx === 0) return;
+    const next = [...order];
+    const above = next[idx - 1] as string;
+    const current = next[idx] as string;
+    next[idx - 1] = current;
+    next[idx] = above;
+    onChangeOrder(next);
+  }
+
+  function handleMoveDown(idx: number) {
+    if (idx === order.length - 1) return;
+    const next = [...order];
+    const below = next[idx + 1] as string;
+    const current = next[idx] as string;
+    next[idx + 1] = current;
+    next[idx] = below;
+    onChangeOrder(next);
+  }
+
+  return (
+    <div className="flex flex-col border-t border-blue-50">
+      {order.length === 0 && (
+        <p className="px-5 py-4 text-xs text-slatecopy">No pets in the pool yet. Add one below.</p>
+      )}
+      {order.map((id, idx) => (
+        <div
+          key={id}
+          className="flex items-center gap-3 border-b border-blue-50 px-5 py-3 transition-colors hover:bg-white/80 last:border-b-0"
+        >
+          <span className="w-14 shrink-0 font-mono text-xs font-bold text-slatecopy">
+            {`Slot ${idx + 1}`}
+          </span>
+          <span className="flex-1 truncate text-sm font-semibold text-navy">{nameFor(id)}</span>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              className="btn btn-compact btn-secondary"
+              disabled={disabled || idx === 0}
+              onClick={() => handleMoveUp(idx)}
+              aria-label="Move up"
+            >
+              ↑
+            </button>
+            <button
+              className="btn btn-compact btn-secondary"
+              disabled={disabled || idx === order.length - 1}
+              onClick={() => handleMoveDown(idx)}
+              aria-label="Move down"
+            >
+              ↓
+            </button>
+            <button
+              className="btn btn-compact btn-danger"
+              disabled={disabled}
+              onClick={() => handleRemove(idx)}
+              aria-label="Remove from pool"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center gap-3 px-5 py-3">
+        {candidates.length === 0 ? (
+          <p className="text-xs text-slatecopy">No additional pets installed. Install pets from the catalog to add them here.</p>
+        ) : available.length === 0 ? (
+          <p className="text-xs text-slatecopy">All installed pets are already in the pool.</p>
+        ) : (
+          <>
+            <select
+              className="settings-select flex-1"
+              value={addValue || (available[0]?.id ?? "")}
+              disabled={disabled}
+              onChange={(e) => setAddValue(e.target.value)}
+            >
+              {available.map((c) => (
+                <option key={c.id} value={c.id}>{c.displayName}</option>
+              ))}
+            </select>
+            <Button
+              variant="secondary"
+              size="compact"
+              disabled={disabled || available.length === 0}
+              onClick={handleAdd}
+            >
+              Add to pool
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ToggleRow({ title, description, checked, disabled, onChange, testId }: { title: string; description: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void; testId?: string }) {
   return <label className={`settings-row ${disabled ? "opacity-60" : ""}`}>
     <div className="settings-row-info"><strong>{title}</strong><small>{description}</small></div>
-    <input className="settings-toggle" type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+    <input className="settings-toggle" type="checkbox" checked={checked} disabled={disabled} data-testid={testId} onChange={(event) => { const next = event.target.checked; onChange(next); }} />
   </label>;
 }
 
@@ -1007,6 +1129,14 @@ function SettingsView() {
     });
   }
 
+  function updatePetPoolOrder(ids: string[]) {
+    void run(t("settings.busy.saving"), async () => {
+      const next = await api.setPetPoolOrder(ids);
+      setSettings(next);
+      setMessage("Saved");
+    });
+  }
+
   return <div className="settings-layout">
     {error && <div className="error settings-message">{error}</div>}
     {message && <div className="settings-success settings-message">{message}</div>}
@@ -1055,6 +1185,14 @@ function SettingsView() {
                 disabled={!settings || !!busy}
                 onChange={setAnalyticsConsent}
               />
+              <ToggleRow
+                title={t("settings.petConfinement.label")}
+                description={t("settings.petConfinement.description")}
+                checked={settings?.preferences.petConfinementEnabled ?? false}
+                disabled={!settings || !!busy}
+                testId="setting-pet-confinement-toggle"
+                onChange={(checked) => patchPreferences({ petConfinementEnabled: checked }, t("settings.toast.confinementSaved"))}
+              />
               <div className="settings-row">
                 <div className="settings-row-info">
                   <strong>{t("settings.general.petScale.title")}</strong>
@@ -1073,6 +1211,24 @@ function SettingsView() {
                   <option value="system">{t("settings.language.system")}</option>
                   {availableLocales.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
+              </div>
+            </div>
+
+            <div className="settings-group">
+              <ToggleRow
+                title="Assign a different pet to each session"
+                description="Your default pet stays on screen as always. Each new agent session claims the next pet from this list; once they're all in use, new sessions get a random pet."
+                checked={settings?.preferences.petPoolEnabled ?? false}
+                disabled={!settings || !!busy}
+                onChange={(checked) => patchPreferences({ petPoolEnabled: checked }, t("settings.toast.petPoolSaved"))}
+              />
+              <div className={settings?.preferences.petPoolEnabled ? "" : "opacity-50 pointer-events-none"}>
+                <PetPoolOrderList
+                  order={settings?.preferences.petPoolOrder ?? []}
+                  candidates={settings?.petPoolCandidates ?? []}
+                  disabled={!settings || !!busy || !(settings?.preferences.petPoolEnabled)}
+                  onChangeOrder={updatePetPoolOrder}
+                />
               </div>
             </div>
 
@@ -2156,9 +2312,12 @@ function PluginsView() {
                         type="checkbox"
                         checked={entry.installed.enabled}
                         disabled={!!busy || entry.installed.catalogDisabled || Boolean(entry.installed.brokenReason)}
-                        onChange={(event) => void run(t("plugins.busy.saving"), async () => {
-                          applyResult(await api.setPluginEnabled(entry.id, event.target.checked), event.target.checked ? t("plugins.toast.pluginEnabled") : t("plugins.toast.pluginDisabled"));
-                        })}
+                        onChange={(event) => {
+                          const nextEnabled = event.target.checked;
+                          void run(t("plugins.busy.saving"), async () => {
+                            applyResult(await api.setPluginEnabled(entry.id, nextEnabled), nextEnabled ? t("plugins.toast.pluginEnabled") : t("plugins.toast.pluginDisabled"));
+                          });
+                        }}
                       />
                     </div>
                   )}
@@ -2213,7 +2372,7 @@ function PluginsView() {
               <div className="plugin-section-title"><small>{t("plugins.inspector.runtime")}</small><strong>{t("plugins.inspector.statePermissions")}</strong></div>
               <label className="settings-row plugin-toggle-row">
                 <div className="settings-row-info"><strong>{installed.enabled ? t("plugins.inspector.enabled") : t("plugins.inspector.disabled")}</strong><small>{installed.brokenReason || (installed.catalogDisabled ? t("plugins.inspector.catalogDisabledNote") : t("plugins.inspector.toggleNote"))}</small></div>
-                <input className="settings-toggle" type="checkbox" checked={installed.enabled} disabled={!!busy || installed.catalogDisabled || Boolean(installed.brokenReason)} onChange={(event) => void run(t("plugins.busy.saving"), async () => { applyResult(await api.setPluginEnabled(installed.id, event.target.checked), event.target.checked ? t("plugins.toast.pluginEnabled") : t("plugins.toast.pluginDisabled")); })} />
+                <input className="settings-toggle" type="checkbox" checked={installed.enabled} disabled={!!busy || installed.catalogDisabled || Boolean(installed.brokenReason)} onChange={(event) => { const nextEnabled = event.target.checked; void run(t("plugins.busy.saving"), async () => { applyResult(await api.setPluginEnabled(installed.id, nextEnabled), nextEnabled ? t("plugins.toast.pluginEnabled") : t("plugins.toast.pluginDisabled")); }); }} />
               </label>
               <div className="badges plugin-permissions">{installed.approvedPermissions.length ? installed.approvedPermissions.map((permission) => <StatusPill key={permission} tone={sensitivePermissionSet.has(permission) ? "red" : permission === "network" || permission === "network:write" ? "orange" : "blue"}>{t(pluginPermissionLabelKeys[permission])}</StatusPill>) : <StatusPill tone="slate">{t("plugins.inspector.noPermissions")}</StatusPill>}</div>
             </section>

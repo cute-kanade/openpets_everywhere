@@ -29,6 +29,17 @@ const behaviorTests = [
   ".test-dist/tests/plugin-service.test.js",
   ".test-dist/tests/plugin-ui-static.test.js",
   ".test-dist/tests/plugin-bridge-fuzz.test.js",
+  ".test-dist/tests/pet-fallback-notify.test.js",
+  ".test-dist/tests/pet-pool-order.test.js",
+  ".test-dist/tests/pet-pool.test.js",
+  ".test-dist/tests/local-ipc-confinement.test.js",
+  ".test-dist/tests/confinement-permission.test.js",
+  ".test-dist/tests/confinement-poller-backoff.test.js",
+  ".test-dist/tests/window-tracker.test.js",
+  ".test-dist/tests/window-tracker-chain.test.js",
+  ".test-dist/tests/confinement-manager.test.js",
+  ".test-dist/tests/pet-confinement-enabled.test.js",
+  ".test-dist/tests/renderer-toggles.test.js",
 ];
 const contractTests = [
   ".test-dist/contracts/local-ipc-protocol.contract.js",

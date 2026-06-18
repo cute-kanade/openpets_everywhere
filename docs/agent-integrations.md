@@ -27,6 +27,39 @@ Every integration follows the same contract, which is worth internalizing once:
 - **Leases route the pet.** Integrations acquire a lease on first activity,
   heartbeat it, and release on shutdown. See the lease model in [ipc.md](ipc.md).
 
+## Pet pool: multiple agents, multiple pets
+
+By default every agent session that does not pass `--pet <id>` shares the single
+default pet. The **pet pool** preference (Control Center → Settings → General,
+`petPoolEnabled`, off by default) changes this so concurrent sessions each get
+their own pet from a user-configured ordered list.
+
+**How it works when enabled:**
+
+- The user configures an ordered list of installed pets in Settings. Slot 1 is
+  the primary/default pet; subsequent slots are assigned to additional concurrent
+  sessions in order.
+- When a new session starts without `--pet`, the lease manager assigns it the
+  first pool slot not currently held by an active session.
+- Once every pool slot is occupied, additional sessions are assigned a random
+  eligible pet (installed, non-broken, excluding the built-in default).
+- When a session ends its lease, its pet slot is freed and available to the next
+  session.
+- **`--pet <id>` always takes priority** and bypasses the pool entirely —
+  unchanged from current behavior.
+
+**Eligible pool pets** are installed, non-broken pets excluding the built-in
+default. Broken or uninstalled pets are skipped silently.
+
+**Cross-platform and agent-agnostic.** Pool assignment is pure lease logic with
+no platform dependency — it works on macOS, Windows, and Linux. Any agent that
+acquires a lease through the shared OpenPets client benefits automatically: Claude
+Code CLI, opencode, Cursor, and any other MCP client all go through the same
+`lease.acquire` path.
+
+When the pool is disabled (the default), behavior is unchanged: all sessions
+without `--pet` share the single default pet.
+
 ## Safe speech: `@open-pets/agent-events`
 
 `packages/agent-events/` is the shared guardrail. It provides curated speech
@@ -72,6 +105,14 @@ On startup it acquires a lease, heartbeats every ~5s, and releases on
 SIGINT/SIGTERM. Errors are sanitized so IPC paths/tokens/sockets never leak into
 tool output. It is spawned by the CLI (`runMcp()`) which forwards stdio and
 signals. `--pet <id>` targets a specific pet.
+
+> **Window confinement requires an installed pet.** Passing `--pet <id>` only
+> activates window confinement when the requested pet is actually installed. If
+> the pet ID is misspelled or not yet installed, the MCP server silently falls
+> back to the default (unconfined) pet. OpenPets now surfaces this via a desktop
+> notification when the fallback occurs. To list installed pets run
+> `openpets pets`; to install one use `openpets install <pet-id>` or the Pets
+> tab in Control Center.
 
 ## OpenCode — `@open-pets/opencode`
 

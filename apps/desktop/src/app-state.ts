@@ -4,14 +4,17 @@ import { dirname, isAbsolute, join } from "node:path";
 
 import { app } from "electron";
 
-import { defaultPetScale, markOnboardingCompleted, normalizeOnboardingCompleted, normalizePetScale, petScaleOptions, type PetScaleValue } from "./app-state-core.js";
+import { defaultPetScale, markOnboardingCompleted, normalizeOnboardingCompleted, normalizePetConfinementEnabled, normalizePetScale, petScaleOptions, type PetScaleValue } from "./app-state-core.js";
 import { builtInPet } from "./built-in-pet.js";
 import type { Point } from "./display.js";
 import { isSupportedLocale, type LocalePreference } from "./i18n/catalog.js";
 import { allowedReactions, type OpenPetsReaction } from "./local-ipc-protocol.js";
 import { assertSafePetId, getInstalledPetDir } from "./pet-paths.js";
+import { normalizePetPoolOrder } from "./pet-pool.js";
 import { publishPluginAgentActivity } from "./plugin-events-source.js";
 import { normalizeReactionAnimationOverrides, type ReactionAnimationOverrides } from "./reaction-animation-mapping.js";
+
+export { normalizePetPoolOrder } from "./pet-pool.js";
 
 export interface InstalledPetState {
   readonly id: string;
@@ -46,6 +49,18 @@ export interface OpenPetsStateV1 {
     readonly claudeCommandPath?: string;
     readonly nodeCommandPath?: string;
     readonly opencodeCommandPath?: string;
+    /** Ordered pool of pet IDs for sequential session assignment. Slot 0 is the primary pet.
+     * When set (non-empty), no-pet sessions claim the next available slot before falling back to random.
+     * Undefined / empty = legacy shared-default behaviour unchanged. */
+    readonly petPoolOrder?: readonly string[];
+    /** Master toggle for the ordered pet-pool assignment feature. When false (default),
+     * the pool is ignored entirely and no-pet sessions use the legacy shared default pet,
+     * even if petPoolOrder is configured. Platform-independent (works on macOS/Windows/Linux). */
+    readonly petPoolEnabled: boolean;
+    /** Global toggle for window-confinement. When true (default), session-bound pets are
+     * confined to their terminal window. When false, all pets free-roam regardless of
+     * whether a terminal window is tracked. Platform-independent. */
+    readonly petConfinementEnabled: boolean;
   };
   readonly pets: {
     readonly installed: readonly InstalledPetState[];
@@ -202,6 +217,23 @@ export function setDefaultPet(defaultPetId: string): OpenPetsStateV1 {
     },
   });
 
+  commitState(nextState);
+  return getAppStateSnapshot();
+}
+
+/**
+ * Replace the entire pet-pool order with a new list.
+ * Duplicate / unsafe IDs are removed during normalisation.
+ * Pass an empty array (or undefined) to clear the pool and revert to legacy behaviour.
+ */
+export function setPetPoolOrder(ids: readonly string[]): OpenPetsStateV1 {
+  const nextState = normalizeState({
+    ...getInitializedState(),
+    preferences: {
+      ...getInitializedState().preferences,
+      petPoolOrder: normalizePetPoolOrder(ids),
+    },
+  });
   commitState(nextState);
   return getAppStateSnapshot();
 }
@@ -462,6 +494,11 @@ function normalizePreferences(value: Partial<OpenPetsStateV1["preferences"]>): O
     claudeCommandPath: normalizeCommandPath(value.claudeCommandPath),
     nodeCommandPath: normalizeCommandPath(value.nodeCommandPath),
     opencodeCommandPath: normalizeCommandPath(value.opencodeCommandPath),
+    petPoolOrder: normalizePetPoolOrder(value.petPoolOrder),
+    petPoolEnabled: typeof value.petPoolEnabled === "boolean"
+      ? value.petPoolEnabled
+      : defaultState.preferences.petPoolEnabled,
+    petConfinementEnabled: normalizePetConfinementEnabled(value.petConfinementEnabled, defaultState.preferences.petConfinementEnabled),
   };
 }
 
@@ -535,6 +572,9 @@ function createDefaultState(): OpenPetsStateV1 {
       claudeCommandPath: undefined,
       nodeCommandPath: undefined,
       opencodeCommandPath: undefined,
+      petPoolOrder: undefined,
+      petPoolEnabled: false,
+      petConfinementEnabled: true,
     },
     pets: {
       installed: [builtInPet],

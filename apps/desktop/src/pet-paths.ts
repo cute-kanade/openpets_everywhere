@@ -1,8 +1,12 @@
+import { createRequire } from "node:module";
 import { join, resolve, sep } from "node:path";
 
-import { app } from "electron";
+const nodeRequire = createRequire(import.meta.url);
 
 export function getPetsRoot(): string {
+  // Lazy-load `app` so this module is importable under plain Node (tests)
+  // without triggering the ESM electron named-export error.
+  const { app } = nodeRequire("electron") as typeof import("electron");
   return join(app.getPath("userData"), "pets");
 }
 

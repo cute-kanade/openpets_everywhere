@@ -36,6 +36,10 @@ export const es419: Partial<Messages> = {
   "pet.menu.hidePet": "Ocultar mascota",
   "pet.menu.closePet": "Cerrar mascota",
   "pet.menu.openControlCenter": "Abrir Centro de control",
+  "pet.menu.focusSessionWindow": "Enfocar ventana de sesión",
+  "pet.menu.focusSessionWindowNoA11y": "Enfocar ventana de sesión (requiere Accesibilidad)",
+  "pet.fallback.unavailableTitle": "Mascota \"{petId}\" no disponible",
+  "pet.fallback.unavailableBody": "{petId} no está instalada, por lo que se usará la mascota predeterminada. El confinamiento de ventana solo funciona con una mascota instalada — ejecuta: openpets mcp --pet <installed-pet-id>",
 
   // --- Common (renderer, shared across views) ---
   "common.retry": "Reintentar",

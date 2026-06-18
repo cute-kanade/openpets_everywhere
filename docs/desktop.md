@@ -76,13 +76,37 @@ TCP, routes a versioned JSON protocol, and writes a discovery file so clients
 can find it. The lease manager (`lease-manager.ts`) sits behind it. Full
 contract in [ipc.md](ipc.md).
 
+**Pet fallback notification:** when an agent requests a specific pet via
+`--pet <id>` and that pet is not installed (or is invalid/broken), the lease
+manager silently falls back to the default pet and window confinement does not
+activate. `pet-fallback-notify.ts` detects this condition and fires a native
+macOS notification (once per unique pet ID) so the user knows why confinement
+is inactive. The notification includes the command to use once the pet is
+installed.
+
 ### App state
 
 `app-state.ts` persists a versioned JSON document under
 `userData/openpets-state.json` using atomic temp-write + rename. It holds
 installed pets, the default-pet config, reaction→animation overrides, onboarding
-state, and locale preference. `app-state-core.ts` holds pure helpers (scale
+state, locale preference, and the pet pool preference (ordered pet list +
+`petPoolEnabled` toggle). `app-state-core.ts` holds pure helpers (scale
 options, onboarding normalization) that are testable without Electron.
+
+#### Pet pool preference
+
+The **pet pool** is an ordered list of installed pets plus a master enable/disable
+toggle (`petPoolEnabled`, default `false`), both configurable in Control Center →
+Settings → General. When enabled, the lease manager uses the ordered list to
+assign a distinct pet to each concurrent agent session that does not explicitly
+request one via `--pet <id>`. Slot 1 is the primary/default pet; slot 2 onwards
+are assigned to additional sessions in order. When all pool slots are taken,
+further sessions receive a random eligible pet (installed, non-broken, not the
+built-in default). Slots free up when their session ends. `--pet <id>` bypasses
+the pool entirely. When disabled, all sessions without `--pet` share the single
+default pet (legacy behavior). Pool assignment is pure lease logic and works on
+all platforms. See [agent-integrations.md](agent-integrations.md) for the
+full behavioral description.
 
 ### Plugin subsystem
 

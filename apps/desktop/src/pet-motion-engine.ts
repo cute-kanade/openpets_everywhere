@@ -1,5 +1,6 @@
 import { BrowserWindow, screen } from "electron";
 
+import { clampToTerminalBounds, getEffectiveConfinementBounds } from "./confinement-manager.js";
 import { clampToVisibleWorkArea, defaultPetWindowSize, type Point } from "./display.js";
 import { isPetWindowDragging } from "./pet-window.js";
 
@@ -47,7 +48,7 @@ export async function motionMoveTo(petHandleId: string, accessor: WindowAccessor
   const durationMs = Math.min(Math.max(opts.durationMs ?? 700, 100), 10_000);
   const easing = opts.easing ?? "ease-in-out";
   const [startX, startY] = window.getPosition();
-  const clamped = clampToVisibleWorkArea(target, defaultPetWindowSize);
+  const clamped = clampPosition(petHandleId, target);
   const steps = Math.max(4, Math.round(durationMs / 33));
   for (let step = 1; step <= steps; step += 1) {
     const live = accessor();
@@ -116,7 +117,7 @@ function syncLoop(petHandleId: string, accessor: WindowAccessor, state: MotionSt
     }
     if (nextX !== x || nextY !== y) {
       // Under gravity the y motion is bounded by the floor above; only clamp x.
-      const clamped = clampToVisibleWorkArea({ x: nextX, y: nextY }, defaultPetWindowSize);
+      const clamped = clampPosition(petHandleId, { x: nextX, y: nextY });
       window.setPosition(clamped.x, state.physics?.gravity ? nextY : clamped.y, false);
     }
   }, loopIntervalMs);
@@ -125,4 +126,15 @@ function syncLoop(petHandleId: string, accessor: WindowAccessor, state: MotionSt
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Clamp a position to the appropriate bounds:
+ * - If the pet has active terminal confinement, clamp to terminal bounds.
+ * - Otherwise clamp to visible work area (free-roam).
+ */
+function clampPosition(petHandleId: string, pos: Point): Point {
+  const terminalBounds = getEffectiveConfinementBounds(petHandleId);
+  if (terminalBounds) return clampToTerminalBounds(pos, defaultPetWindowSize, terminalBounds);
+  return clampToVisibleWorkArea(pos, defaultPetWindowSize);
 }

@@ -1,10 +1,12 @@
 import { BrowserWindow } from "electron";
 
 import { getAppStateSnapshot, type PetScaleValue } from "./app-state.js";
-import { defaultPetWindowSize, getDefaultPetInitialPosition } from "./display.js";
+import { clampToTerminalBounds, getConfinementState, getEffectiveConfinementBounds } from "./confinement-manager.js";
+import { defaultPetWindowSize, clampToVisibleWorkArea, getDefaultPetInitialPosition } from "./display.js";
 import { debug, info } from "./logger.js";
 import { transientDisplayMs, type OpenPetsReaction } from "./local-ipc-protocol.js";
 import { clearTransientReaction, createAgentPetWindow, getTransientDisplayDurationMs, getTransientReactionAnimationMs, loadExplicitPetContent, mergePetTransientDisplay, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
+import { focusTerminalWindow } from "./terminal-focus.js";
 
 const agentPetWindows = new Map<string, BrowserWindow>();
 const transientDisplays = new Map<string, PetTransientDisplay>();
@@ -24,8 +26,28 @@ export function showAgentPet(petId: string): boolean {
   const window = getOrCreateAgentPetWindow(petId);
   info("pet.agent", "show requested", { petId, windowId: window.id, visible: window.isVisible(), minimized: window.isMinimized(), activeWindows: agentPetWindows.size });
   if (window.isMinimized()) window.restore();
+  // Pull the pet into its terminal window bounds if confinement is active.
+  repositionConfinedPet(petId, window);
   window.showInactive();
   return true;
+}
+
+/**
+ * Reposition a pet so it sits inside its terminal window bounds (if confined).
+ * This is called on show and whenever confinement state changes.
+ * If the pet is in free-roam mode this is a no-op.
+ */
+export function repositionConfinedPet(petId: string, win?: BrowserWindow): void {
+  const confinementBounds = getEffectiveConfinementBounds(petId);
+  if (!confinementBounds) return;
+  const window = win ?? agentPetWindows.get(petId);
+  if (!window || window.isDestroyed()) return;
+  const [cx, cy] = window.getPosition();
+  const clamped = clampToTerminalBounds({ x: cx, y: cy }, defaultPetWindowSize, confinementBounds);
+  if (clamped.x !== cx || clamped.y !== cy) {
+    debug("pet.agent", "reposition confined", { petId, from: { x: cx, y: cy }, to: clamped });
+    window.setPosition(clamped.x, clamped.y, false);
+  }
 }
 
 export function closeAgentPetIfOpen(petId: string): void {
@@ -120,18 +142,35 @@ function getOrCreateAgentPetWindow(petId: string): BrowserWindow {
   const pet = state.pets.installed.find((candidate) => candidate.id === petId);
   if (!pet) throw new Error(`Installed pet is unavailable: ${petId}`);
   const offset = agentPetWindows.size + 1;
-  const initial = getDefaultPetInitialPosition(defaultPetWindowSize);
+  // Use terminal bounds for initial position when confinement is active.
+  const confinementBounds = getEffectiveConfinementBounds(petId);
+  const baseInitial = confinementBounds
+    ? { x: confinementBounds.x + Math.max(0, (confinementBounds.width - defaultPetWindowSize.width) / 2), y: confinementBounds.y + Math.max(0, confinementBounds.height - defaultPetWindowSize.height) }
+    : getDefaultPetInitialPosition(defaultPetWindowSize);
+  const rawPosition = { x: baseInitial.x - offset * 36, y: baseInitial.y - offset * 24 };
+  // Clamp the offset position so multi-pet stacking stays within bounds.
+  const initial = confinementBounds
+    ? clampToTerminalBounds(rawPosition, defaultPetWindowSize, confinementBounds)
+    : clampToVisibleWorkArea(rawPosition, defaultPetWindowSize);
   const display = transientDisplays.get(petId) ?? null;
   const badge = statusBadges.get(petId) ?? null;
   const window = createAgentPetWindow({
     petId,
     displayName: pet.displayName,
     scale,
-    position: { x: initial.x - offset * 36, y: initial.y - offset * 24 },
+    position: { x: initial.x, y: initial.y },
     display,
     badge,
     onCloseRequested: () => dismissAgentPetForActiveLease(petId),
     onBubbleDismissed: (token) => handleBubbleDismissed(petId, token),
+    onFocusSessionWindow: () => {
+      const confinement = getConfinementState(petId);
+      if (confinement?.terminalOwnerPid) {
+        focusTerminalWindow(confinement.terminalOwnerPid).catch((err) => {
+          debug("pet.agent", "focus session window failed", { petId, error: String(err) });
+        });
+      }
+    },
   }, getCurrentDismissToken(petId, display, badge));
   const windowId = window.id;
 
@@ -141,7 +180,7 @@ function getOrCreateAgentPetWindow(petId: string): BrowserWindow {
     clearAgentDisplay(petId);
   });
   agentPetWindows.set(petId, window);
-  info("pet.agent", "created", { petId, windowId: window.id, offset, activeWindows: agentPetWindows.size, position: { x: initial.x - offset * 36, y: initial.y - offset * 24 } });
+  info("pet.agent", "created", { petId, windowId: window.id, offset, activeWindows: agentPetWindows.size, position: initial, confined: confinementBounds !== null });
   return window;
 }
 

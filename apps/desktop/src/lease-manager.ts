@@ -12,6 +12,14 @@ export interface PetLease {
   readonly acquiredAt: number;
   readonly lastHeartbeatAt: number;
   readonly expiresAt: number;
+  /** PID of the MCP client process (e.g. opencode) that acquired this lease. */
+  readonly clientPid?: number;
+  /** PID of the terminal emulator process hosting the client (resolved async). */
+  readonly terminalOwnerPid?: number;
+  /** Human-readable terminal app name, e.g. "Ghostty" or "Terminal". */
+  readonly terminalAppName?: string;
+  /** Numeric window ID from CGWindowList for the terminal window. */
+  readonly terminalWindowId?: number;
 }
 
 export interface LeaseSnapshot {
@@ -24,6 +32,12 @@ export interface LeaseSnapshot {
   readonly fallbackReason?: LeaseFallbackReason;
   readonly expiresAt: number;
   readonly leaseActive: boolean;
+  /** PID of the MCP client that acquired this lease. */
+  readonly clientPid?: number;
+  /** PID of the terminal emulator hosting the client (may be set async). */
+  readonly terminalOwnerPid?: number;
+  /** Terminal app name, e.g. "Ghostty". */
+  readonly terminalAppName?: string;
 }
 
 export interface LeaseManagerOptions {
@@ -61,8 +75,12 @@ export class LeaseManager {
     this.#onLog = options.onLog ?? (() => {});
   }
 
-  acquire(requestedPetId?: string): LeaseSnapshot {
+  acquire(requestedPetId?: string, clientPid?: number): LeaseSnapshot {
     const now = this.#now();
+    // INVARIANT: resolveTarget (which may call resolvePoolAssignment) and the
+    // Map.set below MUST remain synchronous with no await between them.
+    // Two concurrent acquire(undefined) calls could otherwise be assigned the
+    // same pool slot before either is registered.
     const target = this.#resolveTarget(requestedPetId);
     const lease: PetLease = {
       leaseId: randomUUID(),
@@ -73,11 +91,12 @@ export class LeaseManager {
       acquiredAt: now,
       lastHeartbeatAt: now,
       expiresAt: now + this.#ttlMs,
+      clientPid,
     };
 
     const hadExplicitLease = lease.targetKind === "explicit" && this.countExplicitLeases(lease.actualPetId) > 0;
     this.#leases.set(lease.leaseId, lease);
-    this.#onLog("info", "acquired", { leaseId: lease.leaseId, requestedPetId, targetKind: lease.targetKind, actualPetId: lease.actualPetId, fallbackReason: lease.fallbackReason, explicitLeaseCount: lease.targetKind === "explicit" ? this.countExplicitLeases(lease.actualPetId) : undefined, expiresAt: lease.expiresAt });
+    this.#onLog("info", "acquired", { leaseId: lease.leaseId, requestedPetId, targetKind: lease.targetKind, actualPetId: lease.actualPetId, fallbackReason: lease.fallbackReason, clientPid, explicitLeaseCount: lease.targetKind === "explicit" ? this.countExplicitLeases(lease.actualPetId) : undefined, expiresAt: lease.expiresAt });
     if (lease.targetKind === "explicit" && !hadExplicitLease) this.#onFirstExplicitLease(lease.actualPetId);
     return this.snapshot(lease);
   }
@@ -141,6 +160,32 @@ export class LeaseManager {
     return count;
   }
 
+  /**
+   * Update the terminal window identity on an existing lease.
+   * Called asynchronously after the PPID-walk resolves.
+   */
+  setTerminalIdentity(leaseId: string, info: { terminalOwnerPid: number; terminalAppName: string; terminalWindowId?: number }): void {
+    const lease = this.#leases.get(leaseId);
+    if (!lease) return;
+    const updated: PetLease = { ...lease, ...info };
+    this.#leases.set(leaseId, updated);
+    this.#onLog("debug", "terminal identity set", { leaseId, terminalOwnerPid: info.terminalOwnerPid, terminalAppName: info.terminalAppName, terminalWindowId: info.terminalWindowId });
+  }
+
+  /** Return all active leases that have a resolved terminal PID (for confinement polling). */
+  getConfinedLeases(): ReadonlyArray<PetLease & { terminalOwnerPid: number }> {
+    const result: Array<PetLease & { terminalOwnerPid: number }> = [];
+    for (const lease of this.#leases.values()) {
+      if (lease.terminalOwnerPid !== undefined) result.push(lease as PetLease & { terminalOwnerPid: number });
+    }
+    return result;
+  }
+
+  /** Get the raw PetLease for a lease ID (returns null if not found/expired). */
+  getRawLease(leaseId: string): PetLease | null {
+    return this.#leases.get(leaseId) ?? null;
+  }
+
   snapshot(lease: PetLease): LeaseSnapshot {
     const defaultPetId = this.#getDefaultPetId();
     const actualPetId = lease.targetKind === "default" ? defaultPetId : lease.actualPetId;
@@ -155,6 +200,9 @@ export class LeaseManager {
       fallbackReason: lease.fallbackReason,
       expiresAt: lease.expiresAt,
       leaseActive: true,
+      clientPid: lease.clientPid,
+      terminalOwnerPid: lease.terminalOwnerPid,
+      terminalAppName: lease.terminalAppName,
     };
   }
 }

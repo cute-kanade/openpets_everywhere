@@ -16,6 +16,7 @@ import { executeDefaultPetPluginCommand, executeDefaultPetPluginMenuSelect, getD
 import type { ActiveBubble } from "./plugin-bubble-arbiter.js";
 import type { PluginBubbleIndicator, PluginCommandForm, PluginBubbleHud, PluginBubbleHudItem } from "./plugin-sdk-bridge.js";
 import { defaultPetSprite, motionToSpriteState, resolveReactionSpriteState, type PetMotionState, type UniversalSpriteState } from "./reaction-animation-mapping.js";
+import { isFocusActionAvailable } from "./capabilities.js";
 
 export interface PetWindowInteractionHooks {
   readonly onBubbleDismissed?: (dismissToken: string) => void;
@@ -44,6 +45,11 @@ export interface AgentPetWindowOptions extends PetWindowInteractionHooks {
   readonly onCloseRequested: () => void;
   /** Skip the right-click plugin command section (plugin-spawned pets). */
   readonly plainContextMenu?: boolean;
+  /**
+   * Optional callback to bring the associated terminal session window to focus.
+   * When provided, a "Focus session window" item is added to the right-click menu.
+   */
+  readonly onFocusSessionWindow?: () => void;
 }
 
 /** Plugin-arbiter bubble content for one pet surface (both slots). */
@@ -119,7 +125,7 @@ export function createAgentPetWindow(options: AgentPetWindowOptions, dismissToke
   info("pet.window", "agent window create", { windowId: window.id, petId: options.petId, displayName: options.displayName, position: options.position, hasDisplay: Boolean(options.display), badge: options.badge });
   installMousePassthroughAndDrag(window, options);
   installMotionStatePublisher(window);
-  installPetContextMenu(window, { label: t("pet.menu.closePet"), click: options.onCloseRequested });
+  installPetContextMenu(window, { label: t("pet.menu.closePet"), click: options.onCloseRequested, focusSessionWindow: options.onFocusSessionWindow });
   void loadExplicitPetContent(window, options.petId, options.display, options.badge, dismissToken, options.scale);
   return window;
 }
@@ -135,7 +141,7 @@ export function recoverPetMouseInterop(window: BrowserWindow, reason: string): v
   debug("pet.window", "mouse interop recovery skipped", { windowId: window.id, reason, skippedReason: "unregistered-window" });
 }
 
-function installPetContextMenu(window: BrowserWindow, action: { readonly label: string; readonly click: () => void; readonly defaultPet?: boolean }): void {
+function installPetContextMenu(window: BrowserWindow, action: { readonly label: string; readonly click: () => void; readonly defaultPet?: boolean; readonly focusSessionWindow?: () => void }): void {
   const webContents = window.webContents;
   const handleContextMenu = (event: Electron.Event): void => {
     event.preventDefault();
@@ -148,8 +154,19 @@ function installPetContextMenu(window: BrowserWindow, action: { readonly label: 
   });
 }
 
-async function buildPetContextMenuTemplate(action: { readonly label: string; readonly click: () => void; readonly defaultPet?: boolean }): Promise<Electron.MenuItemConstructorOptions[]> {
-  if (!action.defaultPet) return [{ label: action.label, click: action.click }];
+async function buildPetContextMenuTemplate(action: { readonly label: string; readonly click: () => void; readonly defaultPet?: boolean; readonly focusSessionWindow?: () => void }): Promise<Electron.MenuItemConstructorOptions[]> {
+  if (!action.defaultPet) {
+    const template: Electron.MenuItemConstructorOptions[] = [];
+    if (action.focusSessionWindow) {
+      const a11yReady = isFocusActionAvailable();
+      const focusLabel = a11yReady
+        ? t("pet.menu.focusSessionWindow")
+        : t("pet.menu.focusSessionWindowNoA11y");
+      template.push({ label: focusLabel, click: action.focusSessionWindow }, { type: "separator" });
+    }
+    template.push({ label: action.label, click: action.click });
+    return template;
+  }
   const commands = await getDefaultPetPluginCommands();
   const topLevel: Electron.MenuItemConstructorOptions[] = [];
   const plugins = new Map<string, { name: string; commands: Electron.MenuItemConstructorOptions[] }>();

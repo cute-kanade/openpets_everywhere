@@ -36,6 +36,10 @@ export const ptBR: Partial<Messages> = {
   "pet.menu.hidePet": "Ocultar pet",
   "pet.menu.closePet": "Fechar pet",
   "pet.menu.openControlCenter": "Abrir Central de controle",
+  "pet.menu.focusSessionWindow": "Focar janela da sessão",
+  "pet.menu.focusSessionWindowNoA11y": "Focar janela da sessão (requer Acessibilidade)",
+  "pet.fallback.unavailableTitle": "Pet \"{petId}\" indisponível",
+  "pet.fallback.unavailableBody": "{petId} não está instalado, por isso o pet padrão está sendo usado. O confinamento de janela só funciona com um pet instalado — execute: openpets mcp --pet <installed-pet-id>",
 
   // --- Common (renderer, shared across views) ---
   "common.retry": "Tentar novamente",

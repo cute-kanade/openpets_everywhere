@@ -80,7 +80,7 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     },
     listPets: async () => parsePetListResult(await sendDiscoveredRequest("pets.list", {}, options)),
     installPet: async (petId) => parsePetInstallResult(await sendDiscoveredRequest("pets.install", { petId: validatePetId(petId) }, { ...options, responseTimeoutMs: options.responseTimeoutMs ?? 60_000 })),
-    acquireLease: (leaseOptions) => sendDiscoveredRequest("lease.acquire", { requestedPetId: leaseOptions?.requestedPetId }, options),
+    acquireLease: (leaseOptions) => sendDiscoveredRequest("lease.acquire", { requestedPetId: leaseOptions?.requestedPetId, clientPid: process.pid }, options),
     heartbeatLease: (leaseId) => sendDiscoveredRequest("lease.heartbeat", { leaseId }, options),
     releaseLease: (leaseId) => sendDiscoveredRequest("lease.release", { leaseId }, options),
     react: (reaction, reactOptions) => sendDiscoveredRequest("pet.react", { reaction: validateReaction(reaction), leaseId: reactOptions?.leaseId }, options),

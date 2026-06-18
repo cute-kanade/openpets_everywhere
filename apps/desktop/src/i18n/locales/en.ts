@@ -39,6 +39,14 @@ export const en = {
   "pet.menu.hidePet": "Hide pet",
   "pet.menu.closePet": "Close pet",
   "pet.menu.openControlCenter": "Open Control Center",
+  "pet.menu.focusSessionWindow": "Focus session window",
+  "pet.menu.focusSessionWindowNoA11y": "Focus session window (needs Accessibility)",
+  "pet.fallback.unavailableTitle": "Pet \"{petId}\" unavailable",
+  "pet.fallback.unavailableBody": "{petId} isn't installed, so the default pet is being used. Window confinement only works with an installed pet — run: openpets mcp --pet <installed-pet-id>",
+
+  // --- Confinement / Screen Recording permission (main process) ---
+  "confinement.screenPermission.title": "Screen Recording permission needed",
+  "confinement.screenPermission.body": "OpenPets needs Screen Recording access to keep your pet inside its window. Click to open System Settings.",
 
   // --- Common (renderer, shared across views) ---
   "common.retry": "Retry",
@@ -211,6 +219,10 @@ export const en = {
   "settings.toast.analyticsSaved": "Analytics preference saved.",
   "settings.toast.petScaleSaved": "Pet scale saved.",
   "settings.toast.positionReset": "Default pet position reset.",
+  "settings.toast.confinementSaved": "Window confinement saved.",
+  "settings.toast.petPoolSaved": "Session pool saved.",
+  "settings.petConfinement.label": "Limit pet to its window",
+  "settings.petConfinement.description": "When on, a pet stays within its terminal window while that window is visible.",
   "settings.busy.saving": "Saving",
   "settings.busy.resetting": "Resetting",
   "settings.busy.opening": "Opening",

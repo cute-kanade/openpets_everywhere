@@ -36,6 +36,10 @@ export const zhHans: Partial<Messages> = {
   "pet.menu.hidePet": "隐藏宠物",
   "pet.menu.closePet": "关闭宠物",
   "pet.menu.openControlCenter": "打开控制中心",
+  "pet.menu.focusSessionWindow": "聚焦会话窗口",
+  "pet.menu.focusSessionWindowNoA11y": "聚焦会话窗口（需要辅助功能权限）",
+  "pet.fallback.unavailableTitle": "宠物\"{petId}\"不可用",
+  "pet.fallback.unavailableBody": "{petId} 未安装，将使用默认宠物。窗口限制仅对已安装的宠物有效，请运行：openpets mcp --pet <installed-pet-id>",
 
   // --- Common (renderer, shared across views) ---
   "common.retry": "重试",
