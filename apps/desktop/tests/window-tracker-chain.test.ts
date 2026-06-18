@@ -127,4 +127,34 @@ function makeWindow(ownerPid: number, ownerName = `proc-${ownerPid}`): ChainWind
   assert.equal(result, null, "(8) null ppid on first hop returns null");
 }
 
+// ---------------------------------------------------------------------------
+// (9) clientPid excluded from terminal resolution — cycle back to clientPid
+//     via a middleman must NOT return clientPid even if it owns a window.
+//     Without visited.add(clientPid) pre-seeding, windowPids.has(clientPid)
+//     would match and wrongly confine the pet to the agent's own window.
+// ---------------------------------------------------------------------------
+{
+  // clientPid = 300 owns a visible window.
+  // Chain: 300 → 301 → 300 (cycle back).
+  // The real terminal would be 999 but is unreachable; result must be null.
+  const tree = makeTree({ 300: 301, 301: 300 });
+  const windows = [makeWindow(300, "AgentWindow"), makeWindow(999, "Terminal")];
+  const result = await findTerminalPidInChain(300, windows, 10, tree);
+  assert.equal(result, null, "(9) clientPid owning a window must NOT be returned as the terminal");
+}
+
+// ---------------------------------------------------------------------------
+// (10) Regression: normal multi-hop chain still resolves after clientPid
+//      is pre-seeded in visited (should not affect valid forward traversal).
+// ---------------------------------------------------------------------------
+{
+  // 400 (client) → 401 (shell) → 402 (terminal window owner)
+  const tree = makeTree({ 400: 401, 401: 402 });
+  const windows = [makeWindow(402, "Ghostty")];
+  const result = await findTerminalPidInChain(400, windows, 10, tree);
+  assert.ok(result !== null, "(10) normal chain still resolves after clientPid pre-seed");
+  assert.equal(result.pid, 402, "(10) correct terminal PID returned");
+  assert.equal(result.appName, "Ghostty", "(10) correct appName returned");
+}
+
 console.log("window-tracker-chain validation passed.");

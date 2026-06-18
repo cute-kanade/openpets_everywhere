@@ -1216,8 +1216,8 @@ function SettingsView() {
 
             <div className="settings-group">
               <ToggleRow
-                title="Assign a different pet to each session"
-                description="Your default pet stays on screen as always. Each new agent session claims the next pet from this list; once they're all in use, new sessions get a random pet."
+                title={t("settings.petPool.label")}
+                description={t("settings.petPool.description")}
                 checked={settings?.preferences.petPoolEnabled ?? false}
                 disabled={!settings || !!busy}
                 onChange={(checked) => patchPreferences({ petPoolEnabled: checked }, t("settings.toast.petPoolSaved"))}

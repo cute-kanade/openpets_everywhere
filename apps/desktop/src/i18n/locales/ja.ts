@@ -212,6 +212,8 @@ export const ja: Partial<Messages> = {
   "settings.toast.analyticsSaved": "分析設定を保存しました。",
   "settings.toast.petScaleSaved": "ペットのサイズを保存しました。",
   "settings.toast.positionReset": "デフォルトペットの位置をリセットしました。",
+  "settings.petPool.label": "Use a different pet per session",
+  "settings.petPool.description": "When on, each concurrent agent session gets its own pet from the pool.",
   "settings.busy.saving": "保存中",
   "settings.busy.resetting": "リセット中",
   "settings.busy.opening": "開いています",

@@ -212,6 +212,8 @@ export const ptBR: Partial<Messages> = {
   "settings.toast.analyticsSaved": "Preferência de analytics salva.",
   "settings.toast.petScaleSaved": "Escala do pet salva.",
   "settings.toast.positionReset": "Posição do pet padrão redefinida.",
+  "settings.petPool.label": "Use a different pet per session",
+  "settings.petPool.description": "When on, each concurrent agent session gets its own pet from the pool.",
   "settings.busy.saving": "Salvando",
   "settings.busy.resetting": "Redefinindo",
   "settings.busy.opening": "Abrindo",

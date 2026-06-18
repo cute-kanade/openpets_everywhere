@@ -212,6 +212,8 @@ export const es419: Partial<Messages> = {
   "settings.toast.analyticsSaved": "Preferencia de analíticas guardada.",
   "settings.toast.petScaleSaved": "Escala de la mascota guardada.",
   "settings.toast.positionReset": "Posición de la mascota predeterminada restablecida.",
+  "settings.petPool.label": "Use a different pet per session",
+  "settings.petPool.description": "When on, each concurrent agent session gets its own pet from the pool.",
   "settings.busy.saving": "Guardando",
   "settings.busy.resetting": "Restableciendo",
   "settings.busy.opening": "Abriendo",

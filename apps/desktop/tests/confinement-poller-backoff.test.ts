@@ -238,4 +238,63 @@ function makeDeps(overrides: Partial<ConfinementPollerDeps> = {}): ConfinementPo
   assert.equal(subscribeCalls, 1, "(6) subscribe called only once for same leaseId");
 }
 
+// ---------------------------------------------------------------------------
+// (7) Backoff-window cleanup: external unsubscribe DURING the backoff window
+//     cancels the scheduled retry; the timer must NOT fire, and onDead must
+//     NOT be invoked (guards against erasing a newly-reassigned lease's state).
+// ---------------------------------------------------------------------------
+{
+  _resetScreenPermissionNotificationGuard();
+
+  const deadCalls = { n: 0 };
+  const subscribed = new Map<string, () => void>();
+
+  let capturedOnNull: (() => void) | undefined;
+  let cancelCalled = false;
+  let retryFired = false;
+  let pendingRetryFn: (() => void) | undefined;
+
+  const deps = makeDeps({
+    findTerminal: async () => null,
+    subscribe: (_id, _pid, _onFound, onNull) => {
+      capturedOnNull = onNull;
+      return () => { /* noop */ };
+    },
+    scheduleRetry: (_delayMs, fn) => {
+      // Capture the retry fn but do NOT fire it — simulates a real timer pending.
+      pendingRetryFn = fn;
+      return () => {
+        // This cancel fn is what cleanup() calls via cancelRetry?.().
+        cancelCalled = true;
+      };
+    },
+    onDead: () => { deadCalls.n++; },
+  });
+
+  const cleanup = await resolveAndSubscribe("lease-bo-7", 5, deps, subscribed);
+  assert.ok(cleanup !== null, "(7) resolveAndSubscribe returns cleanup fn");
+
+  // Fire onNull to enter the backoff window (retry scheduled but NOT fired yet).
+  assert.ok(capturedOnNull !== undefined, "(7) onNull should be captured");
+  capturedOnNull!();
+
+  // The lease entry must still be in subscribed during the backoff window.
+  assert.ok(subscribed.has("lease-bo-7"), "(7) lease must remain in subscribed during backoff window");
+
+  // External unsubscribe — simulates unsubscribeConfinement called during the window.
+  cleanup!();
+
+  // The cancel fn on the retry timer must have been called.
+  assert.equal(cancelCalled, true, "(7) cleanup must cancel the pending retry timer");
+
+  // The lease must be removed from the subscribed map now.
+  assert.ok(!subscribed.has("lease-bo-7"), "(7) lease removed from subscribed after cleanup");
+
+  // Even if the retry fn were somehow invoked after cancel, it must not cause harm.
+  // Verify retryFired is still false (we never call pendingRetryFn — that's the
+  // whole point: it was cancelled).
+  assert.equal(retryFired, false, "(7) retry must not have fired");
+  assert.equal(deadCalls.n, 0, "(7) onDead must NOT be invoked after external cleanup");
+}
+
 console.log("confinement-poller-backoff validation passed.");

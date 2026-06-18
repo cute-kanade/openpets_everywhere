@@ -37,7 +37,10 @@ export async function findTerminalPidInChain(
   getParent: (pid: number) => Promise<number | null> = async () => null,
 ): Promise<{ pid: number; appName: string } | null> {
   const windowPids = new Set(windows.map((w) => w.ownerPid));
-  const visited = new Set<number>();
+  // Pre-seed visited with clientPid so that a chain clientPid → X → clientPid
+  // cannot resolve back to clientPid (the agent process itself is never a
+  // valid terminal emulator, even if it happens to own a visible window).
+  const visited = new Set<number>([clientPid]);
   let current = clientPid;
 
   for (let depth = 0; depth < maxDepth; depth++) {

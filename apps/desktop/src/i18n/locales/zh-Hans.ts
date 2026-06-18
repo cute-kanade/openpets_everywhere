@@ -212,6 +212,8 @@ export const zhHans: Partial<Messages> = {
   "settings.toast.analyticsSaved": "分析偏好已保存。",
   "settings.toast.petScaleSaved": "宠物大小已保存。",
   "settings.toast.positionReset": "默认宠物位置已重置。",
+  "settings.petPool.label": "Use a different pet per session",
+  "settings.petPool.description": "When on, each concurrent agent session gets its own pet from the pool.",
   "settings.busy.saving": "保存中",
   "settings.busy.resetting": "重置中",
   "settings.busy.opening": "打开中",

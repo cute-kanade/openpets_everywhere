@@ -212,6 +212,8 @@ export const ko: Partial<Messages> = {
   "settings.toast.analyticsSaved": "분석 설정이 저장되었습니다.",
   "settings.toast.petScaleSaved": "펫 크기가 저장되었습니다.",
   "settings.toast.positionReset": "기본 펫 위치가 초기화되었습니다.",
+  "settings.petPool.label": "Use a different pet per session",
+  "settings.petPool.description": "When on, each concurrent agent session gets its own pet from the pool.",
   "settings.busy.saving": "저장 중",
   "settings.busy.resetting": "초기화 중",
   "settings.busy.opening": "여는 중",

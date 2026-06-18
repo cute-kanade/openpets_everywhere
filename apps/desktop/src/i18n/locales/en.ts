@@ -223,6 +223,8 @@ export const en = {
   "settings.toast.petPoolSaved": "Session pool saved.",
   "settings.petConfinement.label": "Limit pet to its window",
   "settings.petConfinement.description": "When on, a pet stays within its terminal window while that window is visible.",
+  "settings.petPool.label": "Use a different pet per session",
+  "settings.petPool.description": "When on, each concurrent agent session gets its own pet from the pool.",
   "settings.busy.saving": "Saving",
   "settings.busy.resetting": "Resetting",
   "settings.busy.opening": "Opening",

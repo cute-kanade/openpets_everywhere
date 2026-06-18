@@ -174,12 +174,16 @@ export async function resolveAndSubscribe(
       },
       () => {
         // Terminal NOT FOUND this tick: back off, unsubscribe, retry later.
+        // NOTE: do NOT call subscribed.delete(leaseId) here. The map entry must
+        // remain live during the backoff window so an external unsubscribeConfinement
+        // can still reach cleanup() and cancel the pending timer. cleanup() owns
+        // the sole subscribed.delete(leaseId) call.
         nullCount++;
         handleNullResolve(deps);
 
-        // Tear down the current subscription; schedule a re-subscribe.
+        // Tear down only the current 500ms subscription; do NOT remove the
+        // outer cleanup from subscribed — it stays reachable for external cancel.
         currentUnsub?.(); currentUnsub = null;
-        subscribed.delete(leaseId);
 
         if (!deps.isAlive()) {
           deps.onDead();

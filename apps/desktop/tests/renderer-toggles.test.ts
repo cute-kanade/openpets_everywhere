@@ -147,4 +147,34 @@ assert.doesNotMatch(
   "plugin toggle: event.target.checked must not be read inside an async closure",
 );
 
+// ─── 3. Pet-pool settings toggle ─────────────────────────────────────────────
+
+// (a) The pet-pool ToggleRow title uses a localized t() key, not a hardcoded string.
+assert.match(
+  rendererSource,
+  /title=\{t\("settings\.petPool\.label"\)\}/,
+  'pet-pool toggle: title must use t("settings.petPool.label")',
+);
+
+// (b) The pet-pool ToggleRow description uses a localized t() key.
+assert.match(
+  rendererSource,
+  /description=\{t\("settings\.petPool\.description"\)\}/,
+  'pet-pool toggle: description must use t("settings.petPool.description")',
+);
+
+// (c) onChange calls patchPreferences with the correct key and a localized toast.
+assert.match(
+  rendererSource,
+  /patchPreferences\(\{ petPoolEnabled: checked \},\s*t\("settings\.toast\.petPoolSaved"\)\)/,
+  'pet-pool toggle: onChange must pass t("settings.toast.petPoolSaved") as the toast',
+);
+
+// (d) Confirm no hardcoded English title string remains for the pool toggle.
+assert.doesNotMatch(
+  rendererSource,
+  /title="Assign a different pet to each session"/,
+  'pet-pool toggle: hardcoded English title must not be present',
+);
+
 console.error("Renderer toggle regression tests passed.");
