@@ -1196,7 +1196,7 @@ function SettingsView() {
               <ToggleRow
                 title={t("settings.petCrossDisplay.label")}
                 description={t("settings.petCrossDisplay.description")}
-                checked={settings?.preferences.petCrossDisplayEnabled ?? true}
+                checked={settings?.preferences.petCrossDisplayEnabled ?? false}
                 disabled={!settings || !!busy}
                 testId="setting-pet-cross-display-toggle"
                 onChange={(checked) => patchPreferences({ petCrossDisplayEnabled: checked }, t("settings.toast.crossDisplaySaved"))}

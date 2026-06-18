@@ -244,48 +244,51 @@ export function register(OpenPetsPlugin) {
       // Set a visible status so the user can see the plugin is active.
       await ctx.status.set({ text: ctx.t("status.active", { mode: cfg.mode }), tone: "info" });
 
+      // Transient-pulse busy gate — resumes automatically via timer.
+      // Production never emits kind:"idle"/active:false, so the old enter/exit
+      // model would pause forever. Instead: each activity pulse restarts a
+      // self-cancelling timer; when it fires the pet walks again.
+      /** @type {ReturnType<typeof setTimeout>|null} */
+      let resumeTimer = null;
+
       // React to config changes — tear down old mode, spin up new one.
+      // Also cancels any pending resume so a stale timer cannot restart a
+      // mode that belongs to the old config.
       const unsubConfig = ctx.config.onChange(async (newRaw) => {
         const newCfg = cleanConfig(newRaw);
+        clearTimeout(resumeTimer);
+        resumeTimer = null;
         stopCurrentMode();
         cfg = newCfg;
         stopCurrentMode = startMode(ctx, cfg);
         await ctx.status.set({ text: ctx.t("status.active", { mode: cfg.mode }), tone: "info" });
       });
 
-      // Pause on agent:activity if pauseWhenBusy is enabled.
-      // Per-pet busy tracking: a Set of petIds that are currently busy.
-      // This ensures one busy pet doesn't pause movement for unaffected pets.
-      // NOTE (Task 3 deferred): walkabout currently drives only ctx.pet (the
-      // default pet). Multi-pet driving via ctx.pets.list() is a separate
-      // workstream — pool/lease pets are not motion-addressable by the plugin SDK.
-      /** @type {Set<string>} */
-      const busyPets = new Set();
-
+      // Pause on agent:activity — transient pulse model scoped to default pet.
+      // - Ignores events from other session pets (cross-session leak fix).
+      // - Only reacts to active:true pulses; no active:false branch needed.
+      // NOTE: walkabout drives only ctx.pet (the default pet). Multi-pet driving
+      // via ctx.pets.list() is deferred — pool/lease pets are not motion-addressable.
       const unsubActivity = ctx.events.on("agent:activity", async (event) => {
         if (!cfg.pauseWhenBusy) return;
-        const isBusy = event?.active === true;
-        const petId = event?.petId ?? "default";
+        if ((event?.petId ?? "default") !== "default") return; // ignore other sessions' pets
+        if (event?.active !== true) return;                    // only react to activity pulses
 
-        if (isBusy && !busyPets.has(petId)) {
-          busyPets.add(petId);
-          // Only pause movement if this is the first busy pet affecting our pet.
-          if (busyPets.size === 1) {
-            stopCurrentMode();
-            await ctx.status.set({ text: ctx.t("status.paused"), tone: "warning" });
-          }
-        } else if (!isBusy && busyPets.has(petId)) {
-          busyPets.delete(petId);
-          // Resume movement only when no pets are busy anymore.
-          if (busyPets.size === 0) {
-            stopCurrentMode = startMode(ctx, cfg);
-            await ctx.status.set({ text: ctx.t("status.active", { mode: cfg.mode }), tone: "info" });
-          }
-        }
+        stopCurrentMode();
+        clearTimeout(resumeTimer);
+        await ctx.status.set({ text: ctx.t("status.paused"), tone: "warning" });
+
+        resumeTimer = setTimeout(() => {
+          resumeTimer = null;
+          stopCurrentMode = startMode(ctx, cfg);
+          ctx.status.set({ text: ctx.t("status.active", { mode: cfg.mode }), tone: "info" }).catch(() => {});
+        }, cfg.intervalMs * 2);
       });
 
       // Return cleanup.
       return function stop() {
+        clearTimeout(resumeTimer);
+        resumeTimer = null;
         stopCurrentMode();
         unsubConfig();
         unsubActivity();

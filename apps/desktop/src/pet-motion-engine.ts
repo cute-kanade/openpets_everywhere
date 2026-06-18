@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+
 import type { BrowserWindow } from "electron";
 
 import { clampToTerminalBounds, getEffectiveConfinementBounds } from "./confinement-manager.js";
@@ -15,6 +17,11 @@ interface ScreenImpl {
   getDisplayNearestPoint(point: { x: number; y: number }): { workArea: { x: number; y: number; width: number; height: number } };
 }
 type IsPetWindowDraggingFn = (win: BrowserWindow) => boolean;
+
+// createRequire restores a working `require` in this ESM module so the lazy
+// electron / pet-window loads below succeed at runtime (the production bundle
+// runs as ESM where the CommonJS `require` global is not defined).
+const require = createRequire(import.meta.url);
 
 // Lazily loaded — avoids a hard electron import at module-load time so that
 // unit tests can call _setScreenForTesting() without requiring Electron.

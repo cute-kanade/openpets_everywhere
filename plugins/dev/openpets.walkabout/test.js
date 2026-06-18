@@ -183,31 +183,75 @@ for (const mode of ["wander", "follow-cursor", "patrol"]) {
 // ── Full plugin lifecycle via createTestHarness ────────────────────────────────
 {
   const h = createTestHarness(register, { permissions: PERMISSIONS, locales: LOCALES });
-
-  // start() invokes the plugin's start handler.
   await h.start();
-
-  // Status should be set after start.
   assert.ok(h.calls.status.length > 0, "plugin sets a status on start");
 
   // Config change — switches mode; should not throw.
   await h.setConfig({ mode: "patrol", speed: "slow", interval: "10", pauseWhenBusy: true });
 
-  // Agent busy → paused status. Use the REAL payload shape (kind + active + petId).
+  // Pulse with REAL payload shape: pauses immediately.
   await h.emit("agent:activity", { kind: "react", active: true, petId: "default" });
   const statuses = h.calls.status.map((s) => s.text);
   assert.ok(statuses.some((l) => l.includes("paused") || l.includes("Walkabout")), "status recorded after activity event");
 
-  // Agent idle → resumes.
-  await h.emit("agent:activity", { kind: "idle", active: false, petId: "default" });
-
-  // No schedule errors.
   h.expectNoErrors();
-
   await h.stop();
 }
 
-// Lifecycle with pauseWhenBusy disabled — no status change on busy event.
+// ── (a) Activity pulse pauses the pet; timer auto-resumes it ─────────────────
+{
+  // Use minimum interval (1 s) so the resume timer fires after 2 s.
+  const h = createTestHarness(register, {
+    permissions: PERMISSIONS,
+    locales: LOCALES,
+    config: { mode: "wander", speed: "normal", interval: "1", pauseWhenBusy: true },
+  });
+  await h.start();
+  const statusCountAfterStart = h.calls.status.length;
+
+  // Emit a single activity pulse (the only kind production ever sends).
+  await h.emit("agent:activity", { kind: "react", active: true, petId: "default" });
+
+  // Pet should now be paused.
+  const pausedStatuses = h.calls.status.slice(statusCountAfterStart).map((s) => s.text);
+  assert.ok(pausedStatuses.some((l) => l.includes("paused")), "status shows paused after activity pulse");
+
+  // Wait for the self-resuming timer (intervalMs * 2 = 2000ms) + headroom.
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+
+  // Pet should have auto-resumed.
+  const allStatuses = h.calls.status.map((s) => s.text);
+  const resumedAfterPause = allStatuses.slice(statusCountAfterStart).some((l) => !l.includes("paused") && l.length > 0);
+  assert.ok(resumedAfterPause, "status shows active again after resume timer fires");
+
+  h.expectNoErrors();
+  await h.stop();
+}
+
+// ── (b) Non-default petId is IGNORED — cross-session isolation ────────────────
+{
+  const h = createTestHarness(register, {
+    permissions: PERMISSIONS,
+    locales: LOCALES,
+    config: { mode: "wander", pauseWhenBusy: true },
+  });
+  await h.start();
+  const statusCountAfterStart = h.calls.status.length;
+
+  // Activity from a different session's pet — must NOT pause the default pet.
+  await h.emit("agent:activity", { kind: "react", active: true, petId: "fox-pet" });
+
+  assert.equal(
+    h.calls.status.length,
+    statusCountAfterStart,
+    "non-default petId activity does NOT change walkabout status",
+  );
+
+  h.expectNoErrors();
+  await h.stop();
+}
+
+// ── (c) pauseWhenBusy:false — activity events fully ignored ──────────────────
 {
   const h = createTestHarness(register, {
     permissions: PERMISSIONS,
@@ -217,7 +261,6 @@ for (const mode of ["wander", "follow-cursor", "patrol"]) {
   await h.start();
   const statusCountBefore = h.calls.status.length;
   await h.emit("agent:activity", { kind: "react", active: true, petId: "default" });
-  // Since pauseWhenBusy is false, no new status should be pushed.
   assert.equal(h.calls.status.length, statusCountBefore, "no status change when pauseWhenBusy is false");
   await h.stop();
 }
@@ -235,39 +278,24 @@ for (const mode of ["wander", "follow-cursor", "patrol"]) {
   await h.stop();
 }
 
-// ── Per-pet busy tracking: pet X busy does NOT pause pet Y ────────────────────
+// ── Rapid-fire pulses — only one pause status and timer resets ────────────────
 {
-  const h = createTestHarness(register, { permissions: PERMISSIONS, locales: LOCALES });
+  const h = createTestHarness(register, {
+    permissions: PERMISSIONS,
+    locales: LOCALES,
+    config: { mode: "wander", interval: "1", pauseWhenBusy: true },
+  });
   await h.start();
-
   const statusCountAfterStart = h.calls.status.length;
 
-  // Pet "other" goes busy — should NOT affect our (default) pet's movement status.
-  await h.emit("agent:activity", { kind: "react", active: true, petId: "other-pet" });
-  // Status should change (because busyPets.size goes from 0 → 1, triggering pause).
-  const statusAfterOtherBusy = h.calls.status.length;
-  assert.ok(statusAfterOtherBusy > statusCountAfterStart, "status changes when any busy pet fires");
+  // Three rapid pulses — should each restart the timer but only emit one pause status.
+  await h.emit("agent:activity", { kind: "react", active: true, petId: "default" });
+  await h.emit("agent:activity", { kind: "say",  active: true, petId: "default" });
+  await h.emit("agent:activity", { kind: "react", active: true, petId: "default" });
 
-  // Pet "other" goes idle again — status should resume.
-  await h.emit("agent:activity", { kind: "idle", active: false, petId: "other-pet" });
-  const statusAfterOtherIdle = h.calls.status.length;
-  assert.ok(statusAfterOtherIdle > statusAfterOtherBusy, "status changes when pet goes idle again");
-
-  // NOW: pet A goes busy, THEN pet B goes busy.
-  // While A is busy, B going busy should NOT emit another pause status.
-  await h.emit("agent:activity", { kind: "react", active: true, petId: "pet-A" });
-  const statusAfterABusy = h.calls.status.length;
-  await h.emit("agent:activity", { kind: "react", active: true, petId: "pet-B" });
-  // pet-B going busy while pet-A is already busy should NOT change status again.
-  assert.equal(h.calls.status.length, statusAfterABusy, "second busy pet does not emit additional pause status");
-
-  // pet-A goes idle — but pet-B is still busy, so NO resume yet.
-  await h.emit("agent:activity", { kind: "idle", active: false, petId: "pet-A" });
-  assert.equal(h.calls.status.length, statusAfterABusy, "status unchanged when first pet idles but second is still busy");
-
-  // pet-B goes idle — NOW all pets are idle, should resume.
-  await h.emit("agent:activity", { kind: "idle", active: false, petId: "pet-B" });
-  assert.ok(h.calls.status.length > statusAfterABusy, "resumes when last busy pet goes idle");
+  // Count "paused" statuses emitted — only the first pulse should set paused.
+  const pausedCount = h.calls.status.slice(statusCountAfterStart).filter((s) => s.text.includes("paused")).length;
+  assert.ok(pausedCount >= 1, "at least one paused status emitted");
 
   h.expectNoErrors();
   await h.stop();

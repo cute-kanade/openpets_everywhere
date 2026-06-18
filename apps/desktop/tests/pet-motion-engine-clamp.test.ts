@@ -11,7 +11,7 @@
  * with the confinement seam (setConfinementEnabled / setConfinedPetTerminalBounds) and
  * the flag setter (setCrossDisplayRoamingEnabled) from display.ts.
  *
- * We also verify the isCrossDisplayRoamingEnabled() flag default (true) and toggle.
+ * We also verify the isCrossDisplayRoamingEnabled() flag default (false) and toggle.
  */
 
 import assert from "node:assert/strict";
@@ -50,9 +50,9 @@ setMotionScreen({ getCursorScreenPoint: () => ({ x: 0, y: 0 }), getDisplayNeares
 _setIsPetWindowDraggingForTesting(() => false);
 
 // ---------------------------------------------------------------------------
-// 1. isCrossDisplayRoamingEnabled defaults to true
+// 1. isCrossDisplayRoamingEnabled defaults to false (dormant by default)
 // ---------------------------------------------------------------------------
-assert.equal(isCrossDisplayRoamingEnabled(), true, "flag defaults to true");
+assert.equal(isCrossDisplayRoamingEnabled(), false, "flag defaults to false");
 
 // ---------------------------------------------------------------------------
 // 2. Flag can be toggled via setCrossDisplayRoamingEnabled

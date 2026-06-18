@@ -644,7 +644,7 @@ function createDefaultState(): OpenPetsStateV1 {
       petPoolOrder: undefined,
       petPoolEnabled: true,
       petConfinementEnabled: true,
-      petCrossDisplayEnabled: true,
+      petCrossDisplayEnabled: false,
     },
     pets: {
       installed: [builtInPet],

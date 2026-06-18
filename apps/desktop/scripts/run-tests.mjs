@@ -43,6 +43,7 @@ const behaviorTests = [
   ".test-dist/tests/pet-motion-engine-clamp.test.js",
   ".test-dist/tests/display.test.js",
   ".test-dist/tests/renderer-toggles.test.js",
+  ".test-dist/tests/plugin-agent-activity.test.js",
 ];
 const contractTests = [
   ".test-dist/contracts/local-ipc-protocol.contract.js",

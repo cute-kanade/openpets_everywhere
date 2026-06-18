@@ -1,6 +1,15 @@
+import { createRequire } from "node:module";
 import type { Rectangle } from "electron";
 
 import { deriveDisplayKey } from "./app-state-core.js";
+
+// `electron` is loaded lazily (via createRequire, inside getScreen()) rather
+// than imported at module scope: this module is pulled into the plugin runtime
+// graph and the unit-test suite, which run under plain Node where the
+// `electron` shim has no named `screen` export. createRequire restores a
+// working `require` in this ESM module so the lazy load succeeds at runtime.
+const require = createRequire(import.meta.url);
+
 export interface Point {
   readonly x: number;
   readonly y: number;
@@ -237,11 +246,11 @@ export function clampToVisibleWorkArea(position: Point, size: WindowSize = defau
 
 // ---------------------------------------------------------------------------
 // Cross-display roaming flag — mirrors petConfinementEnabled/setConfinementEnabled
-// pattern in confinement-manager.ts.  Default true (on by default; disable as
-// a kill-switch if cross-display causes unexpected behaviour).
+// pattern in confinement-manager.ts.  Default false (dormant/off by default;
+// enabled explicitly via the petCrossDisplayEnabled preference).
 // ---------------------------------------------------------------------------
 
-let _crossDisplayRoamingEnabled = true;
+let _crossDisplayRoamingEnabled = false;
 
 /**
  * Called by windows.ts when the petCrossDisplayEnabled preference changes.

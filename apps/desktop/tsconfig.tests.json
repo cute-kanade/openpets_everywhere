@@ -9,5 +9,5 @@
     "lib": ["ES2022"]
   },
   "include": ["tests/**/*.ts", "contracts/**/*.ts", "src/**/*.ts"],
-  "exclude": ["dist", ".test-dist", "node_modules", "src/renderer/**", "tests/plugin-agent-activity.test.ts"]
+  "exclude": ["dist", ".test-dist", "node_modules", "src/renderer/**"]
 }
