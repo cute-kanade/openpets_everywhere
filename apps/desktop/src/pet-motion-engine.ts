@@ -1,8 +1,54 @@
-import { BrowserWindow, screen } from "electron";
+import type { BrowserWindow } from "electron";
 
 import { clampToTerminalBounds, getEffectiveConfinementBounds } from "./confinement-manager.js";
 import { clampToVisibleWorkArea, defaultPetWindowSize, type Point } from "./display.js";
-import { isPetWindowDragging } from "./pet-window.js";
+// isPetWindowDragging is lazily loaded via _setIsPetWindowDraggingForTesting seam
+
+// ---------------------------------------------------------------------------
+// Testability seams — allow unit tests to inject mock implementations without
+// requiring a running Electron process.
+// Same pattern as setConfinementEnabled() in confinement-manager.ts.
+// ---------------------------------------------------------------------------
+
+interface ScreenImpl {
+  getCursorScreenPoint(): { x: number; y: number };
+  getDisplayNearestPoint(point: { x: number; y: number }): { workArea: { x: number; y: number; width: number; height: number } };
+}
+type IsPetWindowDraggingFn = (win: BrowserWindow) => boolean;
+
+// Lazily loaded — avoids a hard electron import at module-load time so that
+// unit tests can call _setScreenForTesting() without requiring Electron.
+let _screen: ScreenImpl | null = null;
+// Lazily loaded — same rationale as _screen above.
+let _isPetWindowDragging: IsPetWindowDraggingFn | null = null;
+
+function getIsPetWindowDragging(): IsPetWindowDraggingFn {
+  if (!_isPetWindowDragging) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { isPetWindowDragging } = require("./pet-window.js") as { isPetWindowDragging: IsPetWindowDraggingFn };
+    _isPetWindowDragging = isPetWindowDragging;
+  }
+  return _isPetWindowDragging;
+}
+
+function getScreen(): ScreenImpl {
+  if (!_screen) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { screen } = require("electron") as { screen: ScreenImpl };
+    _screen = screen;
+  }
+  return _screen;
+}
+
+/** ONLY call from unit tests. Pass null to restore the real electron screen. */
+export function _setScreenForTesting(impl: ScreenImpl | null): void {
+  _screen = impl;
+}
+
+/** ONLY call from unit tests. Pass null to restore the real implementation. */
+export function _setIsPetWindowDraggingForTesting(fn: IsPetWindowDraggingFn | null): void {
+  _isPetWindowDragging = fn;
+}
 
 /**
  * Liveness motion primitives (§13.6): animated absolute moves, continuous
@@ -52,7 +98,7 @@ export async function motionMoveTo(petHandleId: string, accessor: WindowAccessor
   const steps = Math.max(4, Math.round(durationMs / 33));
   for (let step = 1; step <= steps; step += 1) {
     const live = accessor();
-    if (!live || live.isDestroyed() || state.moveGeneration !== generation || isPetWindowDragging(live)) return;
+    if (!live || live.isDestroyed() || state.moveGeneration !== generation || getIsPetWindowDragging()(live)) return;
     const t = easeProgress(step / steps, easing);
     live.setPosition(Math.round(startX + (clamped.x - startX) * t), Math.round(startY + (clamped.y - startY) * t), false);
     await delay(durationMs / steps);
@@ -91,12 +137,12 @@ function syncLoop(petHandleId: string, accessor: WindowAccessor, state: MotionSt
   state.loop = setInterval(() => {
     const window = accessor();
     if (!window || window.isDestroyed()) { motionStop(petHandleId); return; }
-    if (!window.isVisible() || isPetWindowDragging(window)) return;
+    if (!window.isVisible() || getIsPetWindowDragging()(window)) return;
     const [x, y] = window.getPosition();
     let nextX = x;
     let nextY = y;
     if (state.follow) {
-      const cursor = screen.getCursorScreenPoint();
+      const cursor = getScreen().getCursorScreenPoint();
       // Aim the pet's bottom-center near the cursor; lag controls smoothing.
       const targetX = cursor.x - Math.round(defaultPetWindowSize.width / 2);
       const targetY = cursor.y - Math.round(defaultPetWindowSize.height * 0.7);
@@ -105,7 +151,7 @@ function syncLoop(petHandleId: string, accessor: WindowAccessor, state: MotionSt
       nextY = Math.round(y + (targetY - y) * Math.max(0.02, smoothing * 0.35));
     }
     if (state.physics?.gravity) {
-      const display = screen.getDisplayNearestPoint({ x: x + Math.round(defaultPetWindowSize.width / 2), y: y + Math.round(defaultPetWindowSize.height / 2) });
+      const display = getScreen().getDisplayNearestPoint({ x: x + Math.round(defaultPetWindowSize.width / 2), y: y + Math.round(defaultPetWindowSize.height / 2) });
       const confinementBounds = getEffectiveConfinementBounds(petHandleId);
       const floor = computeGravityFloor(confinementBounds, display.workArea.y, display.workArea.height, defaultPetWindowSize.height);
       state.physics.vy = Math.min(state.physics.vy + 2.2, 48);

@@ -222,7 +222,7 @@ function makeDeps(overrides: Partial<ConfinementPollerDeps> = {}): ConfinementPo
 // ---------------------------------------------------------------------------
 {
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  const src = readFileSync(join(__dirname, "../src/local-ipc.ts"), "utf-8");
+  const src = readFileSync(join(__dirname, "../../src/local-ipc.ts"), "utf-8");
 
   // Extract the explicit-lease block for pet.react (up to applyAgentPetReaction call).
   const reactExplicitBlock = src.match(/if \(lease\?\.targetKind === "explicit"\)[\s\S]*?const applied = applyAgentPetReaction/);
