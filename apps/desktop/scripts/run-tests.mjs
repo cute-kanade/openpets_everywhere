@@ -40,6 +40,7 @@ const behaviorTests = [
   ".test-dist/tests/confinement-manager.test.js",
   ".test-dist/tests/pet-confinement-enabled.test.js",
   ".test-dist/tests/pet-motion-gravity.test.js",
+  ".test-dist/tests/pet-motion-engine-clamp.test.js",
   ".test-dist/tests/display.test.js",
   ".test-dist/tests/renderer-toggles.test.js",
 ];

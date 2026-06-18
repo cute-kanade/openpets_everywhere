@@ -1,7 +1,7 @@
 import type { BrowserWindow } from "electron";
 
 import { clampToTerminalBounds, getEffectiveConfinementBounds } from "./confinement-manager.js";
-import { clampToVisibleWorkArea, defaultPetWindowSize, type Point } from "./display.js";
+import { clampToNearestDisplayIfOffscreen, clampToVisibleWorkArea, defaultPetWindowSize, isCrossDisplayRoamingEnabled, type Point } from "./display.js";
 // isPetWindowDragging is lazily loaded via _setIsPetWindowDraggingForTesting seam
 
 // ---------------------------------------------------------------------------
@@ -182,6 +182,7 @@ function delay(ms: number): Promise<void> {
 function clampPosition(petHandleId: string, pos: Point): Point {
   const terminalBounds = getEffectiveConfinementBounds(petHandleId);
   if (terminalBounds) return clampToTerminalBounds(pos, defaultPetWindowSize, terminalBounds);
+  if (isCrossDisplayRoamingEnabled()) return clampToNearestDisplayIfOffscreen(pos, defaultPetWindowSize);
   return clampToVisibleWorkArea(pos, defaultPetWindowSize);
 }
 

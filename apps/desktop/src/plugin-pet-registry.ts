@@ -2,7 +2,7 @@ import { BrowserWindow } from "electron";
 
 import { getAppStateSnapshot, type PetScaleValue } from "./app-state.js";
 import { applyExternalPetReaction, applyExternalPetStatusReaction, getDefaultPetPaused, getDefaultPetWindowForPlugins, defaultPetBubbleArbiter } from "./default-pet-controller.js";
-import { clampToVisibleWorkArea, defaultPetWindowSize, getDefaultPetInitialPosition, type Point } from "./display.js";
+import { clampToNearestDisplayIfOffscreen, clampToVisibleWorkArea, defaultPetWindowSize, getDefaultPetInitialPosition, isCrossDisplayRoamingEnabled, type Point } from "./display.js";
 import { builtInPet } from "./built-in-pet.js";
 import { debug, info } from "./logger.js";
 import type { OpenPetsReaction } from "./local-ipc-protocol.js";
@@ -90,7 +90,10 @@ export async function spawnPluginPet(opts: { pluginId: string; petId: string; na
   const handleId = `plugin-pet-${++nextSpawnId}`;
   const base = getDefaultPetInitialPosition(defaultPetWindowSize);
   const offset = (spawnedPets.size + 1) * 60;
-  const position = clampToVisibleWorkArea(opts.position ?? { x: base.x - offset, y: base.y }, defaultPetWindowSize);
+  const rawPos = opts.position ?? { x: base.x - offset, y: base.y };
+  const position = isCrossDisplayRoamingEnabled()
+    ? clampToNearestDisplayIfOffscreen(rawPos, defaultPetWindowSize)
+    : clampToVisibleWorkArea(rawPos, defaultPetWindowSize);
 
   const pet: SpawnedPet = {
     handleId,

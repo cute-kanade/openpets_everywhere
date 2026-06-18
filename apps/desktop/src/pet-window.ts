@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { getAppStateSnapshot, markPetBroken, type PetScaleValue } from "./app-state.js";
-import { clampToVisibleWorkArea, defaultPetWindowSize, getDefaultPetInitialPosition, type Point } from "./display.js";
+import { clampToNearestDisplayIfOffscreen, clampToVisibleWorkArea, defaultPetWindowSize, getDefaultPetInitialPosition, isCrossDisplayRoamingEnabled, type Point } from "./display.js";
 import { builtInPet } from "./built-in-pet.js";
 import { getInstalledPetDir } from "./pet-paths.js";
 import { getActiveLocale, getActiveLocaleLang, t } from "./i18n/index.js";
@@ -760,11 +760,14 @@ function tryUpdateLoadedPetContent(window: BrowserWindow, render: PetContentRend
 }
 
 export function getSafeDefaultPetPosition(position: Point | undefined): Point {
-  return clampToVisibleWorkArea(position ?? getDefaultPetInitialPosition(), defaultPetWindowSize);
+  const pos = position ?? getDefaultPetInitialPosition();
+  if (isCrossDisplayRoamingEnabled()) return clampToNearestDisplayIfOffscreen(pos, defaultPetWindowSize);
+  return clampToVisibleWorkArea(pos, defaultPetWindowSize);
 }
 
 export function readWindowPosition(window: BrowserWindow): Point {
   const [x, y] = window.getPosition();
+  if (isCrossDisplayRoamingEnabled()) return clampToNearestDisplayIfOffscreen({ x, y }, defaultPetWindowSize);
   return clampToVisibleWorkArea({ x, y }, defaultPetWindowSize);
 }
 
