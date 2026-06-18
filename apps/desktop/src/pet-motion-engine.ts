@@ -186,6 +186,11 @@ function clampPosition(petHandleId: string, pos: Point): Point {
   return clampToVisibleWorkArea(pos, defaultPetWindowSize);
 }
 
+/** Exported for unit testing only — do not call from production code. */
+export function _clampPositionForTesting(petHandleId: string, pos: Point): Point {
+  return clampPosition(petHandleId, pos);
+}
+
 /**
  * Compute the gravity floor y-coordinate for a pet.
  *

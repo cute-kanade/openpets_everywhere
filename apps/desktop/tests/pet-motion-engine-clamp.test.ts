@@ -19,9 +19,9 @@ import assert from "node:assert/strict";
 // Set testability seams BEFORE importing the modules that contain lazy electron
 // requires, so that the lazy getters return our mocks instead of trying to load
 // the real Electron binary.
-import { _setScreenForTesting as setMotionScreen, _setIsPetWindowDraggingForTesting } from "../src/pet-motion-engine.js";
+import { _setScreenForTesting as setMotionScreen, _setIsPetWindowDraggingForTesting, _clampPositionForTesting } from "../src/pet-motion-engine.js";
 import { _setScreenForTesting as setDisplayScreen, invalidateDisplayCache, isCrossDisplayRoamingEnabled, setCrossDisplayRoamingEnabled } from "../src/display.js";
-import { setConfinementEnabled } from "../src/confinement-manager.js";
+import { setConfinementEnabled, setConfinementState, clearConfinementState } from "../src/confinement-manager.js";
 
 // ---------------------------------------------------------------------------
 // Shared mock screen: two 1920×1080 displays side-by-side (total 3840 wide).
@@ -96,6 +96,85 @@ const { width: petW, height: petH } = { width: 340, height: 420 };
   const result = clampToNearestDisplayIfOffscreen(pos, { width: petW, height: petH });
   assert.ok(result.x >= display1.workArea.x, "offscreen left: clamped x >= display1.x");
   assert.notDeepEqual(result, pos, "offscreen left: position was changed");
+}
+
+// ---------------------------------------------------------------------------
+// 6. CONFINEMENT REGRESSION: confined pet NEVER goes cross-display (flag ON or OFF)
+// A pet confined to a terminal on display 1 must stay inside that terminal
+// regardless of the cross-display roaming flag. This is the HIGHEST-priority
+// invariant: confinement is strictly first in the 3-way dispatch.
+// ---------------------------------------------------------------------------
+{
+  const petId = "confined-regression-pet";
+  const terminalBounds = { x: 100, y: 100, width: 800, height: 600 };
+  setConfinementEnabled(true);
+  setConfinementState(petId, {
+    terminalBounds,
+    terminalMinimized: false,
+    terminalOccluded: false,
+    terminalOwnerPid: 9999,
+    appName: "TestTerminal",
+  });
+
+  // Target position is deep into display 2 — WAY outside terminal bounds.
+  const crossDisplayTarget = { x: 2500, y: 300 };
+
+  // Flag ON: cross-display should NOT apply to confined pet
+  setCrossDisplayRoamingEnabled(true);
+  const resultFlagOn = _clampPositionForTesting(petId, crossDisplayTarget);
+  assert.ok(resultFlagOn.x >= terminalBounds.x, "confined+flag-on: x >= terminal.x");
+  assert.ok(resultFlagOn.x + 340 <= terminalBounds.x + terminalBounds.width, "confined+flag-on: x+petW <= terminal.right");
+  assert.ok(resultFlagOn.y >= terminalBounds.y, "confined+flag-on: y >= terminal.y");
+  assert.ok(resultFlagOn.y + 420 <= terminalBounds.y + terminalBounds.height, "confined+flag-on: y+petH <= terminal.bottom");
+  assert.notDeepEqual(resultFlagOn, crossDisplayTarget, "confined+flag-on: position was clamped");
+
+  // Flag OFF: same — confinement still applies
+  setCrossDisplayRoamingEnabled(false);
+  const resultFlagOff = _clampPositionForTesting(petId, crossDisplayTarget);
+  assert.ok(resultFlagOff.x >= terminalBounds.x, "confined+flag-off: x >= terminal.x");
+  assert.ok(resultFlagOff.x + 340 <= terminalBounds.x + terminalBounds.width, "confined+flag-off: x+petW <= terminal.right");
+  assert.notDeepEqual(resultFlagOff, crossDisplayTarget, "confined+flag-off: position was clamped");
+
+  // Both results match: confinement is deterministic regardless of flag
+  assert.deepEqual(resultFlagOn, resultFlagOff, "confined: result is same regardless of cross-display flag");
+
+  // Cleanup this test's confinement state
+  clearConfinementState(petId);
+  setCrossDisplayRoamingEnabled(true);
+}
+
+// ---------------------------------------------------------------------------
+// 7. Free-roam pet with flag ON: position on display 1 is unchanged
+// ---------------------------------------------------------------------------
+{
+  const petId = "free-roam-pet";
+  setConfinementEnabled(true);
+  // Not calling setConfinementState → pet is untracked → getEffectiveConfinementBounds returns null
+
+  setCrossDisplayRoamingEnabled(true);
+  // Position firmly on display 1 (x=200, y=200) — should be untouched
+  const onDisplay1 = { x: 200, y: 200 };
+  const result = _clampPositionForTesting(petId, onDisplay1);
+  assert.deepEqual(result, onDisplay1, "free-roam+flag-on: on-display position unchanged");
+}
+
+// ---------------------------------------------------------------------------
+// 8. Free-roam pet with flag OFF: falls back to legacy clampToVisibleWorkArea
+//    (snaps offscreen position to nearest single display work-area)
+// ---------------------------------------------------------------------------
+{
+  const petId = "free-roam-pet-legacy";
+  setConfinementEnabled(true);
+
+  setCrossDisplayRoamingEnabled(false);
+  // Position off the right edge of display 2 — legacy clamp brings it back
+  const offscreen = { x: 4000, y: 100 };
+  const result = _clampPositionForTesting(petId, offscreen);
+  assert.notDeepEqual(result, offscreen, "free-roam+flag-off: offscreen position was clamped");
+  // Should be within display 2 workArea (legacy nearest-display clamp)
+  assert.ok(result.x + 340 <= display2.workArea.x + display2.workArea.width, "free-roam+flag-off: right edge within display 2");
+
+  setCrossDisplayRoamingEnabled(true);
 }
 
 // ---------------------------------------------------------------------------
