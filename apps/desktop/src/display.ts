@@ -1,5 +1,7 @@
 import { screen } from "electron";
 
+import { deriveDisplayKey } from "./app-state-core.js";
+
 export interface Point {
   readonly x: number;
   readonly y: number;
@@ -8,6 +10,33 @@ export interface Point {
 export interface WindowSize {
   readonly width: number;
   readonly height: number;
+}
+
+/**
+ * Derive a stable string key for a display from its bounds.
+ * Display IDs can change across reboots on some platforms, so we key on
+ * physical geometry instead: `"${x},${y},${width}x${height}"`.
+ */
+export function getDisplayKey(bounds: Electron.Rectangle): string {
+  return deriveDisplayKey(bounds);
+}
+
+/**
+ * Return the display key for the display that the centre of a window position
+ * falls on (using Electron's nearest-point logic).
+ */
+export function getDisplayKeyForPosition(position: Point, size: WindowSize = defaultPetWindowSize): string {
+  const centre = { x: position.x + size.width / 2, y: position.y + size.height / 2 };
+  const display = screen.getDisplayNearestPoint(centre);
+  return getDisplayKey(display.bounds);
+}
+
+/**
+ * Return display keys for all currently connected displays, mapped to their
+ * work-area rectangles so callers can choose a position on a given display.
+ */
+export function getAllDisplayKeys(): string[] {
+  return screen.getAllDisplays().map((d) => getDisplayKey(d.bounds));
 }
 
 export const defaultPetWindowSize: WindowSize = {

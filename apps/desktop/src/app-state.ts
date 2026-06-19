@@ -67,6 +67,12 @@ export interface OpenPetsStateV1 {
   };
   readonly defaultPet: {
     readonly position?: Point;
+    /**
+     * Per-monitor position map. Keys are stable display identifiers derived from
+     * bounds: `"${bounds.x},${bounds.y},${bounds.width}x${bounds.height}"`.
+     * Capped at 8 entries (LRU eviction) so the state file does not grow unboundedly.
+     */
+    readonly perMonitorPositions?: Readonly<Record<string, Point>>;
   };
   readonly analytics: OpenPetsAnalyticsState;
 }
@@ -261,6 +267,45 @@ export function getDefaultPetPosition(): Point | undefined {
   return getInitializedState().defaultPet.position;
 }
 
+/**
+ * Record the pet's current position for a specific display key.
+ * Keys are derived from display bounds: `"${bounds.x},${bounds.y},${bounds.width}x${bounds.height}"`.
+ * Also updates the flat `defaultPet.position` for backwards compatibility.
+ * The map is capped at maxPerMonitorPositions entries (oldest evicted).
+ */
+export function setPerMonitorPetPosition(displayKey: string, position: Point): OpenPetsStateV1 {
+  const state = getInitializedState();
+  const pos = normalizePosition(position);
+  if (!pos) return getAppStateSnapshot();
+
+  const existing = state.defaultPet.perMonitorPositions ?? {};
+  const entries = Object.entries(existing).filter(([k]) => k !== displayKey);
+  entries.push([displayKey, pos]);
+  // Keep only the most recent maxPerMonitorPositions entries.
+  const trimmed = entries.slice(-maxPerMonitorPositions);
+  const perMonitorPositions: Record<string, Point> = Object.fromEntries(trimmed);
+
+  const nextState = normalizeState({
+    ...state,
+    defaultPet: {
+      ...state.defaultPet,
+      position: normalizePosition(position),
+      perMonitorPositions,
+    },
+  });
+
+  commitState(nextState);
+  return getAppStateSnapshot();
+}
+
+/**
+ * Look up the stored position for a display key.
+ * Returns undefined if no position has been recorded for this display.
+ */
+export function getPerMonitorPetPosition(displayKey: string): Point | undefined {
+  return getInitializedState().defaultPet.perMonitorPositions?.[displayKey];
+}
+
 export function recordOpenPetsActivity(activity: OpenPetsActivityRecord, now: number = Date.now()): OpenPetsStateV1 {
   publishPluginAgentActivity({ kind: activity.kind, reaction: activity.reaction });
   const state = getInitializedState();
@@ -399,11 +444,18 @@ function normalizeState(value: unknown): OpenPetsStateV1 {
   const preferencesRecord = isRecord(record.preferences) ? record.preferences : {};
   const defaultState = createDefaultState();
   const position = normalizeMaybePosition(defaultPetRecord.position);
+  const perMonitorPositions = normalizePerMonitorPositions(defaultPetRecord.perMonitorPositions);
   const installedPets = normalizeInstalledPets(record);
   const defaultPetId = typeof preferencesRecord.defaultPetId === "string"
     && installedPets.some((pet) => pet.id === preferencesRecord.defaultPetId && !pet.broken)
     ? preferencesRecord.defaultPetId
     : builtInPet.id;
+
+  const defaultPet: OpenPetsStateV1["defaultPet"] = {};
+  if (position) (defaultPet as Record<string, unknown>).position = position;
+  if (perMonitorPositions && Object.keys(perMonitorPositions).length > 0) {
+    (defaultPet as Record<string, unknown>).perMonitorPositions = perMonitorPositions;
+  }
 
   return {
     version: 1,
@@ -415,7 +467,7 @@ function normalizeState(value: unknown): OpenPetsStateV1 {
     pets: {
       installed: installedPets,
     },
-    defaultPet: position ? { position } : {},
+    defaultPet,
     analytics: normalizeAnalytics(record.analytics),
   };
 }
@@ -642,6 +694,27 @@ function normalizeSource(value: unknown): InstalledPetState["source"] | undefine
     zip: value.zip,
     preview: value.preview,
   };
+}
+
+const maxPerMonitorPositions = 8;
+
+function normalizePerMonitorPositions(value: unknown): Readonly<Record<string, Point>> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.length === 0) return undefined;
+  const normalized: Record<string, Point> = {};
+  // Accept up to maxPerMonitorPositions entries; extras are silently dropped on normalise.
+  for (const [key, rawPos] of entries.slice(-maxPerMonitorPositions)) {
+    if (typeof key !== "string" || !isDisplayKey(key)) continue;
+    const pos = normalizeMaybePosition(rawPos);
+    if (pos) normalized[key] = pos;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function isDisplayKey(key: string): boolean {
+  // Expected format: "<x>,<y>,<width>x<height>" where all values are integers (may be negative).
+  return /^-?\d+,-?\d+,\d+x\d+$/.test(key);
 }
 
 function normalizeMaybePosition(value: unknown): Point | undefined {

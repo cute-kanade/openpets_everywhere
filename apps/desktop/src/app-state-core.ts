@@ -30,6 +30,16 @@ export function markOnboardingCompleted<T extends { readonly preferences: Record
   };
 }
 
+/**
+ * Derive a stable string key for a display from its geometry.
+ * Format: `"${x},${y},${width}x${height}"`.
+ * Display IDs can change across reboots on some platforms, so we key on
+ * physical bounds instead.
+ */
+export function deriveDisplayKey(bounds: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): string {
+  return `${bounds.x},${bounds.y},${bounds.width}x${bounds.height}`;
+}
+
 export function shouldShowDefaultPetForExternalEvent(_visible: boolean, _openOnLaunch: boolean, paused: boolean): boolean {
   // Agent activity is an explicit display trigger; open-on-launch only controls startup.
   return !paused;

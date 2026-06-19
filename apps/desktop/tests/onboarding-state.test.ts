@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { defaultPetScale, markOnboardingCompleted, normalizeOnboardingCompleted, normalizePetScale, petScaleOptions } from "../src/app-state-core.js";
+import { defaultPetScale, deriveDisplayKey, markOnboardingCompleted, normalizeOnboardingCompleted, normalizePetScale, petScaleOptions } from "../src/app-state-core.js";
 
 assert.equal(normalizeOnboardingCompleted({}), false);
 assert.equal(normalizeOnboardingCompleted({ onboardingCompleted: true }), true);
@@ -51,5 +51,18 @@ assert.equal(normalizePetScale("1"), defaultPetScale);
 assert.equal(normalizePetScale(Number.NaN), defaultPetScale);
 assert.equal(normalizePetScale(Number.POSITIVE_INFINITY), defaultPetScale);
 assert.equal(normalizePetScale(undefined), defaultPetScale);
+
+// Per-monitor display key derivation
+assert.equal(deriveDisplayKey({ x: 0, y: 0, width: 2560, height: 1440 }), "0,0,2560x1440");
+assert.equal(deriveDisplayKey({ x: 2560, y: 0, width: 1080, height: 1920 }), "2560,0,1080x1920");
+// Negative coordinates (display to the left or above the primary)
+assert.equal(deriveDisplayKey({ x: -2560, y: -100, width: 2560, height: 1440 }), "-2560,-100,2560x1440");
+// Same display always produces the same key (stability)
+const boundsA = { x: 0, y: 0, width: 1920, height: 1080 };
+const boundsB = { x: 0, y: 0, width: 1920, height: 1080 };
+assert.equal(deriveDisplayKey(boundsA), deriveDisplayKey(boundsB));
+// Different displays produce different keys
+const boundsC = { x: 1920, y: 0, width: 1920, height: 1080 };
+assert.notEqual(deriveDisplayKey(boundsA), deriveDisplayKey(boundsC));
 
 console.error("Onboarding state validation passed.");
