@@ -24,12 +24,15 @@ import {
   getParentPid,
   isWin32MinimizedBounds,
 } from "./window-tracker-ppid.js";
+import { createLatchedTick } from "./window-tracker-latch.js";
 
 // Re-export for consumers that already import these through window-tracker.
 export {
   getParentPid,
   isWin32MinimizedBounds,
 } from "./window-tracker-ppid.js";
+
+export { createLatchedTick } from "./window-tracker-latch.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -166,16 +169,6 @@ export function isWindowOccluded(
 }
 
 // ---------------------------------------------------------------------------
-// Previous window state for minimized detection
-// ---------------------------------------------------------------------------
-
-const lastKnownWindows = new Map<number, TrackedWindow>();
-
-function updateKnownWindows(windows: TrackedWindow[]): void {
-  for (const w of windows) lastKnownWindows.set(w.id, w);
-}
-
-// ---------------------------------------------------------------------------
 // Platform support check
 // ---------------------------------------------------------------------------
 
@@ -203,7 +196,6 @@ export async function listWindows(): Promise<TrackedWindow[]> {
   if (!isPlatformSupported()) return [];
   try {
     const windows = await openWindows();
-    updateKnownWindows(windows);
     return windows;
   } catch (error) {
     // get-windows can THROW (exit 1) when Screen Recording permission is denied
@@ -351,7 +343,8 @@ async function findTerminalPidInChainCached(
 
 function startPollerIfNeeded(): void {
   if (pollerTimer) return;
-  pollerTimer = setInterval(() => { void pollAll(); }, pollerIntervalMs);
+  const tick = createLatchedTick(() => pollAll());
+  pollerTimer = setInterval(tick, pollerIntervalMs);
   pollerTimer.unref?.();
 }
 

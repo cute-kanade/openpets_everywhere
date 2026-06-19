@@ -17,7 +17,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { systemPreferences, shell, dialog, app } from "electron";
+import { systemPreferences, shell, dialog } from "electron";
 
 import { debug, error as logError, info } from "./logger.js";
 

@@ -40,6 +40,7 @@ const behaviorTests = [
   ".test-dist/tests/window-tracker.test.js",
   ".test-dist/tests/window-tracker-chain.test.js",
   ".test-dist/tests/window-tracker-win32.test.js",
+  ".test-dist/tests/window-tracker-reentry.test.js",
   ".test-dist/tests/capabilities-win32.test.js",
   ".test-dist/tests/confinement-manager.test.js",
   ".test-dist/tests/pet-confinement-enabled.test.js",
@@ -52,6 +53,7 @@ const behaviorTests = [
   ".test-dist/tests/pet-roaming-controller.test.js",
   ".test-dist/tests/display.test.js",
   ".test-dist/tests/renderer-toggles.test.js",
+  ".test-dist/tests/preference-patch.test.js",
   ".test-dist/tests/plugin-agent-activity.test.js",
 ];
 const contractTests = [

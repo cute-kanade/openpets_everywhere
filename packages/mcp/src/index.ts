@@ -43,6 +43,8 @@ export interface TransportLifecycleOptions {
 export function wireTransportLifecycle(opts: TransportLifecycleOptions): { close: () => Promise<void> } {
   const { transport, server, client, lease, leaseReady, requestedPetId } = opts;
   const exit = opts.exit ?? (() => process.exit(0));
+  let exited = false;
+  const exitOnce = (): void => { if (exited) return; exited = true; exit(); };
 
   let heartbeatTimer: NodeJS.Timeout | null = null;
   let retryTimer: NodeJS.Timeout | null = null;
@@ -123,7 +125,7 @@ export function wireTransportLifecycle(opts: TransportLifecycleOptions): { close
   };
 
   // Fix 3: exit after teardown so the process doesn't linger as an orphan
-  transport.onclose = () => { void close().finally(() => exit()); };
+  transport.onclose = () => { void close().finally(() => exitOnce()); };
 
   return { close };
 }

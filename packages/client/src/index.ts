@@ -7,6 +7,14 @@ import { connectTimeoutMs, maxIpcMessageBytes, openPetsIpcVersion, parseIpcRespo
 export { getDiscoveryFilePath, parseIpcEndpoint, readDiscoveryFile, validateDiscovery, validateEndpoint, type OpenPetsDiscoveryFile, type ParsedIpcEndpoint } from "./discovery.js";
 export { allowedReactions, OpenPetsClientError, type OpenPetsReaction } from "./protocol.js";
 
+/**
+ * Stable per-process session nonce, generated once at module load.
+ * Sent alongside clientPid in lease.acquire so the desktop can distinguish
+ * a genuine re-acquire (same process, same nonce) from an OS PID-reuse
+ * collision (same PID, different nonce → fresh acquire, no stale-lease reuse).
+ */
+const SESSION_NONCE = randomUUID();
+
 export interface OpenPetsClientOptions {
   readonly discoveryPath?: string;
   readonly connectTimeoutMs?: number;
@@ -80,7 +88,7 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     },
     listPets: async () => parsePetListResult(await sendDiscoveredRequest("pets.list", {}, options)),
     installPet: async (petId) => parsePetInstallResult(await sendDiscoveredRequest("pets.install", { petId: validatePetId(petId) }, { ...options, responseTimeoutMs: options.responseTimeoutMs ?? 60_000 })),
-    acquireLease: (leaseOptions) => sendDiscoveredRequest("lease.acquire", { requestedPetId: leaseOptions?.requestedPetId, clientPid: process.pid }, options),
+    acquireLease: (leaseOptions) => sendDiscoveredRequest("lease.acquire", { requestedPetId: leaseOptions?.requestedPetId, clientPid: process.pid, sessionNonce: SESSION_NONCE }, options),
     heartbeatLease: (leaseId) => sendDiscoveredRequest("lease.heartbeat", { leaseId }, options),
     releaseLease: (leaseId) => sendDiscoveredRequest("lease.release", { leaseId }, options),
     react: (reaction, reactOptions) => sendDiscoveredRequest("pet.react", { reaction: validateReaction(reaction), leaseId: reactOptions?.leaseId }, options),

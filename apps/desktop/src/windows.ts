@@ -842,51 +842,6 @@ async function getDefaultPetPreviewSpriteInfo(): Promise<{ readonly path: string
   return { path: builtInPath, version: `builtin-${Math.round(fallback.mtimeMs)}-${fallback.size}` };
 }
 
-function validatePreferencePatch(value: unknown): { openDefaultPetOnLaunch?: boolean; locale?: LocalePreference; petScale?: number; reactionAnimationOverrides?: ReturnType<typeof validateReactionAnimationOverrides>; petPoolEnabled?: boolean; petConfinementEnabled?: boolean; petCrossDisplayEnabled?: boolean; petGravityEnabled?: boolean } {
-  if (!isRecord(value)) {
-    throw new Error("Invalid preferences patch.");
-  }
-
-  const patch: { openDefaultPetOnLaunch?: boolean; locale?: LocalePreference; petScale?: number; reactionAnimationOverrides?: ReturnType<typeof validateReactionAnimationOverrides>; petPoolEnabled?: boolean; petConfinementEnabled?: boolean; petCrossDisplayEnabled?: boolean; petGravityEnabled?: boolean } = {};
-
-  if ("openDefaultPetOnLaunch" in value) {
-    if (typeof value.openDefaultPetOnLaunch !== "boolean") throw new Error("Invalid open-on-launch value.");
-    patch.openDefaultPetOnLaunch = value.openDefaultPetOnLaunch;
-  }
-
-  if ("petPoolEnabled" in value) {
-    if (typeof value.petPoolEnabled !== "boolean") throw new Error("Invalid pet-pool-enabled value.");
-    patch.petPoolEnabled = value.petPoolEnabled;
-  }
-
-  if ("petConfinementEnabled" in value) {
-    if (typeof value.petConfinementEnabled !== "boolean") throw new Error("Invalid pet-confinement-enabled value.");
-    patch.petConfinementEnabled = value.petConfinementEnabled;
-  }
-
-  if ("petGravityEnabled" in value) {
-    if (typeof value.petGravityEnabled !== "boolean") throw new Error("Invalid pet-gravity-enabled value.");
-    patch.petGravityEnabled = value.petGravityEnabled;
-  }
-
-  if ("locale" in value) {
-    if (value.locale !== "system" && !isSupportedLocale(value.locale)) throw new Error("Invalid locale value.");
-    patch.locale = value.locale;
-  }
-
-  if ("petScale" in value) {
-    const scale = normalizePetScale(value.petScale);
-    if (scale !== value.petScale) throw new Error("Invalid pet scale value.");
-    patch.petScale = scale;
-  }
-
-  if ("reactionAnimationOverrides" in value) {
-    patch.reactionAnimationOverrides = validateReactionAnimationOverrides(value.reactionAnimationOverrides);
-  }
-
-  return patch;
-}
-
 function getLaunchAtLoginState(): { supported: boolean; enabled: boolean } {
   if (!isLaunchAtLoginSupported()) return { supported: false, enabled: false };
   return { supported: true, enabled: app.getLoginItemSettings().openAtLogin };
@@ -894,8 +849,4 @@ function getLaunchAtLoginState(): { supported: boolean; enabled: boolean } {
 
 function isLaunchAtLoginSupported(): boolean {
   return process.platform === "darwin" || process.platform === "win32";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

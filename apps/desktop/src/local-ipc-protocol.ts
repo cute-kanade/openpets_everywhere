@@ -113,6 +113,20 @@ export function validateRequestedPetId(value: unknown): string | undefined {
   return trimmed;
 }
 
+/**
+ * Validate the optional sessionNonce from a lease.acquire request.
+ * The nonce is a UUID generated once per MCP process (not per-call) and used
+ * alongside clientPid to prevent OS PID-reuse session collisions.
+ * Accepts any non-empty string ≤128 chars with no control characters.
+ */
+export function validateSessionNonce(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") return undefined; // tolerate missing/malformed — degrade gracefully
+  const trimmed = value.trim();
+  if (trimmed.length < 1 || trimmed.length > 128 || /[\x00-\x1F\x7F]/.test(trimmed)) return undefined;
+  return trimmed;
+}
+
 export function okResponse(id: string | null, result: unknown): OpenPetsIpcResponse {
   return { id, ok: true, result };
 }

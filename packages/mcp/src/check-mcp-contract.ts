@@ -33,6 +33,7 @@ await checkMcpServerContract();
 await checkStdioServerContract();
 await checkT6TransportOnclose();
 await checkT7EnsureLeaseHeartbeatFirst();
+await checkT8ExitOnce();
 const builtEntrypoint = readFileSync(join("dist", "index.js"), "utf8");
 if (!builtEntrypoint.startsWith("#!/usr/bin/env node")) {
   throw new Error("Built MCP entrypoint is missing a Node shebang.");
@@ -302,4 +303,70 @@ function assertRejects(callback: () => unknown): void {
     return;
   }
   throw new Error("Expected validation to reject.");
+}
+
+/**
+ * T8 — Fix L2: exit seam must fire EXACTLY ONCE even when transport.onclose is triggered
+ * multiple times (re-entrant from server.close, or repeated calls from close()). Release
+ * must precede the single exit call.
+ */
+async function checkT8ExitOnce(): Promise<void> {
+  const activeLeaseId = "t8-lease-77";
+  const releaseOrder: string[] = [];
+
+  const fakeClient = {
+    status: async () => ({ ok: true, appRunning: true }),
+    listPets: async () => ({ ok: true as const, pets: [], defaultPetId: "builtin" }),
+    installPet: async () => { throw new Error("unused"); },
+    acquireLease: async () => ({ leaseId: "new", requestedPetId: undefined, targetKind: "default" as const, actualTargetPetId: "default", actualTargetPetName: "Default", usingDefaultPet: true, expiresAt: Date.now() + 15_000, leaseActive: true }),
+    heartbeatLease: async (leaseId: string) => ({ leaseId, expiresAt: Date.now() + 15_000 }),
+    releaseLease: async (leaseId: string) => { releaseOrder.push("release:" + leaseId); return { released: true }; },
+    react: async () => ({ ok: true }),
+    say: async () => ({ ok: true }),
+    hello: async () => ({ ok: true }),
+  };
+
+  const lease: LeaseContext = {
+    lease: { leaseId: activeLeaseId, requestedPetId: undefined, targetKind: "default", actualTargetPetId: "default", actualTargetPetName: "Default", usingDefaultPet: true, expiresAt: Date.now() + 15_000, leaseActive: true },
+  };
+
+  const fakeTransport: { onclose?: (() => void) | undefined } = {};
+  // server.close re-fires onclose to simulate MCP SDK re-entrancy
+  const fakeServer = { close: async () => { fakeTransport.onclose?.(); } };
+
+  let exitCalls = 0;
+  const fakeExit = (): void => { exitCalls++; releaseOrder.push("exit"); };
+
+  wireTransportLifecycle({
+    transport: fakeTransport,
+    server: fakeServer,
+    client: fakeClient,
+    lease,
+    leaseReady: Promise.resolve(),
+    exit: fakeExit,
+  });
+
+  // Fire onclose three times (natural + re-entrant from server.close + extra call)
+  fakeTransport.onclose?.();
+  fakeTransport.onclose?.();
+  fakeTransport.onclose?.();
+
+  // Allow async teardown to settle
+  await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+  if (exitCalls !== 1) {
+    throw new Error("T8: exit seam fired " + exitCalls + " times — expected exactly 1. Order: " + releaseOrder.join(","));
+  }
+
+  const releaseIdx = releaseOrder.indexOf("release:" + activeLeaseId);
+  const exitIdx = releaseOrder.indexOf("exit");
+  if (releaseIdx === -1) {
+    throw new Error("T8: releaseLease was never called. Order: " + releaseOrder.join(","));
+  }
+  if (exitIdx === -1) {
+    throw new Error("T8: exit was never recorded. Order: " + releaseOrder.join(","));
+  }
+  if (releaseIdx >= exitIdx) {
+    throw new Error("T8: release did not precede exit. Order: " + releaseOrder.join(","));
+  }
 }

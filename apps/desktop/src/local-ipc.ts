@@ -11,7 +11,7 @@ import { applyExternalPetReaction, applyExternalPetSay, getDefaultPetPaused, isD
 import { createStaleLeaseStatus, LeaseManager } from "./lease-manager.js";
 import { debug, error as logError, info } from "./logger.js";
 import { cleanupUnixSocket, getDiscoveryFilePath, getIpcEndpointConfig, parseIpcEndpoint, protectUnixSocket, removeDiscoveryFile, writeDiscoveryFile, type IpcEndpoint, type IpcEndpointConfig, type OpenPetsDiscoveryFile } from "./local-ipc-paths.js";
-import { errorResponse, IpcProtocolError, isRecord, maxIpcMessageBytes, okResponse, parseIpcRequest, validateInstallPetId, validateOptionalLeaseId, validateReaction, validateRequestedPetId, validateSayMessage, type OpenPetsIpcRequest } from "./local-ipc-protocol.js";
+import { errorResponse, IpcProtocolError, isRecord, maxIpcMessageBytes, okResponse, parseIpcRequest, validateInstallPetId, validateOptionalLeaseId, validateReaction, validateRequestedPetId, validateSayMessage, validateSessionNonce, type OpenPetsIpcRequest } from "./local-ipc-protocol.js";
 import { installPet } from "./pet-installation.js";
 import { clearConfinementState, setConfinementState } from "./confinement-manager.js";
 import { isConfinementSupported } from "./capabilities.js";
@@ -347,8 +347,9 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     const params = isRecord(request.params) ? request.params : {};
     const requestedPetId = validateRequestedPetId(params.requestedPetId);
     const clientPid = typeof params.clientPid === "number" && params.clientPid > 0 ? params.clientPid : undefined;
-    debug("ipc", "lease acquire requested", { requestId: request.id, requestedPetId, clientPid });
-    const lease = leaseManager.acquire(requestedPetId, clientPid);
+    const sessionNonce = validateSessionNonce(params.sessionNonce);
+    debug("ipc", "lease acquire requested", { requestId: request.id, requestedPetId, clientPid, sessionNonce });
+    const lease = leaseManager.acquire(requestedPetId, clientPid, sessionNonce);
     trackDesktopEvent("desktop_lease_acquired", { requested_pet: requestedPetId ? "explicit" : "default", target_kind: lease.targetKind, fallback_reason: lease.fallbackReason });
     warnPetFallback(requestedPetId, lease.fallbackReason, warnedFallbackPets);
     // Resolve terminal window identity asynchronously (non-blocking).

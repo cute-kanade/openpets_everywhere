@@ -14,6 +14,12 @@ export interface PetLease {
   readonly expiresAt: number;
   /** PID of the MCP client process (e.g. opencode) that acquired this lease. */
   readonly clientPid?: number;
+  /**
+   * Stable per-process UUID generated once at MCP startup (not per-call).
+   * Used alongside clientPid to prevent OS PID-reuse collisions: a recycled
+   * PID will carry a different nonce, preventing stale-lease reuse.
+   */
+  readonly sessionNonce?: string;
   /** PID of the terminal emulator process hosting the client (resolved async). */
   readonly terminalOwnerPid?: number;
   /** Human-readable terminal app name, e.g. "Ghostty" or "Terminal". */
@@ -49,6 +55,15 @@ export interface LeaseManagerOptions {
   readonly onFirstExplicitLease?: (petId: string) => void;
   readonly onLastExplicitLease?: (petId: string) => void;
   readonly onLog?: (level: "debug" | "info", message: string, fields?: Record<string, unknown>) => void;
+  /**
+   * Optional seam to re-validate that an explicit target pet is still
+   * serviceable at re-acquire time (Fix L1). If provided and returns false for
+   * an explicit target during lease reuse, the old lease is released and a
+   * fresh acquire (with full re-resolution) is performed instead.
+   * Default leases are NOT re-validated — a session that landed on default
+   * (e.g. pool exhausted) stays on default across re-acquires by design.
+   */
+  readonly isPetEligible?: (petId: string) => boolean;
 }
 
 const safePetIdPattern = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -63,6 +78,7 @@ export class LeaseManager {
   readonly #onFirstExplicitLease: (petId: string) => void;
   readonly #onLastExplicitLease: (petId: string) => void;
   readonly #onLog: (level: "debug" | "info", message: string, fields?: Record<string, unknown>) => void;
+  readonly #isPetEligible: ((petId: string) => boolean) | undefined;
 
   constructor(options: LeaseManagerOptions = {}) {
     this.#ttlMs = options.ttlMs ?? 15_000;
@@ -73,24 +89,23 @@ export class LeaseManager {
     this.#onFirstExplicitLease = options.onFirstExplicitLease ?? (() => {});
     this.#onLastExplicitLease = options.onLastExplicitLease ?? (() => {});
     this.#onLog = options.onLog ?? (() => {});
+    this.#isPetEligible = options.isPetEligible;
   }
 
-  acquire(requestedPetId?: string, clientPid?: number): LeaseSnapshot {
+  acquire(requestedPetId?: string, clientPid?: number, sessionNonce?: string): LeaseSnapshot {
     const now = this.#now();
 
-    // FIX 1: Idempotent per-clientPid lease reuse.
-    // If a non-expired lease already exists for this clientPid (e.g. after a
-    // heartbeat lapse the MCP client silently re-acquires), refresh and return
-    // it — don't call #resolveTarget again (which would re-resolve the pool
-    // slot and potentially land on 'default' if the original slot appears
-    // occupied). This scan MUST be synchronous and placed before any await to
-    // preserve the no-await-between-resolve-and-set invariant.
-    //
-    // Note on OS PID reuse: a different process acquiring the same PID within
-    // the ≤TTL window is improbable; the non-expired guard mitigates it further.
-    if (clientPid !== undefined && clientPid > 0) {
+    // FIX M1 + FIX 1: Idempotent per-clientPid lease reuse, guarded by sessionNonce.
+    // sessionNonce is a stable per-process UUID generated once at MCP startup.
+    // Requiring a matching nonce prevents OS PID-reuse collisions: a recycled PID
+    // will carry a different nonce so it never collapses onto a stale lease.
+    // If sessionNonce is absent → always fall through to a fresh acquire.
+    // This scan MUST be synchronous and placed before any await to preserve the
+    // no-await-between-resolve-and-set invariant.
+    if (clientPid !== undefined && clientPid > 0 && sessionNonce !== undefined) {
       for (const existing of this.#leases.values()) {
         if (existing.clientPid !== clientPid) continue;
+        if (existing.sessionNonce !== sessionNonce) continue; // different process — no reuse
         if (existing.expiresAt <= now) continue; // expired — fall through to fresh acquire
         // For explicit --pet requests, only reuse when the stored requestedPetId
         // matches the incoming requestedPetId; otherwise release old and acquire fresh.
@@ -98,10 +113,18 @@ export class LeaseManager {
           this.release(existing.leaseId);
           break; // fall through to fresh acquire below
         }
-        // Same clientPid, same requestedPetId, lease still valid — refresh and return.
+        // FIX L1: Re-validate that the explicit target pet is still serviceable.
+        // Default leases are intentionally skipped — a session that landed on
+        // default (e.g. pool exhausted) stays on default across re-acquires by design.
+        if (existing.targetKind === "explicit" && this.#isPetEligible !== undefined && !this.#isPetEligible(existing.actualPetId)) {
+          this.#onLog("info", "acquire reuse rejected — target pet no longer eligible", { leaseId: existing.leaseId, actualPetId: existing.actualPetId });
+          this.release(existing.leaseId);
+          break; // fall through to fresh acquire
+        }
+        // Same clientPid + nonce + requestedPetId, lease still valid — refresh and return.
         const refreshed: PetLease = { ...existing, lastHeartbeatAt: now, expiresAt: now + this.#ttlMs };
         this.#leases.set(refreshed.leaseId, refreshed);
-        this.#onLog("debug", "acquire reused existing lease", { leaseId: refreshed.leaseId, clientPid, requestedPetId, targetKind: refreshed.targetKind, actualPetId: refreshed.actualPetId, expiresAt: refreshed.expiresAt });
+        this.#onLog("debug", "acquire reused existing lease", { leaseId: refreshed.leaseId, clientPid, sessionNonce, requestedPetId, targetKind: refreshed.targetKind, actualPetId: refreshed.actualPetId, expiresAt: refreshed.expiresAt });
         return this.snapshot(refreshed);
       }
     }
@@ -121,6 +144,7 @@ export class LeaseManager {
       lastHeartbeatAt: now,
       expiresAt: now + this.#ttlMs,
       clientPid,
+      sessionNonce,
     };
 
     const hadExplicitLease = lease.targetKind === "explicit" && this.countExplicitLeases(lease.actualPetId) > 0;
