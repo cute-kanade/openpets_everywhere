@@ -15,8 +15,8 @@ An OpenPets plugin that makes your pet roam the screen.
 | Option | Values | Default |
 |--------|--------|---------|
 | Movement mode | wander / follow-cursor / patrol | wander |
-| Speed | slow / normal / brisk | normal |
-| Move interval | 2s / 5s / 10s / 20s | 5s |
+| Speed | slow / normal / brisk | slow |
+| Move interval | 2s / 5s / 10s / 20s | 10s |
 | Pause when agent is busy | on / off | on |
 
 > **Gravity** is now a global OpenPets Settings preference and applies to all pets — it is no longer a per-plugin toggle.

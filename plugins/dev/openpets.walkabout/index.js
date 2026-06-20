@@ -16,10 +16,10 @@ export const SPEED_DURATION = {
 };
 
 /** Wander distance per move step (px) — work-area clamped by host. */
-export const WANDER_DISTANCE = 180;
+export const WANDER_DISTANCE = 120;
 
 /** Patrol uses fixed x-steps; y is kept from current position. */
-export const PATROL_STEP_X = 300;
+export const PATROL_STEP_X = 220;
 
 // ── Config helpers ─────────────────────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ export function normalizeMode(value) {
  */
 export function normalizeSpeed(value) {
   const valid = ["slow", "normal", "brisk"];
-  return valid.includes(value) ? value : "normal";
+  return valid.includes(value) ? value : "slow";
 }
 
 /**
@@ -48,7 +48,7 @@ export function normalizeSpeed(value) {
 export function normalizeInterval(value) {
   const n = Number(value);
   if (Number.isFinite(n) && n >= 1 && n <= 120) return Math.floor(n) * 1000;
-  return 5000;
+  return 10000;
 }
 
 /**
@@ -60,7 +60,7 @@ export function cleanConfig(raw) {
   return {
     mode: normalizeMode(c.mode),
     speed: normalizeSpeed(c.speed),
-    intervalMs: normalizeInterval(c.interval ?? 5),
+    intervalMs: normalizeInterval(c.interval ?? 10),
     pauseWhenBusy: c.pauseWhenBusy !== false,
   };
 }

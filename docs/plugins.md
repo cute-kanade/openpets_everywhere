@@ -144,8 +144,8 @@ owns safe uninstall path resolution.
 
 `plugin-local-loader.ts` validates a selected local folder and **snapshots only
 `openpets.plugin.json`** into `userData/plugins-dev/{id}`, with symlink/path/size
-protections. Point the desktop dev build at a plugin root with
-`OPENPETS_DEV_PLUGIN_ROOTS` (e.g. `plugins/official`) and run
+protections. Point the desktop dev build at plugin roots with
+`OPENPETS_DEV_PLUGIN_ROOTS` (for example `plugins/official:plugins/dev`) and run
 `pnpm dev:desktop:plugins` for hot-load. See [development.md](development.md).
 
 ## Authoring workflow (end to end)

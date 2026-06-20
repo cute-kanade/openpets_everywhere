@@ -38,24 +38,24 @@ assert.equal(normalizeMode(42), "wander", "non-string defaults to wander");
 assert.equal(normalizeSpeed("slow"), "slow");
 assert.equal(normalizeSpeed("normal"), "normal");
 assert.equal(normalizeSpeed("brisk"), "brisk");
-assert.equal(normalizeSpeed(undefined), "normal", "undefined defaults to normal");
-assert.equal(normalizeSpeed("supersonic"), "normal", "unknown speed defaults to normal");
+assert.equal(normalizeSpeed(undefined), "slow", "undefined defaults to slow");
+assert.equal(normalizeSpeed("supersonic"), "slow", "unknown speed defaults to slow");
 
 // ── normalizeInterval ──────────────────────────────────────────────────────────
 assert.equal(normalizeInterval("5"), 5000);
 assert.equal(normalizeInterval(10), 10000);
 assert.equal(normalizeInterval("2"), 2000);
-assert.equal(normalizeInterval(undefined), 5000, "undefined defaults to 5s");
-assert.equal(normalizeInterval("abc"), 5000, "non-numeric defaults to 5s");
-assert.equal(normalizeInterval(0), 5000, "zero out-of-range defaults to 5s");
-assert.equal(normalizeInterval(200), 5000, "too large defaults to 5s");
+assert.equal(normalizeInterval(undefined), 10000, "undefined defaults to 10s");
+assert.equal(normalizeInterval("abc"), 10000, "non-numeric defaults to 10s");
+assert.equal(normalizeInterval(0), 10000, "zero out-of-range defaults to 10s");
+assert.equal(normalizeInterval(200), 10000, "too large defaults to 10s");
 assert.equal(normalizeInterval(3.9), 3000, "fractional is floored");
 
 // ── cleanConfig ────────────────────────────────────────────────────────────────
 assert.deepEqual(cleanConfig({}), {
   mode: "wander",
-  speed: "normal",
-  intervalMs: 5000,
+  speed: "slow",
+  intervalMs: 10000,
   pauseWhenBusy: true,
 });
 
@@ -68,8 +68,8 @@ assert.deepEqual(cleanConfig({ mode: "patrol", speed: "brisk", interval: "2", pa
 
 assert.deepEqual(cleanConfig(null), {
   mode: "wander",
-  speed: "normal",
-  intervalMs: 5000,
+  speed: "slow",
+  intervalMs: 10000,
   pauseWhenBusy: true,
 }, "null input is treated as empty config");
 

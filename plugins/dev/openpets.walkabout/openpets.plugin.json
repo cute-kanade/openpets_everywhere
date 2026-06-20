@@ -23,7 +23,7 @@
     },
     "speed": {
       "type": "select",
-      "default": "normal",
+      "default": "slow",
       "label": "$t:config.speed.label",
       "description": "$t:config.speed.description",
       "options": [
@@ -34,7 +34,7 @@
     },
     "interval": {
       "type": "select",
-      "default": "5",
+      "default": "10",
       "label": "$t:config.interval.label",
       "description": "$t:config.interval.description",
       "options": [
