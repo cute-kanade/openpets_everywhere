@@ -260,7 +260,19 @@ export function setDefaultPetPosition(position: Point): OpenPetsStateV1 {
 }
 
 export function resetDefaultPetPosition(position: Point): OpenPetsStateV1 {
-  return setDefaultPetPosition(position);
+  const state = getInitializedState();
+
+  const nextState = normalizeState({
+    ...state,
+    defaultPet: {
+      ...state.defaultPet,
+      position: normalizePosition(position),
+      perMonitorPositions: undefined,
+    },
+  });
+
+  commitState(nextState);
+  return getAppStateSnapshot();
 }
 
 export function getDefaultPetPosition(): Point | undefined {

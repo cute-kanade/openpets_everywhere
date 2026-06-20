@@ -213,18 +213,11 @@ function getOrCreateDefaultPetWindow(): BrowserWindow {
     return defaultPetWindow;
   }
 
-  // Prefer the per-monitor position for any currently connected display.
-  // Check connected displays in order and use the first stored match.
-  const connectedKeys = getAllDisplayKeys();
-  let restoredPosition: ReturnType<typeof getDefaultPetPosition> = undefined;
-  for (const key of connectedKeys) {
-    const stored = getPerMonitorPetPosition(key);
-    if (stored) {
-      restoredPosition = stored;
-      break;
-    }
-  }
-  const position = getSafeDefaultPetPosition(restoredPosition ?? getDefaultPetPosition());
+  // The flat position is the most recently saved position across all monitors.
+  // Do not scan every connected per-monitor entry here: display order is usually
+  // primary-first, which can override the true last position with an older
+  // primary-display entry.
+  const position = getSafeDefaultPetPosition(getDefaultPetPosition());
 
   defaultPetWindow = createDefaultPetWindow({
     position,
