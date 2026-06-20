@@ -240,6 +240,12 @@ pnpm release:desktop -- --yes --include-experimental-arm
 
 `--include-optional` includes mac zip, Windows portable, Linux deb, Linux rpm, and Linux tar.gz x64 targets.
 
+On Apple Silicon macOS, Linux RPM packaging can fail in `fpm`/`rpmbuild`, and
+Electron Builder can produce an invalid tiny DEB archive. If that happens, do
+not publish the broken artifacts. Publish the release with the valid artifacts,
+then build DEB/RPM inside the Ubuntu VMware guest and upload them to the same
+release. See [Linux DEB/RPM fallback via VMware](#linux-debrpm-fallback-via-vmware).
+
 `--include-experimental-arm` adds Windows ARM64 and Linux ARM64 artifacts. Only use this if those artifacts can be tested.
 
 ## Windows code signing with SignPath
@@ -527,6 +533,88 @@ Artifacts are written to:
 
 ```txt
 apps/desktop/dist-electron/
+```
+
+## Linux DEB/RPM fallback via VMware
+
+Use this flow when the local macOS release host cannot produce valid Linux DEB
+or RPM artifacts. This happened for `v3.2.0`: RPM failed under macOS
+`fpm`/`rpmbuild`, and the generated DEB was a 96-byte invalid archive. Building
+the Linux package targets inside the Ubuntu VMware guest produced valid x64
+artifacts.
+
+The VM is documented in `/Volumes/external/repos/vagrants.md`:
+
+```txt
+VM directory: /Volumes/external/vmware/ubuntu24
+Guest checkout: /home/vagrant/src/openpets
+Provider: vmware_desktop / VMware Fusion
+```
+
+Start and prepare the VM from macOS:
+
+```bash
+cd /Volumes/external/vmware/ubuntu24
+vagrant up
+vagrant ssh -c 'set -e; cd /home/vagrant/src/openpets; git fetch origin --tags; git checkout main; git pull --ff-only'
+vagrant ssh -c 'set -e; sudo apt-get update; sudo apt-get install -y rpm fakeroot'
+```
+
+Build only the Linux package targets in the guest:
+
+```bash
+vagrant ssh -c 'set -e; cd /home/vagrant/src/openpets; pnpm install --frozen-lockfile; pnpm --filter @open-pets/desktop build; cd apps/desktop; node scripts/clean-package-output.cjs; pnpm exec electron-builder --linux deb --x64 --publish never; pnpm exec electron-builder --linux rpm --x64 --publish never; ls -lh dist-electron/OpenPets-<version>-linux-amd64.deb dist-electron/OpenPets-<version>-linux-x86_64.rpm; file dist-electron/OpenPets-<version>-linux-amd64.deb dist-electron/OpenPets-<version>-linux-x86_64.rpm'
+```
+
+Copy the valid artifacts back through the VM's `/vagrant` share:
+
+```bash
+vagrant ssh -c 'set -e; cp /home/vagrant/src/openpets/apps/desktop/dist-electron/OpenPets-<version>-linux-amd64.deb /vagrant/; cp /home/vagrant/src/openpets/apps/desktop/dist-electron/OpenPets-<version>-linux-x86_64.rpm /vagrant/'
+cp /Volumes/external/vmware/ubuntu24/OpenPets-<version>-linux-amd64.deb apps/desktop/dist-electron/
+cp /Volumes/external/vmware/ubuntu24/OpenPets-<version>-linux-x86_64.rpm apps/desktop/dist-electron/
+```
+
+Regenerate `SHA256SUMS` for the final uploaded artifact set, then upload the
+DEB/RPM and replacement checksum file:
+
+```bash
+python3 - <<'PY'
+from hashlib import sha256
+from pathlib import Path
+
+version = '<version>'
+base = Path('apps/desktop/dist-electron')
+names = [
+    f'OpenPets-{version}-linux-amd64.deb',
+    f'OpenPets-{version}-linux-x64.tar.gz',
+    f'OpenPets-{version}-linux-x86_64.AppImage',
+    f'OpenPets-{version}-linux-x86_64.rpm',
+    f'OpenPets-{version}-mac-arm64.dmg',
+    f'OpenPets-{version}-mac-arm64.zip',
+    f'OpenPets-{version}-mac-x64.dmg',
+    f'OpenPets-{version}-mac-x64.zip',
+    f'OpenPets-{version}-win-x64-portable.exe',
+    f'OpenPets-{version}-win-x64-setup.exe',
+]
+lines = []
+for name in names:
+    path = base / name
+    lines.append(f'{sha256(path.read_bytes()).hexdigest()}  {name}')
+(base / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
+PY
+
+gh release upload v<version> --repo alvinunreal/openpets \
+  apps/desktop/dist-electron/OpenPets-<version>-linux-amd64.deb \
+  apps/desktop/dist-electron/OpenPets-<version>-linux-x86_64.rpm \
+  apps/desktop/dist-electron/SHA256SUMS \
+  --clobber
+```
+
+If an invalid DEB was already uploaded, remove it before uploading the rebuilt
+one:
+
+```bash
+gh release delete-asset v<version> OpenPets-<version>-linux-amd64.deb --repo alvinunreal/openpets --yes
 ```
 
 ## Microsoft Store package quick actions
