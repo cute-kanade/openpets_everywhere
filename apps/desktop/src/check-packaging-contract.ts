@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -77,6 +77,8 @@ const updateCheckerSource = readFileSync(join(appDir, "src", "update-checker.ts"
 const traySource = readFileSync(join(appDir, "src", "tray.ts"), "utf8");
 const enCatalogSource = readFileSync(join(appDir, "src", "i18n", "locales", "en.ts"), "utf8");
 const windowsSource = readFileSync(join(appDir, "src", "windows.ts"), "utf8");
+const lanControllerSource = readFileSync(join(appDir, "src", "lan-controller.ts"), "utf8");
+const lanHttpControllerSource = readFileSync(join(appDir, "src", "lan-http-controller.ts"), "utf8");
 const agentSetupSource = readFileSync(join(appDir, "src", "agent-setup.ts"), "utf8");
 const loggerSource = readFileSync(join(appDir, "src", "logger.ts"), "utf8");
 const mainSource = readFileSync(join(appDir, "src", "main.ts"), "utf8");
@@ -106,6 +108,10 @@ assert.match(localIpcSourceForLogging, /request received/, "desktop IPC must log
 assert.match(localIpcPathsSource, /OPENPETS_IPC_BIND[\s\S]*?OPENPETS_IPC_ENDPOINT[\s\S]*?validateBindHost[\s\S]*?validateAdvertisedHost/, "WSL NAT IPC must separate bind and advertised endpoints with validation.");
 assert.match(localIpcPathsSource, /OPENPETS_IPC_ENDPOINT only controls the advertised discovery endpoint[\s\S]*?OPENPETS_IPC_BIND to opt into TCP IPC listening/, "OPENPETS_IPC_ENDPOINT-only mode must not start TCP listening; OPENPETS_IPC_BIND is the explicit TCP opt-in.");
 assert.match(localIpcPathsSource, /OPENPETS_IPC_ENDPOINT must use the same port as OPENPETS_IPC_BIND unless OPENPETS_IPC_BIND uses port 0/, "WSL NAT advertised endpoint must not silently override mismatched ports.");
+assert.match(lanControllerSource, /maxLanResponseBodyBytes\s*=\s*16 \* 1024/, "LAN client responses must be capped before JSON parsing.");
+assert.match(lanControllerSource, /size > maxLanResponseBodyBytes[\s\S]*?req\.destroy\(new Error\("response_too_large"\)\)/, "LAN client must stop reading oversized coordinator responses.");
+assert.match(lanControllerSource, /generateIfMissing: false/, "LAN status snapshots must not generate or rotate auth tokens.");
+assert.doesNotMatch(lanHttpControllerSource, /access-control-allow-origin/i, "LAN coordinator must not expose status or mutation responses through wildcard CORS.");
 assert.match(leaseManagerSource, /acquired/, "lease manager must log lease acquisition details.");
 assert.match(defaultPetControllerSource, /show requested/, "default pet controller must log show lifecycle events.");
 assert.match(agentPetControllerSourceForLogging, /show requested/, "agent pet controller must log show lifecycle events.");
@@ -233,6 +239,7 @@ assert.match(enCatalogSource, /Pi/, "Control Center integrations must include Pi
 assert.doesNotMatch(agentSetupSource, /JSON\.parse\(prepared\.configWrite\.content\)/, "OpenCode desktop preview must parse JSONC planned config safely, not JSON.parse.");
 assert.match(windowsSource, /refreshDefaultPetContent\(\);\s*refreshAgentPetContent\(\);/, "pet scale preference changes must refresh default and agent pet windows.");
 assert.ok(existsSync(join(appDir, "scripts", "clean-package-output.cjs")), "package output cleanup helper must exist.");
+assert.ok(existsSync(join(appDir, "scripts", "check-windows-symlink-privilege.cjs")), "Windows package symlink preflight helper must exist.");
 assert.ok(existsSync(join(distDir, "main.js")), "desktop main build output must exist before packaging checks run.");
 assert.ok(existsSync(join(repoRoot, "packages", "claude", "dist", "index.js")), "@open-pets/claude must be built before packaging.");
 assert.ok(existsSync(join(repoRoot, "packages", "client", "dist", "index.js")), "@open-pets/client must be built before packaging.");
@@ -281,9 +288,7 @@ function checkPackageOutput(): void {
   assert.ok(existsSync(join(appContents, "node_modules", "buffer-crc32", "index.js")), "packaged yauzl transitive dependency buffer-crc32 is missing.");
   assert.ok(existsSync(join(appContents, "node_modules", "pend", "index.js")), "packaged yauzl transitive dependency pend is missing.");
   assert.ok(existsSync(join(appContents, "node_modules", "sharp", "lib", "index.js")), "packaged sharp runtime is missing.");
-  assert.ok(existsSync(join(appContents, "node_modules", "@img", "sharp-win32-x64", "lib", "sharp-win32-x64.node")), "packaged Windows x64 sharp native binary is missing.");
-  assert.ok(existsSync(join(appContents, "node_modules", "@img", "sharp-linux-x64", "lib", "sharp-linux-x64.node")), "packaged Linux x64 sharp native binary is missing.");
-  assert.ok(existsSync(join(appContents, "node_modules", "@img", "sharp-darwin-x64", "lib", "sharp-darwin-x64.node")), "packaged macOS x64 sharp native binary is missing.");
+  assertPackagedHostSharpNative(appContents);
   assertRegularNonSymlink(join(appContents, "node_modules", "@open-pets", "mcp", "dist", "index.js"));
   assertRegularNonSymlink(join(appContents, "node_modules", "@open-pets", "cli", "dist", "index.js"));
   assertRegularNonSymlink(join(appContents, "node_modules", "@open-pets", "opencode", "dist", "plugin.js"));
@@ -389,6 +394,21 @@ function assertSafeBundledSvg(path: string, message: string): void {
   assert.doesNotMatch(source, /\son[a-z]+\s*=/i, `${message}: event attributes are not allowed.`);
   assert.doesNotMatch(source, /(?:href|xlink:href)\s*=\s*["'](?:https?:|file:|javascript:)/i, `${message}: external or script hrefs are not allowed.`);
   assert.doesNotMatch(source.replace(/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/gi, ""), /https?:\/\//i, `${message}: remote references are not allowed.`);
+}
+
+function assertPackagedHostSharpNative(appContents: string): void {
+  const sharpPackage = getHostSharpPackageName();
+  assert.ok(existsSync(join(appContents, "node_modules", "@img", sharpPackage, "lib", `${sharpPackage}.node`)), `packaged host sharp native binary is missing: ${sharpPackage}`);
+}
+
+function getHostSharpPackageName(): string {
+  if (process.platform === "win32" && process.arch === "x64") return "sharp-win32-x64";
+  if (process.platform === "win32" && process.arch === "arm64") return "sharp-win32-arm64";
+  if (process.platform === "darwin" && process.arch === "x64") return "sharp-darwin-x64";
+  if (process.platform === "darwin" && process.arch === "arm64") return "sharp-darwin-arm64";
+  if (process.platform === "linux" && process.arch === "x64") return "sharp-linux-x64";
+  if (process.platform === "linux" && process.arch === "arm64") return "sharp-linux-arm64";
+  throw new Error(`Unsupported packaging platform for sharp native check: ${process.platform}/${process.arch}`);
 }
 
 function assertCommandSmoke(appContents: string): void {

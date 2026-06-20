@@ -8,6 +8,7 @@ import { createAppIcon } from "./assets.js";
 import { setLocaleFromPreference } from "./i18n/index.js";
 import { installDefaultPetDisplayHandlers, shouldOpenDefaultPetOnLaunch, showDefaultPet } from "./default-pet-controller.js";
 import { installAppLifecycle } from "./lifecycle.js";
+import { startLanController } from "./lan-controller.js";
 import { debug, error as logError, getLogFilePath, info, initializeLogger, warn } from "./logger.js";
 import { startLocalIpcServer } from "./local-ipc.js";
 import { startDevPluginWatcher } from "./plugin-dev-watcher.js";
@@ -80,6 +81,7 @@ if (!gotSingleInstanceLock) {
       showDefaultPet();
       trackDesktopEvent("desktop_default_pet_shown", { reason: "launch" });
     }
+    startLanController();
     refreshTrayMenu();
     void (async () => {
       const service = pluginService;

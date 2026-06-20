@@ -15,6 +15,7 @@ import { setConfinementEnabled } from "./confinement-manager.js";
 import { setCrossDisplayRoamingEnabled } from "./display.js";
 import { getActiveLocale, getActiveMessages, LOCALE_LABELS, SUPPORTED_LOCALES, setLocaleFromPreference, t, type Locale, type LocalePreference } from "./i18n/index.js";
 import { recoverDefaultPetMouseInterop, refreshDefaultPetContent, resetDefaultPetToInitialPosition } from "./default-pet-controller.js";
+import { getLanStatusSnapshot } from "./lan-controller.js";
 import { validatePreferencePatch } from "./preference-patch.js";
 import { installPet, installPetFromFolder, installPetFromZipFile, removePet, setDefaultInstalledPet } from "./pet-installation.js";
 import { assertSafePetId, getInstalledPetDir } from "./pet-paths.js";
@@ -181,6 +182,11 @@ export function installInternalUiHandlers(): void {
   ipcMain.handle("openpets:get-settings-state", (event) => {
     assertAllowedSender(event, ["control-center"]);
     return getSettingsStateSnapshot();
+  });
+
+  ipcMain.handle("openpets:get-lan-status", (event) => {
+    assertAllowedSender(event, ["control-center"]);
+    return getLanStatusSnapshot();
   });
 
   ipcMain.handle("openpets:set-desktop-analytics-consent", (event, consent: unknown) => {

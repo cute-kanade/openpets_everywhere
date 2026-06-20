@@ -59,6 +59,10 @@ export function showDefaultPet(): void {
   showDefaultPetWindow("user");
 }
 
+export function showDefaultPetForLan(): void {
+  showDefaultPetWindow("external-event");
+}
+
 function showDefaultPetWindow(source: "user" | "external-event"): void {
   const window = getOrCreateDefaultPetWindow();
   info("pet.default", "show requested", { source, windowId: window.id, visible: window.isVisible(), minimized: window.isMinimized(), paused, petId: getAppStateSnapshot().preferences.defaultPetId });
@@ -73,9 +77,19 @@ function showDefaultPetWindow(source: "user" | "external-event"): void {
 
 export function hideDefaultPet(): void {
   updatePreferences({ openDefaultPetOnLaunch: false });
+  hideDefaultPetWindow();
+}
 
+export function hideDefaultPetForLan(): void {
+  hideDefaultPetWindow();
+}
+
+function hideDefaultPetWindow(): void {
   if (!defaultPetWindow || defaultPetWindow.isDestroyed()) {
     debug("pet.default", "hide skipped", { reason: "no-window" });
+    return;
+  }
+  if (!defaultPetWindow.isVisible()) {
     return;
   }
 
@@ -83,6 +97,11 @@ export function hideDefaultPet(): void {
   info("pet.default", "hide requested", { windowId: defaultPetWindow.id, position: hidePosition, petId: getAppStateSnapshot().preferences.defaultPetId });
   handlePositionChanged(hidePosition);
   defaultPetWindow.hide();
+}
+
+export function getDefaultPetLanPosition(): { readonly x: number; readonly y: number } | null {
+  if (!defaultPetWindow || defaultPetWindow.isDestroyed()) return null;
+  return readWindowPosition(defaultPetWindow);
 }
 
 export function isDefaultPetVisible(): boolean {

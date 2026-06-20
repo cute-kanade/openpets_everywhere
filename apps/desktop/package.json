@@ -18,17 +18,18 @@
     "dev:control-center": "concurrently -k -n renderer,electron -c cyan,magenta \"pnpm dev:renderer\" \"wait-on http://127.0.0.1:5173 && cross-env OPENPETS_RENDERER_URL=http://127.0.0.1:5173 pnpm dev:electron\"",
     "dev:plugins": "cross-env OPENPETS_DISABLE_PLUGIN_CATALOG=1 OPENPETS_DEV_PLUGIN_ROOTS=../../plugins/official:../../plugins/dev pnpm dev",
     "dev:debug": "OPENPETS_LOG_LEVEL=debug OPENPETS_LOG_CONSOLE=1 pnpm dev",
-    "package": "pnpm build && node scripts/clean-package-output.cjs && electron-builder",
-    "package:dir": "pnpm build && node scripts/clean-package-output.cjs && electron-builder --dir && node dist/check-packaging-contract.js --output",
+    "package": "pnpm package:preflight && pnpm build && node scripts/clean-package-output.cjs && electron-builder",
+    "package:dir": "pnpm package:preflight && pnpm build && node scripts/clean-package-output.cjs && electron-builder --dir && node dist/check-packaging-contract.js --output",
     "test": "node scripts/run-tests.mjs",
-    "build:deps": "pnpm --filter @open-pets/desktop^... build",
+    "build:deps": "pnpm --filter \"@open-pets/desktop^...\" build",
     "test:build": "pnpm build:deps && tsc -p tsconfig.tests.json",
     "check": "pnpm typecheck && pnpm build && pnpm test",
     "typecheck": "pnpm build:deps && tsc --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "build:main": "pnpm build:deps && tsc",
     "build:renderer": "vite build",
     "dev:renderer": "vite --host 127.0.0.1",
-    "build": "pnpm build:main && pnpm build:renderer"
+    "build": "pnpm build:main && pnpm build:renderer",
+    "package:preflight": "node scripts/check-windows-symlink-privilege.cjs"
   },
   "devDependencies": {
     "@open-pets/plugin-sdk": "workspace:*",

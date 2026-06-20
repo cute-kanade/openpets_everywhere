@@ -27,6 +27,8 @@ type AnalyticsConsent = "unset" | "granted" | "denied";
 type PetPoolCandidate = { id: string; displayName: string };
 type SettingsState = { preferences: { openDefaultPetOnLaunch: boolean; locale?: "system" | string; petScale: number; reactionAnimationOverrides?: ReactionAnimationOverrides; petPoolEnabled: boolean; petPoolOrder?: readonly string[]; petConfinementEnabled: boolean; petCrossDisplayEnabled: boolean; petGravityEnabled: boolean }; petScaleOptions: PetScaleOption[]; analytics: { consent: AnalyticsConsent; enabled: boolean }; petPoolCandidates: ReadonlyArray<PetPoolCandidate> };
 type LaunchAtLoginState = { supported: boolean; enabled: boolean };
+type LanTopologyIssue = { code: "self_reference" | "missing_reverse"; host: string; edge: "left" | "right" | "up" | "down"; neighbor: string };
+type LanStatusSnapshot = { mode: "off" | "server" | "client"; localHost: string; serverUrl: string; port: number; auth: "token" | "none"; authSource: "env" | "stored" | "generated" | "none"; authInsecure: boolean; tokenHint: string | null; topologyHosts: number; topologyLinks: number; topologyIssues: LanTopologyIssue[]; currentHost: string | null; clients: Array<{ host: string; lastSeen: number; position?: { x: number; y: number } }>; updatedAt: number; persistedCurrentHost: string | null; persistedUpdatedAt: number | null };
 type UpdateStatus = { state: "idle" | "checking" | "available" | "current" | "error"; currentVersion: string; latestVersion?: string; releaseUrl?: string; checkedAt?: number; error?: string };
 type DashboardActivity = { messagesSent: number; reactionsSent: number; reactionCounts: Record<string, number>; perPetActivityCounts: Record<string, number>; lastActivityAt?: number };
 type DashboardSnapshot = { defaultPet: { id: string; displayName: string; previewSpriteUrl: string }; installedPetCount: number; catalog: { source: string; total?: number; page?: number; pageCount?: number; error?: string }; plugins: { installed: number; enabled: number; broken: number }; updateStatus: UpdateStatus; activity: DashboardActivity };
@@ -67,6 +69,7 @@ type ControlCenterApi = {
   getPetsState(): Promise<StateSnapshot>;
   getDashboardSnapshot(): Promise<DashboardSnapshot>;
   getSettingsState(): Promise<SettingsState>;
+  getLanStatus(): Promise<LanStatusSnapshot>;
   setDesktopAnalyticsConsent(consent: AnalyticsConsent): Promise<SettingsState>;
   getI18n(): Promise<I18nSnapshot>;
   updatePreferences(patch: Partial<SettingsState["preferences"]>): Promise<SettingsState>;
@@ -1034,8 +1037,9 @@ function SettingsView() {
   const [settings, setSettings] = useState<SettingsState | null>(null);
   const [reactionSettings, setReactionSettings] = useState<ReactionAnimationSettings | null>(null);
   const [launchAtLogin, setLaunchAtLogin] = useState<LaunchAtLoginState | null>(null);
+  const [lanStatus, setLanStatus] = useState<LanStatusSnapshot | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
-  const [activeTab, setActiveTab] = useState<"general" | "reactions" | "plugins">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "reactions" | "plugins" | "lan">("general");
   const [platformSettings, setPlatformSettings] = useState<PluginPlatformSettings | null>(null);
   const [aiKeyStatus, setAiKeyStatus] = useState<{ hasKey: boolean }>({ hasKey: false });
   const [aiKeyDraft, setAiKeyDraft] = useState("");
@@ -1046,13 +1050,14 @@ function SettingsView() {
 
   async function loadSettings() {
     setError("");
-    const [nextSettings, nextReactions, nextLaunch, nextUpdate, nextPlatform, nextAiKey] = await Promise.all([
+    const [nextSettings, nextReactions, nextLaunch, nextUpdate, nextPlatform, nextAiKey, nextLanStatus] = await Promise.all([
       api.getSettingsState(),
       api.getReactionAnimationSettings(),
       api.getLaunchAtLogin(),
       api.getUpdateStatus(),
       api.getPluginPlatformSettings().catch(() => null),
       api.getPluginAiApiKeyStatus().catch(() => ({ hasKey: false })),
+      api.getLanStatus().catch(() => null),
     ]);
     setSettings(nextSettings);
     setReactionSettings(nextReactions);
@@ -1060,6 +1065,7 @@ function SettingsView() {
     setUpdateStatus(nextUpdate);
     setPlatformSettings(nextPlatform);
     setAiKeyStatus(nextAiKey);
+    setLanStatus(nextLanStatus);
     if (nextUpdate.state === "checking") {
       void api.checkForUpdates().then(setUpdateStatus).catch((err) => setError(String(err?.message ?? err)));
     }
@@ -1154,6 +1160,10 @@ function SettingsView() {
         <button className={`settings-nav-item ${activeTab === "plugins" ? "active" : ""}`} onClick={() => setActiveTab("plugins")}>
           <PluginsIcon />
           <span>{t("settings.nav.plugins")}</span>
+        </button>
+        <button className={`settings-nav-item ${activeTab === "lan" ? "active" : ""}`} onClick={() => setActiveTab("lan")}>
+          <IntegrationsIcon />
+          <span>{t("settings.nav.lan")}</span>
         </button>
       </aside>
 
@@ -1318,6 +1328,11 @@ function SettingsView() {
           </div>
         )}
 
+
+        {activeTab === "lan" && (
+          <LanSettingsPanel status={lanStatus} onRefresh={() => void run(t("settings.busy.checking"), async () => { setLanStatus(await api.getLanStatus()); })} busy={!!busy} />
+        )}
+
         {activeTab === "plugins" && (
           <div className="settings-section">
             <p className="eyebrow">{t("settings.plugins.eyebrow")}</p>
@@ -1415,6 +1430,119 @@ function SettingsView() {
   </div>;
 }
 
+
+function LanSettingsPanel({ status, onRefresh, busy }: { status: LanStatusSnapshot | null; onRefresh: () => void; busy: boolean }) {
+  const { t } = useI18n();
+  const clients = status?.clients ?? [];
+  const authLabel = getLanAuthLabel(status, t);
+  const topologyIssues = status?.topologyIssues ?? [];
+  return (
+    <div className="settings-section">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="eyebrow">{t("settings.lan.eyebrow")}</p>
+          <h2 className="settings-section-title">{t("settings.lan.title")}</h2>
+        </div>
+        <Button variant="secondary" size="compact" disabled={busy} onClick={onRefresh}>
+          <RefreshIcon />
+          {t("settings.lan.refresh")}
+        </Button>
+      </div>
+      <p className="text-sm text-slatecopy -mt-2 mb-2">{t("settings.lan.description")}</p>
+
+      <div className="settings-group">
+        <div className="lan-status-grid">
+          <LanStatusMetric label={t("settings.lan.mode")} value={status?.mode ?? "off"} />
+          <LanStatusMetric label={t("settings.lan.host")} value={status?.localHost ?? "-"} />
+          <LanStatusMetric label={t("settings.lan.server")} value={status?.serverUrl ?? "-"} />
+          <LanStatusMetric label={t("settings.lan.auth")} value={authLabel} tone={status?.auth === "token" ? "ok" : "warn"} />
+          <LanStatusMetric label={t("settings.lan.tokenHint")} value={status?.tokenHint ? t("settings.lan.tokenHintValue", { hint: status.tokenHint }) : t("settings.lan.none")} />
+          <LanStatusMetric label={t("settings.lan.currentOwner")} value={status?.currentHost ?? t("settings.lan.none")} />
+          <LanStatusMetric label={t("settings.lan.persistedOwner")} value={status?.persistedCurrentHost ?? t("settings.lan.none")} />
+          <LanStatusMetric label={t("settings.lan.clients")} value={String(clients.length)} />
+          <LanStatusMetric label={t("settings.lan.topology")} value={status?.topologyHosts ? t("settings.lan.topologyConfigured", { hosts: status.topologyHosts, links: status.topologyLinks }) : t("settings.lan.topologyFallback")} />
+          <LanStatusMetric label={t("settings.lan.topologyWarnings")} value={String(topologyIssues.length)} tone={topologyIssues.length ? "warn" : "ok"} />
+        </div>
+      </div>
+
+      {topologyIssues.length ? (
+        <div className="settings-group">
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <strong>{t("settings.lan.topologyWarnings")}</strong>
+              <small>{t("settings.lan.topologyWarningsDescription")}</small>
+            </div>
+          </div>
+          {topologyIssues.map((issue) => (
+            <div className="settings-row" key={`${issue.host}-${issue.edge}-${issue.neighbor}-${issue.code}`}>
+              <div className="settings-row-info">
+                <strong>{issue.host} {issue.edge} {issue.neighbor}</strong>
+                <small>{getLanTopologyIssueLabel(issue, t)}</small>
+              </div>
+              <span className="pill pill-orange">{t("settings.lan.warning")}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="settings-group">
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <strong>{t("settings.lan.connectedHosts")}</strong>
+            <small>{t("settings.lan.connectedHostsDescription")}</small>
+          </div>
+        </div>
+        {clients.length ? clients.map((client) => (
+          <div className="settings-row" key={client.host}>
+            <div className="settings-row-info">
+              <strong>{client.host}</strong>
+              <small>{client.position ? [client.position.x, client.position.y].join(", ") : t("settings.lan.noPosition")}</small>
+            </div>
+            <span className={client.host === status?.currentHost ? "pill pill-green" : "pill pill-slate"}>{client.host === status?.currentHost ? t("settings.lan.owner") : t("settings.lan.connected")}</span>
+          </div>
+        )) : (
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <strong>{t("settings.lan.noClients")}</strong>
+              <small>{t("settings.lan.noClientsDescription")}</small>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getLanAuthLabel(status: LanStatusSnapshot | null, t: (key: string, values?: Record<string, string | number>) => string): string {
+  if (!status) return t("settings.lan.authNone");
+  if (status.authInsecure) return t("settings.lan.authInsecure");
+  if (status.authSource === "env") return t("settings.lan.authEnv");
+  if (status.authSource === "stored") return t("settings.lan.authStored");
+  if (status.authSource === "generated") return t("settings.lan.authGenerated");
+  return t("settings.lan.authNone");
+}
+
+function getLanTopologyIssueLabel(issue: LanTopologyIssue, t: (key: string, values?: Record<string, string | number>) => string): string {
+  if (issue.code === "self_reference") return t("settings.lan.topologySelfReference");
+  return t("settings.lan.topologyMissingReverse", { reverse: oppositeLanEdge(issue.edge), neighbor: issue.neighbor, host: issue.host });
+}
+
+function oppositeLanEdge(edge: LanTopologyIssue["edge"]): LanTopologyIssue["edge"] {
+  if (edge === "left") return "right";
+  if (edge === "right") return "left";
+  if (edge === "up") return "down";
+  return "up";
+}
+
+function LanStatusMetric({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" }) {
+  const pillClass = tone === "ok" ? "pill pill-green" : tone === "warn" ? "pill pill-orange" : "pill pill-blue";
+  return (
+    <div className="lan-status-metric">
+      <span>{label}</span>
+      <strong className={pillClass}>{value}</strong>
+    </div>
+  );
+}
 const pluginFilterLabelKeys: Record<PluginFilter, string> = {
   all: "plugins.filter.all",
   installed: "plugins.filter.installed",

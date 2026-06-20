@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Desktop test runner
  * Runs preload checks, builds and runs behavior tests, contract tests, then remaining dist checks.
@@ -15,6 +15,11 @@ const preloadChecks = ["control-center-preload.cjs", "pet-preload.cjs", "plugin-
 const behaviorTests = [
   ".test-dist/tests/lease-manager.test.js",
   ".test-dist/tests/lease-manager-fixes.test.js",
+  ".test-dist/tests/lan-state.test.js",
+  ".test-dist/tests/lan-auth.test.js",
+  ".test-dist/tests/lan-controller.test.js",
+  ".test-dist/tests/lan-client-retry.test.js",
+  ".test-dist/tests/lan-persistence.test.js",
   ".test-dist/tests/default-pet-external-show.test.js",
   ".test-dist/tests/onboarding-state.test.js",
   ".test-dist/tests/update-version.test.js",
@@ -67,9 +72,17 @@ const distChecks = [
   "dist/check-packaging-contract.js",
 ];
 
+function commandForPlatform(command, args) {
+  if (process.platform === "win32" && command === "pnpm") {
+    return { command: "cmd.exe", args: ["/d", "/s", "/c", "pnpm.cmd", ...args] };
+  }
+  return { command, args };
+}
+
 function run(command, args = [], options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const platformCommand = commandForPlatform(command, args);
+    const child = spawn(platformCommand.command, platformCommand.args, {
       stdio: "inherit",
       cwd: rootDir,
       env: { ...process.env, OPENPETS_DESKTOP_ROOT: rootDir },
@@ -109,10 +122,10 @@ async function main() {
     await run("node", [check]);
   }
 
-  console.log("\n✓ All tests passed!");
+  console.log("\nâœ“ All tests passed!");
 }
 
 main().catch((err) => {
-  console.error("\n✗ Test suite failed:", err.message);
+  console.error("\nâœ— Test suite failed:", err.message);
   process.exit(1);
 });

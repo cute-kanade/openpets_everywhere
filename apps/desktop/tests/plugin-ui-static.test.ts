@@ -53,6 +53,11 @@ assert.match(pluginSdkPreloadSource, /bubble: \(spec\) => call\("ui\.bubble", \[
 assert.match(pluginSdkPreloadSource, /on: \(event, fn\) => subscription\("events\.on", "events\.off"/);
 assert.match(pluginSdkPreloadSource, /publish: \(topic, payload\) => call\("bus\.publish", \[topic, payload\]\)/);
 // Plugin platform settings are reachable from the Control Center.
+assert.match(windowsSource, /openpets:get-lan-status/);
+assert.match(controlCenterPreloadSource, /getLanStatus: \(\) => ipcRenderer\.invoke\("openpets:get-lan-status"\)/);
+assert.match(controlCenterRendererSource, /function LanSettingsPanel/);
+assert.match(controlCenterRendererSource, /settings\.nav\.lan/);
+assert.match(controlCenterRendererSource, /settings\.lan\.topologyWarnings/);
 assert.match(windowsSource, /openpets:plugin-platform-settings-get/);
 assert.match(windowsSource, /openpets:plugins-inspector/);
 assert.match(controlCenterPreloadSource, /getPluginPlatformSettings: \(\) => ipcRenderer\.invoke\("openpets:plugin-platform-settings-get"\)/);

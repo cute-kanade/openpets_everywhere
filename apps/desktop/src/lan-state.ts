@@ -1,0 +1,207 @@
+export type LanEdge = "left" | "right" | "up" | "down";
+
+export type LanTopology = Readonly<Record<string, Readonly<Partial<Record<LanEdge, string>>>>>;
+
+export type LanTopologyIssue = {
+  readonly code: "self_reference" | "missing_reverse";
+  readonly host: string;
+  readonly edge: LanEdge;
+  readonly neighbor: string;
+};
+
+export type LanPoint = {
+  readonly x: number;
+  readonly y: number;
+};
+
+export type LanClientRecord = {
+  readonly host: string;
+  readonly lastSeen: number;
+  readonly position?: LanPoint;
+};
+
+export type LanState = {
+  readonly enabled: true;
+  readonly currentHost: string | null;
+  readonly clients: readonly LanClientRecord[];
+  readonly updatedAt: number;
+};
+
+export interface LanCoordinatorOptions {
+  readonly staleClientMs: number;
+  readonly initialCurrentHost?: string | null;
+  readonly topology?: LanTopology;
+}
+
+export class LanCoordinator {
+  readonly #staleClientMs: number;
+  readonly #clients = new Map<string, LanClientRecord>();
+  readonly #topology: LanTopology;
+  #currentHost: string | null = null;
+  #preferredHost: string | null = null;
+  #edgeArmed = false;
+
+  constructor(options: LanCoordinatorOptions) {
+    this.#staleClientMs = options.staleClientMs;
+    this.#preferredHost = options.initialCurrentHost ?? null;
+    this.#topology = options.topology ?? {};
+  }
+
+  setPreferredHost(host: string | null): void {
+    this.#preferredHost = host;
+    if (host && this.#clients.has(host)) {
+      this.#currentHost = host;
+      this.#edgeArmed = false;
+    }
+  }
+
+  register(host: string, position: LanPoint | undefined, now: number): LanState {
+    this.#clients.set(host, { host, lastSeen: now, position });
+    if (host === this.#preferredHost && this.#currentHost !== host) {
+      this.#currentHost = host;
+      this.#edgeArmed = false;
+    } else if (!this.#currentHost || !this.#clients.has(this.#currentHost)) {
+      this.#currentHost = host;
+      this.#edgeArmed = false;
+    }
+    return this.snapshot(now);
+  }
+
+  claim(host: string, now: number): LanState | null {
+    this.prune(now);
+    if (!this.#clients.has(host)) return null;
+    this.#currentHost = host;
+    this.#preferredHost = host;
+    this.#edgeArmed = false;
+    return this.snapshot(now);
+  }
+
+  updatePosition(host: string, position: LanPoint | undefined, edge: LanEdge | null, now: number): LanState {
+    this.#clients.set(host, { host, lastSeen: now, position });
+    if (host === this.#preferredHost && this.#currentHost !== host) {
+      this.#currentHost = host;
+      this.#edgeArmed = false;
+    } else if (!this.#currentHost || !this.#clients.has(this.#currentHost)) {
+      this.#currentHost = host;
+      this.#edgeArmed = false;
+    }
+
+    if (host === this.#currentHost && position) {
+      if (!edge) this.#edgeArmed = true;
+      else if (this.#edgeArmed) this.#migrate(edge);
+    }
+
+    return this.snapshot(now);
+  }
+
+  currentHost(): string | null {
+    return this.#currentHost;
+  }
+
+  snapshot(now: number): LanState {
+    this.prune(now);
+    return {
+      enabled: true,
+      currentHost: this.#currentHost,
+      clients: [...this.#clients.values()].sort((a, b) => a.host.localeCompare(b.host)),
+      updatedAt: now,
+    };
+  }
+
+  prune(now: number): void {
+    for (const [host, record] of this.#clients) {
+      if (now - record.lastSeen > this.#staleClientMs) this.#clients.delete(host);
+    }
+    if (this.#currentHost && !this.#clients.has(this.#currentHost)) {
+      this.#currentHost = this.#clients.keys().next().value ?? null;
+      this.#edgeArmed = false;
+    }
+  }
+
+  #migrate(edge: LanEdge): void {
+    const nextHost = this.#getNeighbor(edge) ?? this.#getFallbackNeighbor(edge);
+    if (!nextHost) return;
+    this.#currentHost = nextHost;
+    this.#preferredHost = this.#currentHost;
+    this.#edgeArmed = false;
+  }
+
+  #getNeighbor(edge: LanEdge): string | null {
+    if (!this.#currentHost) return null;
+    const neighbor = this.#topology[this.#currentHost]?.[edge];
+    return neighbor && this.#clients.has(neighbor) ? neighbor : null;
+  }
+
+  #getFallbackNeighbor(edge: LanEdge): string | null {
+    const hosts = [...this.#clients.keys()].sort();
+    if (!this.#currentHost || hosts.length < 2) return null;
+    const index = hosts.indexOf(this.#currentHost);
+    if (index < 0) return null;
+    if (edge === "right" || edge === "down") return hosts[(index + 1) % hosts.length];
+    return hosts[(index - 1 + hosts.length) % hosts.length];
+  }
+}
+
+export function normalizeLanHost(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 80) : null;
+}
+
+export function normalizeLanPoint(value: unknown): LanPoint | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const x = Number(record.x);
+  const y = Number(record.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+export function normalizeLanEdge(value: unknown): LanEdge | null {
+  return value === "left" || value === "right" || value === "up" || value === "down" ? value : null;
+}
+
+export function normalizeLanTopology(value: unknown): LanTopology {
+  if (!value || typeof value !== "object") return {};
+  const topology: Record<string, Partial<Record<LanEdge, string>>> = {};
+  for (const [hostValue, neighborsValue] of Object.entries(value as Record<string, unknown>)) {
+    const host = normalizeLanHost(hostValue);
+    if (!host || !neighborsValue || typeof neighborsValue !== "object") continue;
+    const neighbors: Partial<Record<LanEdge, string>> = {};
+    for (const edge of ["left", "right", "up", "down"] as const) {
+      const neighbor = normalizeLanHost((neighborsValue as Record<string, unknown>)[edge]);
+      if (neighbor) neighbors[edge] = neighbor;
+    }
+    if (Object.keys(neighbors).length > 0) topology[host] = neighbors;
+  }
+  return topology;
+}
+
+
+const oppositeLanEdge: Record<LanEdge, LanEdge> = {
+  left: "right",
+  right: "left",
+  up: "down",
+  down: "up",
+};
+
+export function countLanTopologyLinks(topology: LanTopology): number {
+  return Object.values(topology).reduce((count, neighbors) => count + Object.keys(neighbors).length, 0);
+}
+
+export function validateLanTopology(topology: LanTopology): readonly LanTopologyIssue[] {
+  const issues: LanTopologyIssue[] = [];
+  for (const [host, neighbors] of Object.entries(topology)) {
+    for (const edge of ["left", "right", "up", "down"] as const) {
+      const neighbor = neighbors[edge];
+      if (!neighbor) continue;
+      if (neighbor === host) {
+        issues.push({ code: "self_reference", host, edge, neighbor });
+        continue;
+      }
+      const reverseEdge = oppositeLanEdge[edge];
+      if (topology[neighbor]?.[reverseEdge] !== host) {
+        issues.push({ code: "missing_reverse", host, edge, neighbor });
+      }
+    }
+  }
+  return issues;
+}
