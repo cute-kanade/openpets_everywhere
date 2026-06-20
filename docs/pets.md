@@ -35,8 +35,9 @@ There are three sources a pet can come from at runtime:
 Two distinct window roles, two controllers:
 
 - **Default pet** (`default-pet-controller.ts`) — the always-on companion shown
-  when enabled. Persistent. Remembers its position. Shows transient reactions
-  and status badges. Not lease-bound.
+  when enabled. Persistent. Remembers its position per connected monitor and
+  clamps it back into the visible work area after display changes. Shows
+  transient reactions and status badges. Not lease-bound.
 - **Agent pets** (`agent-pet-controller.ts`) — shown on explicit agent request,
   routed by a **lease**. The first lease opens the window; the last lease
   released closes it. This lets several agents each get their own pet without
