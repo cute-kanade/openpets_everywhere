@@ -79,6 +79,14 @@ const enCatalogSource = readFileSync(join(appDir, "src", "i18n", "locales", "en.
 const windowsSource = readFileSync(join(appDir, "src", "windows.ts"), "utf8");
 const lanControllerSource = readFileSync(join(appDir, "src", "lan-controller.ts"), "utf8");
 const lanHttpControllerSource = readFileSync(join(appDir, "src", "lan-http-controller.ts"), "utf8");
+const localeSources = new Map([
+  ["es-419", readFileSync(join(appDir, "src", "i18n", "locales", "es-419.ts"), "utf8")],
+  ["ja", readFileSync(join(appDir, "src", "i18n", "locales", "ja.ts"), "utf8")],
+  ["ko", readFileSync(join(appDir, "src", "i18n", "locales", "ko.ts"), "utf8")],
+  ["pt-BR", readFileSync(join(appDir, "src", "i18n", "locales", "pt-BR.ts"), "utf8")],
+  ["zh-Hans", readFileSync(join(appDir, "src", "i18n", "locales", "zh-Hans.ts"), "utf8")],
+  ["zh-Hant", readFileSync(join(appDir, "src", "i18n", "locales", "zh-Hant.ts"), "utf8")],
+]);
 const agentSetupSource = readFileSync(join(appDir, "src", "agent-setup.ts"), "utf8");
 const loggerSource = readFileSync(join(appDir, "src", "logger.ts"), "utf8");
 const mainSource = readFileSync(join(appDir, "src", "main.ts"), "utf8");
@@ -108,6 +116,11 @@ assert.match(localIpcSourceForLogging, /request received/, "desktop IPC must log
 assert.match(localIpcPathsSource, /OPENPETS_IPC_BIND[\s\S]*?OPENPETS_IPC_ENDPOINT[\s\S]*?validateBindHost[\s\S]*?validateAdvertisedHost/, "WSL NAT IPC must separate bind and advertised endpoints with validation.");
 assert.match(localIpcPathsSource, /OPENPETS_IPC_ENDPOINT only controls the advertised discovery endpoint[\s\S]*?OPENPETS_IPC_BIND to opt into TCP IPC listening/, "OPENPETS_IPC_ENDPOINT-only mode must not start TCP listening; OPENPETS_IPC_BIND is the explicit TCP opt-in.");
 assert.match(localIpcPathsSource, /OPENPETS_IPC_ENDPOINT must use the same port as OPENPETS_IPC_BIND unless OPENPETS_IPC_BIND uses port 0/, "WSL NAT advertised endpoint must not silently override mismatched ports.");
+for (const key of ["eyebrow", "title", "description", "refresh", "mode", "host", "server", "auth", "authToken", "authEnv", "authStored", "authGenerated", "authInsecure", "authNone", "tokenHint", "tokenHintValue", "currentOwner", "persistedOwner"]) {
+  for (const [locale, source] of localeSources) {
+    assert.match(source, new RegExp(`"settings\\.lan\\.${key}"\\s*:`), `LAN settings label must be translated for ${locale}: settings.lan.${key}`);
+  }
+}
 assert.match(lanControllerSource, /maxLanResponseBodyBytes\s*=\s*16 \* 1024/, "LAN client responses must be capped before JSON parsing.");
 assert.match(lanControllerSource, /size > maxLanResponseBodyBytes[\s\S]*?req\.destroy\(new Error\("response_too_large"\)\)/, "LAN client must stop reading oversized coordinator responses.");
 assert.match(lanControllerSource, /generateIfMissing: false/, "LAN status snapshots must not generate or rotate auth tokens.");

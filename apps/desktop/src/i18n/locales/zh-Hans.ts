@@ -222,6 +222,26 @@ export const zhHans: Partial<Messages> = {
   "settings.busy.opening": "打开中",
   "settings.busy.checking": "检查中",
 
+  // --- Settings: LAN mode (renderer) ---
+  "settings.lan.eyebrow": "办公室宠物",
+  "settings.lan.title": "LAN 模式",
+  "settings.lan.description": "实验性共享办公室宠物协调器的只读状态。",
+  "settings.lan.refresh": "刷新",
+  "settings.lan.mode": "模式",
+  "settings.lan.host": "本地主机",
+  "settings.lan.server": "服务器",
+  "settings.lan.auth": "认证",
+  "settings.lan.authToken": "令牌",
+  "settings.lan.authEnv": "环境令牌",
+  "settings.lan.authStored": "已存令牌",
+  "settings.lan.authGenerated": "已生成令牌",
+  "settings.lan.authInsecure": "不安全",
+  "settings.lan.authNone": "无",
+  "settings.lan.tokenHint": "令牌提示",
+  "settings.lan.tokenHintValue": "结尾为 {hint}",
+  "settings.lan.currentOwner": "当前所有者",
+  "settings.lan.persistedOwner": "已保存所有者",
+
   // --- Settings: update status formatting (renderer) ---
   "settings.update.notLoaded": "更新状态尚未加载。",
   "settings.update.checking": "正在检查更新…",

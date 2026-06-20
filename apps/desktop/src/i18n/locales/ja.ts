@@ -222,6 +222,26 @@ export const ja: Partial<Messages> = {
   "settings.busy.opening": "開いています",
   "settings.busy.checking": "確認中",
 
+  // --- Settings: LAN mode (renderer) ---
+  "settings.lan.eyebrow": "オフィスペット",
+  "settings.lan.title": "LAN モード",
+  "settings.lan.description": "実験的な共有オフィスペットコーディネーターの読み取り専用ステータスです。",
+  "settings.lan.refresh": "更新",
+  "settings.lan.mode": "モード",
+  "settings.lan.host": "ローカルホスト",
+  "settings.lan.server": "サーバー",
+  "settings.lan.auth": "認証",
+  "settings.lan.authToken": "トークン",
+  "settings.lan.authEnv": "環境変数トークン",
+  "settings.lan.authStored": "保存済みトークン",
+  "settings.lan.authGenerated": "生成済みトークン",
+  "settings.lan.authInsecure": "安全でない",
+  "settings.lan.authNone": "なし",
+  "settings.lan.tokenHint": "トークンのヒント",
+  "settings.lan.tokenHintValue": "末尾 {hint}",
+  "settings.lan.currentOwner": "現在の所有者",
+  "settings.lan.persistedOwner": "保存済み所有者",
+
   // --- Settings: update status formatting (renderer) ---
   "settings.update.notLoaded": "アップデート状況はまだ読み込まれていません。",
   "settings.update.checking": "アップデートを確認中…",

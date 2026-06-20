@@ -222,6 +222,26 @@ export const ptBR: Partial<Messages> = {
   "settings.busy.opening": "Abrindo",
   "settings.busy.checking": "Verificando",
 
+  // --- Settings: LAN mode (renderer) ---
+  "settings.lan.eyebrow": "Pet de escritório",
+  "settings.lan.title": "Modo LAN",
+  "settings.lan.description": "Status somente leitura do coordenador experimental de pet compartilhado no escritório.",
+  "settings.lan.refresh": "Atualizar",
+  "settings.lan.mode": "Modo",
+  "settings.lan.host": "Host local",
+  "settings.lan.server": "Servidor",
+  "settings.lan.auth": "Autenticação",
+  "settings.lan.authToken": "Token",
+  "settings.lan.authEnv": "Token do ambiente",
+  "settings.lan.authStored": "Token armazenado",
+  "settings.lan.authGenerated": "Token gerado",
+  "settings.lan.authInsecure": "Inseguro",
+  "settings.lan.authNone": "Nenhum",
+  "settings.lan.tokenHint": "Dica do token",
+  "settings.lan.tokenHintValue": "Termina em {hint}",
+  "settings.lan.currentOwner": "Dono atual",
+  "settings.lan.persistedOwner": "Dono salvo",
+
   // --- Settings: update status formatting (renderer) ---
   "settings.update.notLoaded": "O status de atualização ainda não foi carregado.",
   "settings.update.checking": "Verificando atualizações…",

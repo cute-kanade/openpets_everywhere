@@ -222,6 +222,26 @@ export const es419: Partial<Messages> = {
   "settings.busy.opening": "Abriendo",
   "settings.busy.checking": "Verificando",
 
+  // --- Settings: LAN mode (renderer) ---
+  "settings.lan.eyebrow": "Mascota de oficina",
+  "settings.lan.title": "Modo LAN",
+  "settings.lan.description": "Estado de solo lectura del coordinador experimental de mascota compartida de oficina.",
+  "settings.lan.refresh": "Actualizar",
+  "settings.lan.mode": "Modo",
+  "settings.lan.host": "Host local",
+  "settings.lan.server": "Servidor",
+  "settings.lan.auth": "Autenticación",
+  "settings.lan.authToken": "Token",
+  "settings.lan.authEnv": "Token de entorno",
+  "settings.lan.authStored": "Token guardado",
+  "settings.lan.authGenerated": "Token generado",
+  "settings.lan.authInsecure": "Inseguro",
+  "settings.lan.authNone": "Ninguno",
+  "settings.lan.tokenHint": "Pista del token",
+  "settings.lan.tokenHintValue": "Termina en {hint}",
+  "settings.lan.currentOwner": "Propietario actual",
+  "settings.lan.persistedOwner": "Propietario guardado",
+
   // --- Settings: update status formatting (renderer) ---
   "settings.update.notLoaded": "El estado de la actualización aún no se ha cargado.",
   "settings.update.checking": "Buscando actualizaciones…",

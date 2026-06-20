@@ -222,6 +222,26 @@ export const ko: Partial<Messages> = {
   "settings.busy.opening": "여는 중",
   "settings.busy.checking": "확인 중",
 
+  // --- Settings: LAN mode (renderer) ---
+  "settings.lan.eyebrow": "오피스 펫",
+  "settings.lan.title": "LAN 모드",
+  "settings.lan.description": "실험적인 공유 오피스 펫 코디네이터의 읽기 전용 상태입니다.",
+  "settings.lan.refresh": "새로 고침",
+  "settings.lan.mode": "모드",
+  "settings.lan.host": "로컬 호스트",
+  "settings.lan.server": "서버",
+  "settings.lan.auth": "인증",
+  "settings.lan.authToken": "토큰",
+  "settings.lan.authEnv": "환경 토큰",
+  "settings.lan.authStored": "저장된 토큰",
+  "settings.lan.authGenerated": "생성된 토큰",
+  "settings.lan.authInsecure": "안전하지 않음",
+  "settings.lan.authNone": "없음",
+  "settings.lan.tokenHint": "토큰 힌트",
+  "settings.lan.tokenHintValue": "끝자리 {hint}",
+  "settings.lan.currentOwner": "현재 소유자",
+  "settings.lan.persistedOwner": "저장된 소유자",
+
   // --- Settings: update status formatting (renderer) ---
   "settings.update.notLoaded": "업데이트 상태가 아직 로드되지 않았습니다.",
   "settings.update.checking": "업데이트를 확인하는 중…",

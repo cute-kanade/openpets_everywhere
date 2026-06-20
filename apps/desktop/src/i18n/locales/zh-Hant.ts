@@ -222,6 +222,26 @@ export const zhHant: Partial<Messages> = {
   "settings.busy.opening": "開啟中",
   "settings.busy.checking": "檢查中",
 
+  // --- Settings: LAN mode (renderer) ---
+  "settings.lan.eyebrow": "辦公室寵物",
+  "settings.lan.title": "LAN 模式",
+  "settings.lan.description": "實驗性共享辦公室寵物協調器的唯讀狀態。",
+  "settings.lan.refresh": "重新整理",
+  "settings.lan.mode": "模式",
+  "settings.lan.host": "本機主機",
+  "settings.lan.server": "伺服器",
+  "settings.lan.auth": "驗證",
+  "settings.lan.authToken": "權杖",
+  "settings.lan.authEnv": "環境權杖",
+  "settings.lan.authStored": "已儲存權杖",
+  "settings.lan.authGenerated": "已產生權杖",
+  "settings.lan.authInsecure": "不安全",
+  "settings.lan.authNone": "無",
+  "settings.lan.tokenHint": "權杖提示",
+  "settings.lan.tokenHintValue": "結尾為 {hint}",
+  "settings.lan.currentOwner": "目前擁有者",
+  "settings.lan.persistedOwner": "已儲存擁有者",
+
   // --- Settings: update status formatting (renderer) ---
   "settings.update.notLoaded": "更新狀態尚未載入。",
   "settings.update.checking": "正在檢查更新…",
