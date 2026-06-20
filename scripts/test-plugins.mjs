@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const officialDir = join(repoRoot, "plugins", "official");
+const communityDir = join(repoRoot, "plugins", "community");
 
 const files = [];
 const tests = [];
@@ -22,11 +23,16 @@ async function pathExists(path) {
 }
 
 async function collectPluginChecks() {
-  if (!(await pathExists(officialDir))) return;
-  const plugins = await readdir(officialDir, { withFileTypes: true });
+  await collectPluginSourceChecks(officialDir);
+  await collectPluginSourceChecks(communityDir);
+}
+
+async function collectPluginSourceChecks(sourceDir) {
+  if (!(await pathExists(sourceDir))) return;
+  const plugins = await readdir(sourceDir, { withFileTypes: true });
   for (const plugin of plugins) {
     if (!plugin.isDirectory() || plugin.name.startsWith(".")) continue;
-    const pluginDir = join(officialDir, plugin.name);
+    const pluginDir = join(sourceDir, plugin.name);
     files.push(join(pluginDir, "index.js"));
     await collectTestFiles(pluginDir);
   }

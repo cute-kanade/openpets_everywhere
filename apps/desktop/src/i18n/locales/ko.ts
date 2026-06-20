@@ -351,6 +351,7 @@ export const ko: Partial<Messages> = {
   "plugins.description.installedReady": "설치된 플러그인이 구성할 준비가 되었습니다.",
   "plugins.description.availableCatalog": "플러그인 카탈로그에서 사용할 수 있습니다.",
   "plugins.badge.bundled": "번들",
+  "plugins.badge.community": "커뮤니티",
   "plugins.badge.local": "로컬",
   "plugins.badge.js": "JS",
   "plugins.badge.declarative": "선언형",

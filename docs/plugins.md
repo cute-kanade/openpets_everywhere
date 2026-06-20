@@ -14,6 +14,18 @@ plugins, catalog generation, packaging, runtime behavior, or plugin-facing UI
 Source maps: `apps/desktop/src/codemap.md` (the `plugin-*.ts` modules),
 `plugins/codemap.md`, `plugins/official/codemap.md`, `packages/sdk/codemap.md`.
 
+## Source lanes
+
+Plugin source is split by publishing intent:
+
+- `plugins/official/` — first-party, reviewed OpenPets plugins. Only these can be
+  bundled or enabled by default.
+- `plugins/community/` — public catalog plugins that are reviewed and shipped
+  through the same ZIP/SHA/catalog pipeline, but are labeled `publisherType:
+  "community"` and cannot be bundled.
+- `plugins/dev/` — local experiments only. The catalog generator ignores this
+  lane; move a plugin to `community/` or `official/` before publishing.
+
 ## Mental model
 
 A plugin is a **package** validated by a **manifest**, run inside a **sandbox**,
@@ -145,7 +157,7 @@ owns safe uninstall path resolution.
 `plugin-local-loader.ts` validates a selected local folder and **snapshots only
 `openpets.plugin.json`** into `userData/plugins-dev/{id}`, with symlink/path/size
 protections. Point the desktop dev build at plugin roots with
-`OPENPETS_DEV_PLUGIN_ROOTS` (for example `plugins/official:plugins/dev`) and run
+`OPENPETS_DEV_PLUGIN_ROOTS` (for example `plugins/official:plugins/community:plugins/dev`) and run
 `pnpm dev:desktop:plugins` for hot-load. See [development.md](development.md).
 
 ## Authoring workflow (end to end)
@@ -175,13 +187,18 @@ The command surface (run from repo root):
 | `pnpm plugins:publish` | Generate + upload ZIPs to R2 |
 | `pnpm plugins:validate-live` | Post-deploy validation against the live catalog |
 | `pnpm plugins:deploy` | Deploy the web catalog |
-| `pnpm plugins:test` | Run plugin locale checks + the official-plugin harness tests |
+| `pnpm plugins:test` | Run plugin locale checks + official/community plugin harness tests |
 
 The release validator exists to catch exactly the production-breakers
 `plugins:check` alone misses: unresolved `$t:` names/descriptions in catalog
 cards, missing ZIPs, SHA mismatches, missing `locales/en.json`, missing declared
 assets/entry files, and catalog/package drift. **Always run it before shipping a
 plugin release.**
+
+`plugins:package` and `plugins:publish` read both `plugins/official/` and
+`plugins/community/`. Catalog v2 entries include `publisherType` so the app and
+site can distinguish reviewed first-party plugins from community submissions.
+Community plugins follow the same release validation but cannot set `bundled`.
 
 ## Troubleshooting
 

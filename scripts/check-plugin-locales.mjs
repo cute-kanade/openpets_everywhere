@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const officialDir = join(repoRoot, "plugins", "official");
+const communityDir = join(repoRoot, "plugins", "community");
 
 const errors = [];
 
@@ -57,8 +58,8 @@ function compareKeys(pluginName, localeName, englishKeys, localeKeys) {
   for (const key of extra) errors.push(`${pluginName}/${localeName} has extra key not in en: ${key}`);
 }
 
-async function checkPlugin(plugin) {
-  const localesDir = join(officialDir, plugin.name, "locales");
+async function checkPlugin(sourceDir, plugin) {
+  const localesDir = join(sourceDir, plugin.name, "locales");
   if (!(await pathExists(localesDir))) return;
 
   const entries = (await readdir(localesDir, { withFileTypes: true }))
@@ -80,12 +81,16 @@ async function checkPlugin(plugin) {
   }
 }
 
-if (await pathExists(officialDir)) {
-  const plugins = (await readdir(officialDir, { withFileTypes: true }))
+async function checkPluginSource(sourceDir) {
+  if (!(await pathExists(sourceDir))) return;
+  const plugins = (await readdir(sourceDir, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
     .sort((a, b) => a.name.localeCompare(b.name));
-  for (const plugin of plugins) await checkPlugin(plugin);
+  for (const plugin of plugins) await checkPlugin(sourceDir, plugin);
 }
+
+await checkPluginSource(officialDir);
+await checkPluginSource(communityDir);
 
 if (errors.length > 0) {
   console.error(`Plugin locale key check failed with ${errors.length} issue${errors.length === 1 ? "" : "s"}:`);

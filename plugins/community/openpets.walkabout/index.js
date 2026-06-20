@@ -206,8 +206,12 @@ export function startMode(ctx, cfg) {
  * @param {import("@open-pets/plugin-sdk").OpenPetsPluginEntry} OpenPetsPlugin
  */
 export function register(OpenPetsPlugin) {
+  let cleanup = () => {};
+
   OpenPetsPlugin.register({
     async start(ctx) {
+      cleanup();
+      let active = true;
       let cfg = cleanConfig(await ctx.config.get());
       let stopCurrentMode = startMode(ctx, cfg);
 
@@ -220,11 +224,13 @@ export function register(OpenPetsPlugin) {
       // self-cancelling timer; when it fires the pet walks again.
       /** @type {ReturnType<typeof setTimeout>|null} */
       let resumeTimer = null;
+      let resumeGeneration = 0;
 
       // React to config changes — tear down old mode, spin up new one.
       // Also cancels any pending resume so a stale timer cannot restart a
       // mode that belongs to the old config.
       const unsubConfig = ctx.config.onChange(async (newRaw) => {
+        if (!active) return;
         const newCfg = cleanConfig(newRaw);
         clearTimeout(resumeTimer);
         resumeTimer = null;
@@ -241,22 +247,28 @@ export function register(OpenPetsPlugin) {
       // via ctx.pets.list() is deferred — pool/lease pets are not motion-addressable.
       const unsubActivity = ctx.events.on("agent:activity", async (event) => {
         if (!cfg.pauseWhenBusy) return;
-        if ((event?.surface ?? "default") !== "default") return; // ignore other sessions' pets
+        if ((event?.surface ?? "default") !== "default") return; // ignore other surfaces
+        if (event?.petId && event.petId !== "default") return;   // ignore other sessions' pets
         if (event?.active !== true) return;                    // only react to activity pulses
 
+        const generation = ++resumeGeneration;
         stopCurrentMode();
         clearTimeout(resumeTimer);
         await ctx.status.set({ text: ctx.t("status.paused"), tone: "warning" });
+        if (!active || generation !== resumeGeneration) return;
 
         resumeTimer = setTimeout(() => {
+          if (!active || generation !== resumeGeneration) return;
           resumeTimer = null;
+          stopCurrentMode();
           stopCurrentMode = startMode(ctx, cfg);
           ctx.status.set({ text: ctx.t("status.active", { mode: cfg.mode }), tone: "info" }).catch(() => {});
         }, cfg.intervalMs * 2);
       });
 
-      // Return cleanup.
-      return function stop() {
+      cleanup = function stopWalkabout() {
+        active = false;
+        resumeGeneration += 1;
         clearTimeout(resumeTimer);
         resumeTimer = null;
         stopCurrentMode();
@@ -264,6 +276,10 @@ export function register(OpenPetsPlugin) {
         unsubActivity();
         ctx.status.clear().catch(() => {});
       };
+    },
+    stop() {
+      cleanup();
+      cleanup = () => {};
     },
   });
 }

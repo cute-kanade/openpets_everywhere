@@ -11,6 +11,7 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const catalogPath = join(repoRoot, "web", "public", "plugins", "catalog.v2.json");
 const zipDir = join(repoRoot, "web", ".data", "plugin-zips");
 const officialDir = join(repoRoot, "plugins", "official");
+const communityDir = join(repoRoot, "plugins", "community");
 
 const useLive = process.argv.includes("--live");
 const requireLocalZips = process.argv.includes("--require-local-zips") || !useLive;
@@ -50,16 +51,30 @@ async function loadCatalog() {
   return readJson(catalogPath);
 }
 
-async function officialPluginIds() {
+async function pluginIdsForDir(sourceDir, publisherType) {
   try {
-    return (await readdir(officialDir, { withFileTypes: true }))
+    return (await readdir(sourceDir, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-      .map((entry) => entry.name)
-      .sort((a, b) => a.localeCompare(b));
+      .map((entry) => ({ id: entry.name, publisherType }))
+      .sort((a, b) => a.id.localeCompare(b.id));
   } catch (error) {
     if (error.code === "ENOENT") return [];
     throw error;
   }
+}
+
+async function expectedPluginEntries() {
+  const expected = [
+    ...(await pluginIdsForDir(officialDir, "official")),
+    ...(await pluginIdsForDir(communityDir, "community")),
+  ].sort((a, b) => a.id.localeCompare(b.id));
+  const seen = new Map();
+  for (const entry of expected) {
+    const prior = seen.get(entry.id);
+    if (prior) fail(`source: duplicate plugin id ${entry.id} in ${prior.publisherType} and ${entry.publisherType}`);
+    seen.set(entry.id, entry);
+  }
+  return expected;
 }
 
 async function loadZip(entry) {
@@ -120,14 +135,23 @@ function assertNoTranslationRefs(path, value) {
   if (hasTranslationRef(value)) fail(`${path}: unresolved translation ref ${value}`);
 }
 
-function validateCatalog(catalog, expectedIds) {
+function validateCatalog(catalog, expectedEntries) {
   if (!isRecord(catalog)) fail("Plugin catalog must be an object.");
   if (!Array.isArray(catalog.plugins)) fail("Plugin catalog must contain a plugins array.");
   const plugins = Array.isArray(catalog.plugins) ? catalog.plugins : [];
   const ids = plugins.map((plugin) => plugin?.id).sort((a, b) => String(a).localeCompare(String(b)));
-  for (const id of expectedIds) if (!ids.includes(id)) fail(`catalog: missing official plugin ${id}`);
+  const expectedById = new Map(expectedEntries.map((entry) => [entry.id, entry]));
+  for (const entry of expectedEntries) if (!ids.includes(entry.id)) fail(`catalog: missing ${entry.publisherType} plugin ${entry.id}`);
+  const seen = new Set();
   for (const plugin of plugins) {
     if (!isRecord(plugin)) { fail("catalog: plugin entry must be an object"); continue; }
+    if (seen.has(plugin.id)) fail(`catalog: duplicate plugin id ${plugin.id}`);
+    seen.add(plugin.id);
+    const expected = expectedById.get(plugin.id);
+    if (!expected) fail(`catalog: unexpected plugin ${plugin.id}`);
+    if (expected && plugin.publisherType !== expected.publisherType) fail(`${plugin.id}: expected publisherType ${expected.publisherType}.`);
+    if (plugin.publisherType !== "official" && plugin.publisherType !== "community") fail(`${plugin.id}: invalid publisherType.`);
+    if (plugin.publisherType === "community" && plugin.bundled === true) fail(`${plugin.id}: community plugins cannot be bundled.`);
     assertNoTranslationRefs(`${plugin.id}.name`, plugin.name);
     assertNoTranslationRefs(`${plugin.id}.description`, plugin.description);
     if (plugin.runtime !== "javascript") fail(`${plugin.id}: current release catalog must only expose JavaScript SDK plugins.`);
@@ -203,9 +227,9 @@ async function validatePluginPackage(entry) {
   validateManifestAgainstCatalog(entry, manifest, localeCatalog, files);
 }
 
-const expectedIds = await officialPluginIds();
+const expectedEntries = await expectedPluginEntries();
 const catalog = await loadCatalog();
-const plugins = validateCatalog(catalog, expectedIds);
+const plugins = validateCatalog(catalog, expectedEntries);
 for (const entry of plugins) await validatePluginPackage(entry);
 
 if (errors.length > 0) {

@@ -59,7 +59,7 @@ type PluginStatus = { text: string; tone?: "info" | "success" | "warning" | "err
 type PluginConfigError = { path?: string; code?: string; message?: string };
 type PluginCategory = "Companion" | "Wellness" | "Focus" | "Developer" | "Advanced";
 type SafePluginRecord = { id: string; name?: string; description?: string; version: string; icon?: PluginIconName; iconDataUrl?: string; source: "catalog" | "local"; bundled?: boolean; category?: PluginCategory; enabled: boolean; brokenReason?: string; approvedPermissions: PluginPermission[]; runtime?: "declarative" | "javascript"; sdkVersion?: string; catalogDisabled?: boolean; catalogDeprecated?: boolean; catalogStatusReason?: string; configSchema?: PluginConfigSchema; effectiveConfig?: PluginConfig; configErrors?: PluginConfigError[]; commands?: PluginCommand[]; status?: PluginStatus };
-type SafeCatalogPluginRecord = { id: string; name: string; version: string; description: string; runtime: "declarative" | "javascript"; icon?: PluginIconName; iconDataUrl?: string; sdkVersion?: string; permissions: PluginPermission[]; installed: boolean; bundled?: boolean; category?: PluginCategory; deprecated?: boolean; statusReason?: string };
+type SafeCatalogPluginRecord = { id: string; name: string; version: string; description: string; runtime: "declarative" | "javascript"; icon?: PluginIconName; iconDataUrl?: string; sdkVersion?: string; permissions: PluginPermission[]; installed: boolean; bundled?: boolean; category?: PluginCategory; deprecated?: boolean; statusReason?: string; publisherType?: "official" | "community" };
 type PluginServiceSnapshot = { plugins: SafePluginRecord[] };
 type PluginCatalogSnapshot = { plugins: SafeCatalogPluginRecord[] };
 type PluginServiceResult = { ok: true; snapshot: PluginServiceSnapshot } | { ok: false; error: string; snapshot: PluginServiceSnapshot };
@@ -2436,6 +2436,7 @@ function PluginsView() {
                   <div className="badges mt-1">
                     <StatusPill tone={pluginPrimaryTone(entry)}>{pluginPrimaryLabel(entry, t)}</StatusPill>
                     {entry.installed?.bundled && <StatusPill tone="blue">{t("plugins.badge.bundled")}</StatusPill>}
+                    {entry.catalog?.publisherType === "community" && <StatusPill tone="orange">{t("plugins.badge.community")}</StatusPill>}
                     {entry.installed?.source === "local" && <StatusPill tone="orange">{t("plugins.badge.local")}</StatusPill>}
                     {entry.installed?.runtime === "javascript" || entry.catalog?.runtime === "javascript" ? <StatusPill tone="purple">{t("plugins.badge.js")}</StatusPill> : <StatusPill tone="slate">{t("plugins.badge.declarative")}</StatusPill>}
                   </div>
@@ -2504,6 +2505,7 @@ function PluginsView() {
             <StatusPill tone={pluginPrimaryTone(selected)}>{pluginPrimaryLabel(selected, t)}</StatusPill>
             <StatusPill tone="slate">v{installed?.version ?? catalogPlugin?.version}</StatusPill>
             {installed?.bundled && <StatusPill tone="blue">{t("plugins.badge.bundled")}</StatusPill>}
+            {catalogPlugin?.publisherType === "community" && <StatusPill tone="orange">{t("plugins.badge.community")}</StatusPill>}
             {installed?.source === "local" && <StatusPill tone="orange">{t("plugins.badge.local")}</StatusPill>}
             {(installed?.catalogDeprecated || catalogPlugin?.deprecated) && <StatusPill tone="orange">{t("plugins.badge.deprecated")}</StatusPill>}
           </div>

@@ -57,6 +57,19 @@ Current lineup (verified 2026-06-13 against the folder + manifests):
 
 `plugins/official/codemap.md` carries the per-plugin SDK-surface breakdown.
 
+## Community plugin lineup
+
+Community plugins live in `plugins/community/`. They are public catalog plugins
+that pass the same packaging, ZIP, SHA, locale, and manifest checks as official
+plugins, but they are labeled `publisherType: "community"` and are not bundled or
+enabled by default.
+
+Current community lineup:
+
+| Plugin id | What it is |
+|-----------|------------|
+| `openpets.walkabout` | Makes the pet roam the screen, follow the cursor, or patrol back and forth |
+
 > Drift note: `web/docs/plugin-publishing.md` still lists an **older** lineup
 > (`ambient-companion`, `break-buddy`, `pet-pal`, `github-notifications`). That
 > runbook is stale — trust this folder + the catalog generator. Tracked in the
@@ -86,8 +99,8 @@ the user installs and enables it from the Plugins page.
 
 ## Relationship to the catalog
 
-Official plugins are packaged into catalog **v2** artifacts and ZIPs on R2 (see
-[catalog.md](catalog.md)). Current runtime work should not optimize for the
-legacy v1 catalog (kept as an empty compatibility shim). The packaging + release
-gates are in [testing-and-validation.md](testing-and-validation.md).
+Official and community plugins are packaged into catalog **v2** artifacts and
+ZIPs on R2 (see [catalog.md](catalog.md)). Current runtime work should not
+optimize for the legacy v1 catalog (kept as an empty compatibility shim). The
+packaging + release gates are in [testing-and-validation.md](testing-and-validation.md).
 </content>

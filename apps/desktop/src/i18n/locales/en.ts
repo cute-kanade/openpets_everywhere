@@ -383,6 +383,7 @@ export const en = {
   "plugins.description.installedReady": "Installed plugin ready for configuration.",
   "plugins.description.availableCatalog": "Available from the plugin catalog.",
   "plugins.badge.bundled": "Bundled",
+  "plugins.badge.community": "Community",
   "plugins.badge.local": "Local",
   "plugins.badge.js": "JS",
   "plugins.badge.declarative": "Declarative",

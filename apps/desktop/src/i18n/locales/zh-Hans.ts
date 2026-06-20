@@ -351,6 +351,7 @@ export const zhHans: Partial<Messages> = {
   "plugins.description.installedReady": "已安装的插件可供配置。",
   "plugins.description.availableCatalog": "可从插件目录获取。",
   "plugins.badge.bundled": "内置",
+  "plugins.badge.community": "社区",
   "plugins.badge.local": "本地",
   "plugins.badge.js": "JS",
   "plugins.badge.declarative": "声明式",

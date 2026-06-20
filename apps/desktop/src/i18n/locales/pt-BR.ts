@@ -351,6 +351,7 @@ export const ptBR: Partial<Messages> = {
   "plugins.description.installedReady": "Plugin instalado pronto para configuração.",
   "plugins.description.availableCatalog": "Disponível no catálogo de plugins.",
   "plugins.badge.bundled": "Incluído",
+  "plugins.badge.community": "Comunidade",
   "plugins.badge.local": "Local",
   "plugins.badge.js": "JS",
   "plugins.badge.declarative": "Declarativo",

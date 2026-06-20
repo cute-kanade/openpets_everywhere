@@ -94,6 +94,9 @@ schema version, unique ids, semver + SHA fields, canonicalized permissions, and
 an optional minimum-OpenPets-version gate. Catalog cards may carry an
 `iconDataUrl` (base64 SVG) so the Plugins UI renders an icon without an extra
 fetch. Each entry's `downloadUrl` must point at `zip.openpets.dev/plugins/`.
+Catalog v2 also carries `publisherType: "official" | "community"`; older
+catalogs without the field are treated as official by the desktop validator.
+Community entries are public catalog plugins but cannot be bundled/default-on.
 
 The desktop fetch (`plugin-catalog.ts`) is hardened: timeout, redirect
 rejection, response-size cap, and caching with refresh. Install/verification of

@@ -351,6 +351,7 @@ export const zhHant: Partial<Messages> = {
   "plugins.description.installedReady": "已安裝的外掛，可進行設定。",
   "plugins.description.availableCatalog": "可從外掛目錄取得。",
   "plugins.badge.bundled": "內建",
+  "plugins.badge.community": "社群",
   "plugins.badge.local": "本機",
   "plugins.badge.js": "JS",
   "plugins.badge.declarative": "宣告式",

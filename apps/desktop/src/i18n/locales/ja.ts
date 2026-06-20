@@ -351,6 +351,7 @@ export const ja: Partial<Messages> = {
   "plugins.description.installedReady": "インストール済みで設定可能なプラグイン。",
   "plugins.description.availableCatalog": "プラグインカタログから利用可能。",
   "plugins.badge.bundled": "同梱",
+  "plugins.badge.community": "コミュニティ",
   "plugins.badge.local": "ローカル",
   "plugins.badge.js": "JS",
   "plugins.badge.declarative": "宣言的",

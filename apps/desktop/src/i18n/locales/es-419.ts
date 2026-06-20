@@ -351,6 +351,7 @@ export const es419: Partial<Messages> = {
   "plugins.description.installedReady": "Complemento instalado listo para configurar.",
   "plugins.description.availableCatalog": "Disponible en el catálogo de complementos.",
   "plugins.badge.bundled": "Incluido",
+  "plugins.badge.community": "Comunidad",
   "plugins.badge.local": "Local",
   "plugins.badge.js": "JS",
   "plugins.badge.declarative": "Declarativo",
