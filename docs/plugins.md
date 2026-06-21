@@ -74,6 +74,12 @@ The manifest is the contract the host validates before *any* plugin code runs
 `name`/`description`/labels in the manifest use `$t:` references; the catalog
 generator and release validator fail if those don't resolve.
 
+Catalog card icons can use bundled SVG assets. A plugin declares the SVG under
+`assets.icons` (for example `"assets": { "icons": { "spotify":
+"assets/spotify.svg" } }`); the packaging flow sanitizes the SVG and embeds it
+as catalog `iconDataUrl`. Do **not** use external SVG URLs for plugin icons — the
+icon must be part of the reviewed, hash-pinned package.
+
 ### Manifest reading is hardened
 
 `plugin-manifest-reader.ts` enforces realpath/allowed-root checks, requires the
@@ -187,6 +193,7 @@ The command surface (run from repo root):
 | `pnpm plugins:publish` | Generate + upload ZIPs to R2 |
 | `pnpm plugins:validate-live` | Post-deploy validation against the live catalog |
 | `pnpm plugins:deploy` | Deploy the web catalog |
+| `pnpm plugins:release` | Full package → validate → publish → deploy → live-validate sequence |
 | `pnpm plugins:test` | Run plugin locale checks + official/community plugin harness tests |
 
 The release validator exists to catch exactly the production-breakers
@@ -199,6 +206,37 @@ plugin release.**
 `plugins/community/`. Catalog v2 entries include `publisherType` so the app and
 site can distinguish reviewed first-party plugins from community submissions.
 Community plugins follow the same release validation but cannot set `bundled`.
+
+### Community plugin provenance, pending submissions, and owner safe updates
+
+To lock down the integrity and security of community-submitted plugins without
+modifying the app-facing `catalog.v2.json` schema, OpenPets uses website-only
+sidecars:
+
+- `web/public/plugins/provenance.json` — reviewed provenance for installable
+  community plugins.
+- `web/public/plugins/submissions.json` — pending external GitHub submissions
+  shown on the website but not installable yet.
+
+`provenance.json` maps plugin IDs to their verified upstream metadata:
+- `publisher`: The GitHub username or organization owning the plugin.
+- `sourceUrl`: The canonical upstream GitHub repository URL.
+- `sourceSubdirectory`: Subdirectory in the repository containing the plugin manifest and files (if applicable).
+- `sourceCommit`: The specific git commit SHA that was reviewed and approved.
+- `reviewedAt`: ISO date when the current version/commit was reviewed.
+- `updatePolicy`: Can be `safe-auto` (safe for automated publishing of owner updates) or `manual-review` (always requires manual PR review).
+
+Pending entries in `submissions.json` are candidates only. They must not appear
+in the installable catalog until promoted into `plugins/community/`, packaged,
+uploaded to R2, and release-validated.
+
+Plugin owners can publish updates to their plugins without needing a manual PR to the main OpenPets repository. They do this by tag-publishing new releases on their immutable GitHub repository. OpenPets automation periodically validates updates against the following safety rules:
+1. **Repository & Publisher Match**: The release must originate from the same owner, repository, and plugin ID registered in `provenance.json`.
+2. **Version Increase**: The release version must be a clean semver increase.
+3. **No New Permissions/Capabilities**: The update must not request any new `permissions`, new `network.hosts`, new private local API/privileged capabilities, or changes to publisher configuration.
+4. **All Tests Pass**: The package must pass all validation gates (manifest, SDK compatibility, locales check, ZIP and SHA matches).
+
+If an update is determined to be **safe**, OpenPets CI/CD automation automatically updates the catalog entry version and re-packages the plugin. If any safety boundary is crossed, the update triggers a `manual-review` block and requires a maintainer to inspect and merge the change.
 
 ## Troubleshooting
 

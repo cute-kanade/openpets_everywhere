@@ -98,6 +98,30 @@ Catalog v2 also carries `publisherType: "official" | "community"`; older
 catalogs without the field are treated as official by the desktop validator.
 Community entries are public catalog plugins but cannot be bundled/default-on.
 
+### Sidecars: plugin provenance and submissions (website-only)
+
+To secure community-contributed plugins without changing the app-facing
+`catalog.v2.json` schema, the website serves sidecar metadata files:
+
+| File | Purpose |
+|------|---------|
+| `https://openpets.dev/plugins/provenance.json` | Reviewed provenance for installable community plugins. |
+| `https://openpets.dev/plugins/submissions.json` | Pending external GitHub submissions shown on the website but not installable. |
+
+These files are only used by the website/CI environment for provenance display,
+validation, and automated owner-publishing policy. `provenance.json` is keyed by
+plugin ID and defines:
+* `publisher`: GitHub user/organization owner.
+* `sourceUrl`: Upstream GitHub repository.
+* `sourceSubdirectory`: Optional subdirectory under the repository root.
+* `sourceCommit`: The reviewed and approved commit SHA.
+* `reviewedAt`: ISO date/time of review.
+* `updatePolicy`: `safe-auto` (safe for automated release updates) or `manual-review`.
+
+`submissions.json` is also keyed by plugin ID, but entries are candidates only:
+they must not appear in the installable catalog until promoted into
+`plugins/community/`, packaged, uploaded, and release-validated.
+
 The desktop fetch (`plugin-catalog.ts`) is hardened: timeout, redirect
 rejection, response-size cap, and caching with refresh. Install/verification of
 the downloaded ZIP (SHA-256, host/path allowlist, entry restrictions, manifest

@@ -12,6 +12,8 @@ const catalogPath = join(repoRoot, "web", "public", "plugins", "catalog.v2.json"
 const zipDir = join(repoRoot, "web", ".data", "plugin-zips");
 const officialDir = join(repoRoot, "plugins", "official");
 const communityDir = join(repoRoot, "plugins", "community");
+const provenancePath = join(repoRoot, "web", "public", "plugins", "provenance.json");
+const submissionsPath = join(repoRoot, "web", "public", "plugins", "submissions.json");
 
 const useLive = process.argv.includes("--live");
 const requireLocalZips = process.argv.includes("--require-local-zips") || !useLive;
@@ -227,9 +229,117 @@ async function validatePluginPackage(entry) {
   validateManifestAgainstCatalog(entry, manifest, localeCatalog, files);
 }
 
+async function loadProvenance() {
+  if (useLive) {
+    try {
+      const bytes = await fetchBytes("https://openpets.dev/plugins/provenance.json");
+      return JSON.parse(bytes.toString("utf8"));
+    } catch (error) {
+      fail(`provenance: failed to fetch live provenance: ${error.message}`);
+      return {};
+    }
+  }
+  try {
+    return await readJson(provenancePath);
+  } catch (error) {
+    fail(`provenance: failed to read local provenance.json: ${error.message}`);
+    return {};
+  }
+}
+
+async function loadSubmissions() {
+  if (useLive) {
+    try {
+      const bytes = await fetchBytes("https://openpets.dev/plugins/submissions.json");
+      return JSON.parse(bytes.toString("utf8"));
+    } catch {
+      return {};
+    }
+  }
+  try {
+    return await readJson(submissionsPath);
+  } catch {
+    return {};
+  }
+}
+
+function validateProvenance(provenance, catalogPlugins) {
+  if (!isRecord(provenance)) {
+    fail("provenance: sidecar must be an object.");
+    return;
+  }
+  for (const [pluginId, entry] of Object.entries(provenance)) {
+    if (!/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(pluginId)) {
+      fail(`provenance: invalid plugin ID key "${pluginId}"`);
+      continue;
+    }
+    if (!isRecord(entry)) {
+      fail(`provenance [${pluginId}]: entry must be an object.`);
+      continue;
+    }
+    if (typeof entry.publisher !== "string" || entry.publisher.trim() === "") {
+      fail(`provenance [${pluginId}]: publisher must be a non-empty string.`);
+    }
+    if (typeof entry.sourceUrl !== "string" || !entry.sourceUrl.startsWith("https://github.com/")) {
+      fail(`provenance [${pluginId}]: sourceUrl must be a GitHub URL starting with https://github.com/.`);
+    }
+    if (entry.sourceSubdirectory !== undefined && entry.sourceSubdirectory !== null && typeof entry.sourceSubdirectory !== "string") {
+      fail(`provenance [${pluginId}]: sourceSubdirectory must be a string.`);
+    }
+    if (typeof entry.sourceCommit !== "string" || !/^[0-9a-f]{40}$/i.test(entry.sourceCommit)) {
+      fail(`provenance [${pluginId}]: sourceCommit must be a 40-character hex commit SHA.`);
+    }
+    if (typeof entry.reviewedAt !== "string" || isNaN(Date.parse(entry.reviewedAt))) {
+      fail(`provenance [${pluginId}]: reviewedAt must be a valid ISO date string.`);
+    }
+    if (entry.updatePolicy !== "safe-auto" && entry.updatePolicy !== "manual-review") {
+      fail(`provenance [${pluginId}]: updatePolicy must be "safe-auto" or "manual-review".`);
+    }
+  }
+
+  for (const plugin of catalogPlugins) {
+    if (plugin.publisherType === "community") {
+      if (!provenance[plugin.id]) {
+        fail(`provenance: community plugin "${plugin.id}" listed in catalog, but missing from provenance.json.`);
+      }
+    }
+  }
+}
+
+function validateSubmissions(submissions, catalogPlugins) {
+  if (!isRecord(submissions)) {
+    fail("submissions: sidecar must be an object.");
+    return;
+  }
+  const catalogIds = new Set(catalogPlugins.map((plugin) => plugin.id));
+  for (const [pluginId, entry] of Object.entries(submissions)) {
+    if (!/^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/.test(pluginId)) {
+      fail(`submissions: invalid plugin ID key "${pluginId}"`);
+      continue;
+    }
+    if (catalogIds.has(pluginId)) fail(`submissions [${pluginId}]: installable catalog plugins must not remain in pending submissions.`);
+    if (!isRecord(entry)) {
+      fail(`submissions [${pluginId}]: entry must be an object.`);
+      continue;
+    }
+    if (typeof entry.name !== "string" || entry.name.trim() === "") fail(`submissions [${pluginId}]: name must be a non-empty string.`);
+    if (typeof entry.description !== "string" || entry.description.trim() === "") fail(`submissions [${pluginId}]: description must be a non-empty string.`);
+    if (typeof entry.publisher !== "string" || entry.publisher.trim() === "") fail(`submissions [${pluginId}]: publisher must be a non-empty string.`);
+    if (typeof entry.sourceUrl !== "string" || !entry.sourceUrl.startsWith("https://github.com/")) fail(`submissions [${pluginId}]: sourceUrl must be a GitHub URL starting with https://github.com/.`);
+    if (entry.sourceSubdirectory !== undefined && entry.sourceSubdirectory !== null && typeof entry.sourceSubdirectory !== "string") fail(`submissions [${pluginId}]: sourceSubdirectory must be a string.`);
+    if (typeof entry.sourceCommit !== "string" || !/^[0-9a-f]{40}$/i.test(entry.sourceCommit)) fail(`submissions [${pluginId}]: sourceCommit must be a 40-character hex commit SHA.`);
+    if (typeof entry.submittedAt !== "string" || isNaN(Date.parse(entry.submittedAt))) fail(`submissions [${pluginId}]: submittedAt must be a valid ISO date string.`);
+    if (entry.status !== "under-review") fail(`submissions [${pluginId}]: status must be "under-review".`);
+  }
+}
+
 const expectedEntries = await expectedPluginEntries();
 const catalog = await loadCatalog();
 const plugins = validateCatalog(catalog, expectedEntries);
+const provenance = await loadProvenance();
+validateProvenance(provenance, plugins);
+const submissions = await loadSubmissions();
+validateSubmissions(submissions, plugins);
 for (const entry of plugins) await validatePluginPackage(entry);
 
 if (errors.length > 0) {
