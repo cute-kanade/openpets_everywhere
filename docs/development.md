@@ -59,9 +59,13 @@ catch.
 
 - `pnpm dev:desktop` launches Electron against the TypeScript source with the
   Vite renderer dev server.
+- Plugin authors using the installed app do not need this repo: open **Plugins →
+  Developer Mode → Load unpacked plugin folder** to validate, snapshot, watch, and
+  reload a standalone plugin folder.
 - For plugin work, `pnpm dev:desktop:plugins` points the local loader at both
   `plugins/official` and `plugins/dev` (via `OPENPETS_DEV_PLUGIN_ROOTS`) so
-  official plugins and in-progress dev plugins hot-load.
+  official plugins and in-progress dev plugins hot-load when working on OpenPets
+  itself.
 - Logs land in `userData/logs/openpets.log` (path varies by OS). Route renderer
   diagnostics into the app log, not just DevTools (per `AGENTS.md`).
 

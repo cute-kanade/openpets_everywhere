@@ -90,7 +90,7 @@ async function scheduleFromState(ctx) {
   const state = await getState(ctx);
   const cfg = await config(ctx);
   const now = Date.now();
-  const base = state.nextDueAt || (state.lastDrinkAt ? state.lastDrinkAt + paceDelayMs(cfg.pace) : now + paceDelayMs(cfg.pace));
+  const base = state.pausedUntil && state.pausedUntil > now ? state.pausedUntil : now + paceDelayMs(cfg.pace);
   await scheduleNext(ctx, Math.max(1, base - now));
 }
 

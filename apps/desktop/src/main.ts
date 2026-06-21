@@ -74,9 +74,10 @@ if (!gotSingleInstanceLock) {
     const devPluginMode = roots.length > 0 || paths.length > 0;
     initializePluginPlatformSettings(app.getPath("userData"));
     const pluginCapabilities = createElectronPluginHostCapabilities(app.getPath("userData"));
+    let devPluginWatcher: ReturnType<typeof startDevPluginWatcher> | undefined;
     const pluginService = initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion(), new ElectronPluginJsHost(), writePluginRuntimeLog, process.env.OPENPETS_DISABLE_PLUGIN_CATALOG === "1" || devPluginMode, resolveBundledOfficialPluginRoots(), !devPluginMode, pluginCapabilities, (properties) => {
       trackDesktopEvent("desktop_plugin_runtime_error", properties);
-    });
+    }, (sourcePath) => devPluginWatcher?.addPaths([sourcePath]), (sourcePath) => devPluginWatcher?.removePath(sourcePath));
     // Wall-clock schedules (daily/cron/at) re-arm deterministically after sleep.
     powerMonitor.on("resume", () => pluginService.runtime.resyncSchedules());
     if (shouldOpenDefaultPetOnLaunch()) {
@@ -88,15 +89,21 @@ if (!gotSingleInstanceLock) {
     void (async () => {
       const service = pluginService;
       await service.start();
+      const persistedPaths = service.getLocalSourcePaths();
       for (const path of paths) {
         const result = await service.loadLocalPath(path, { autoApprove: true });
         if (!result.ok) logError("app", "dev plugin path load failed", new Error(result.error));
+      }
+      for (const path of persistedPaths.filter((path) => !paths.includes(path))) {
+        const result = await service.loadLocalPath(path, { autoApprove: true });
+        if (!result.ok) logError("app", "persisted local plugin load failed", new Error(result.error));
       }
       if (roots.length > 0) {
         const results = await service.loadLocalRoots(roots, { autoApprove: true, pruneStale: true });
         for (const result of results) if (!result.ok) logError("app", "dev plugin root load failed", new Error(`${result.path}: ${result.error}`));
       }
-      if (devPluginMode) startDevPluginWatcher(service, roots, paths);
+      const watchPaths = Array.from(new Set([...paths, ...service.getLocalSourcePaths()]));
+      if (devPluginMode || watchPaths.length > 0) devPluginWatcher = startDevPluginWatcher(service, roots, watchPaths);
     })().catch((error) => logError("app", "plugin service startup failed", error));
     void checkForGitHubReleaseUpdate().then(() => refreshTrayMenu());
     info("app", "startup complete", { logFile: getLogFilePath(), openDefaultPetOnLaunch: shouldOpenDefaultPetOnLaunch() });

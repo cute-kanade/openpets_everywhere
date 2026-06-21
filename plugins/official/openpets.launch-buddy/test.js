@@ -49,6 +49,7 @@ const LOCALES = { en: JSON.parse(await readFile(new URL("./locales/en.json", imp
   assert.equal(h.calls.schedules.size, 1, "expected delayed launch greeting");
   await h.clock.advance("4s");
   h.expectSpoke(/Welcome back! I’m ready when you are\./);
+  assert.equal(h.calls.bubbles.at(-1)?.spec.indicator, undefined, "launch greeting should not show an indicator header");
   h.expectReacted("waving");
   assert.deepEqual(h.calls.reactions[0], { reaction: "waving", options: { showMessage: false } }, "default launch reaction should be silent");
   h.expectNoErrors();

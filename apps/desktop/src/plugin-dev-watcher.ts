@@ -15,8 +15,11 @@ import type { PluginService } from "./plugin-service.js";
 
 const debounceMs = 350;
 
-export function startDevPluginWatcher(service: PluginService, roots: readonly string[], paths: readonly string[]): () => void {
+export type DevPluginWatcher = { readonly addPaths: (paths: readonly string[]) => void; readonly removePath: (path: string) => void; readonly stop: () => void };
+
+export function startDevPluginWatcher(service: PluginService, roots: readonly string[], paths: readonly string[]): DevPluginWatcher {
   const watchers: FSWatcher[] = [];
+  const pathWatchers = new Map<string, FSWatcher>();
   const pending = new Map<string, NodeJS.Timeout>();
 
   const scheduleReload = (sourceFolder: string): void => {
@@ -33,16 +36,31 @@ export function startDevPluginWatcher(service: PluginService, roots: readonly st
   };
 
   const watchPluginFolder = (folder: string): void => {
+    if (pathWatchers.has(folder)) return;
     try {
       const watcher = watch(folder, { persistent: false }, () => scheduleReload(folder));
       watcher.on("error", () => undefined);
-      watchers.push(watcher);
+      pathWatchers.set(folder, watcher);
     } catch (error) {
       debug("plugin", "dev watch failed", { folder, error: error instanceof Error ? error.message : String(error) });
     }
   };
 
-  for (const path of paths) watchPluginFolder(path);
+  const addPaths = (nextPaths: readonly string[]): void => {
+    for (const path of nextPaths) watchPluginFolder(path);
+  };
+
+  const removePath = (path: string): void => {
+    const watcher = pathWatchers.get(path);
+    if (!watcher) return;
+    watcher.close();
+    pathWatchers.delete(path);
+    const timer = pending.get(path);
+    if (timer) clearTimeout(timer);
+    pending.delete(path);
+  };
+
+  addPaths(paths);
 
   for (const root of roots) {
     void fs.readdir(root, { withFileTypes: true }).then((entries) => {
@@ -68,9 +86,11 @@ export function startDevPluginWatcher(service: PluginService, roots: readonly st
   }
 
   info("plugin", "dev plugin watcher started", { roots: roots.length, paths: paths.length });
-  return () => {
+  return { addPaths, removePath, stop: () => {
     for (const timer of pending.values()) clearTimeout(timer);
     pending.clear();
+    for (const watcher of pathWatchers.values()) watcher.close();
+    pathWatchers.clear();
     for (const watcher of watchers) watcher.close();
-  };
+  } };
 }

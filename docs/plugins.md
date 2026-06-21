@@ -160,11 +160,14 @@ owns safe uninstall path resolution.
 
 ### Local development
 
-`plugin-local-loader.ts` validates a selected local folder and **snapshots only
-`openpets.plugin.json`** into `userData/plugins-dev/{id}`, with symlink/path/size
-protections. Point the desktop dev build at plugin roots with
-`OPENPETS_DEV_PLUGIN_ROOTS` (for example `plugins/official:plugins/community:plugins/dev`) and run
-`pnpm dev:desktop:plugins` for hot-load. See [development.md](development.md).
+`plugin-local-loader.ts` validates a selected local folder and snapshots the
+manifest, entry file, and declared assets into `userData/plugins-dev/{id}`, with
+symlink/path/size protections. In the installed desktop app, authors use
+**Plugins → Developer Mode → Load unpacked plugin folder**; OpenPets persists the
+original source folder, watches it, and re-snapshots/reloads after edits. The
+repo dev build still supports maintainer-only env paths with
+`OPENPETS_DEV_PLUGIN_ROOTS` / `OPENPETS_DEV_PLUGIN_PATHS` and
+`pnpm dev:desktop:plugins`. See [development.md](development.md).
 
 ## Authoring workflow (end to end)
 

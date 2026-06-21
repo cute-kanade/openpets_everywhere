@@ -21,6 +21,7 @@ const api = {
   savePluginConfig: (id, config) => ipcRenderer.invoke("openpets:plugins-save-config", id, config),
   pickPluginConfigSound: (id) => ipcRenderer.invoke("openpets:plugins-pick-config-sound", id),
   reloadPlugin: (id) => ipcRenderer.invoke("openpets:plugins-reload", id),
+  refreshLocalPlugin: (id) => ipcRenderer.invoke("openpets:plugins-refresh-local", id),
   executePluginCommand: (id, commandId, args) => ipcRenderer.invoke("openpets:plugins-execute-command", id, commandId, args),
   loadLocalPlugin: () => ipcRenderer.invoke("openpets:plugins-load-local"),
   installCatalogPlugin: (id) => ipcRenderer.invoke("openpets:plugins-install-catalog", id),

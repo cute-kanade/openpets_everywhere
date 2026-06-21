@@ -25,6 +25,7 @@ export type SafePluginRecord = {
   readonly icon?: PluginIcon;
   readonly iconDataUrl?: string;
   readonly source: PluginSource;
+  readonly sourcePath?: string;
   readonly bundled?: boolean;
   readonly enabled: boolean;
   readonly brokenReason?: string;
@@ -71,6 +72,8 @@ export type PluginServiceOptions = {
   readonly seedBundledPlugins?: boolean;
   readonly bundledPluginSourceDirs?: readonly string[];
   readonly capabilities?: PluginHostCapabilities;
+  readonly onLocalPluginSourceLoaded?: (sourcePath: string) => void;
+  readonly onLocalPluginSourceRemoved?: (sourcePath: string) => void;
 };
 
 export const bundledOfficialPluginIds = ["openpets.reminders", "openpets.virtual-pet"] as const;
@@ -93,6 +96,8 @@ export class PluginService {
   readonly #seedBundledPlugins: boolean;
   readonly #bundledPluginSourceDirs: readonly string[];
   readonly #capabilities?: PluginHostCapabilities;
+  readonly #onLocalPluginSourceLoaded?: (sourcePath: string) => void;
+  readonly #onLocalPluginSourceRemoved?: (sourcePath: string) => void;
 
   constructor(options: PluginServiceOptions) {
     if (!options.stateStore && !options.userDataPath) throw new Error("Plugin service requires userDataPath or stateStore.");
@@ -109,6 +114,8 @@ export class PluginService {
     this.#seedBundledPlugins = options.seedBundledPlugins !== false;
     this.#bundledPluginSourceDirs = options.bundledPluginSourceDirs ?? [];
     this.#capabilities = options.capabilities;
+    this.#onLocalPluginSourceLoaded = options.onLocalPluginSourceLoaded;
+    this.#onLocalPluginSourceRemoved = options.onLocalPluginSourceRemoved;
     this.stateStore = options.stateStore ?? new PluginStateStore({ userDataPath: options.userDataPath ?? "" });
     if (options.runtime) {
       this.runtime = options.runtime;
@@ -162,6 +169,13 @@ export class PluginService {
     this.runtime.stop();
   }
 
+  getLocalSourcePaths(): string[] {
+    return this.stateStore.listRecords()
+      .filter((record) => record.source === "local" && typeof record.sourcePath === "string" && record.sourcePath.trim() !== "")
+      .map((record) => record.sourcePath as string)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
   async getSnapshot(): Promise<PluginServiceSnapshot> {
     const plugins = [] as SafePluginRecord[];
     for (const record of this.stateStore.listRecords()) plugins.push(await this.#safeRecord(record));
@@ -200,6 +214,13 @@ export class PluginService {
     if (record.catalogDisabled) return this.#error("Plugin is disabled in the catalog.");
     await this.runtime.reloadPlugin(id);
     return { ok: true, snapshot: await this.getSnapshot() };
+  }
+
+  async refreshLocal(id: string): Promise<PluginServiceResult> {
+    const record = this.stateStore.getRecord(id);
+    if (!record) return this.#error("Plugin is not installed.");
+    if (record.source !== "local" || !record.sourcePath) return this.#error("Plugin does not have a local source folder.");
+    return this.loadLocalPath(record.sourcePath, { autoApprove: false });
   }
 
   async pickConfigSound(id: string): Promise<PluginConfigSoundPickResult> {
@@ -273,6 +294,7 @@ export class PluginService {
       }
     }
     this.stateStore.removeRecord(id);
+    if (record.source === "local" && record.sourcePath) this.#onLocalPluginSourceRemoved?.(record.sourcePath);
     await this.runtime.reloadPlugin(id);
     try { this.#capabilities?.clearPlugin?.(id); await fs.rm(join(this.#userDataPath, "plugin-user-sounds", id), { recursive: true, force: true }); if (realInstall) await fs.rm(realInstall, { recursive: true, force: true }); await fs.rm(join(this.#userDataPath, "plugin-storage", `${id}.json`), { force: true }); }
     catch (error) { return this.#error(safeError(error)); }
@@ -291,8 +313,10 @@ export class PluginService {
     if (!this.#userDataPath) return this.#error("Local plugin loading is unavailable.");
     const confirm = this.#confirmPermissions ?? defaultConfirmPermissions;
     let source: Awaited<ReturnType<typeof readLocalPluginSourceManifest>>;
+    let realSourceFolder = sourceFolder;
     try {
       source = await readLocalPluginSourceManifest({ sourceFolder, maxManifestBytes: this.#maxManifestBytes });
+      realSourceFolder = await fs.realpath(sourceFolder);
     } catch (error) {
       return this.#error(safeError(error));
     }
@@ -316,6 +340,7 @@ export class PluginService {
       id: loaded.manifest.id,
       version: loaded.manifest.version,
       source: "local",
+      sourcePath: realSourceFolder,
       installPath: loaded.installPath,
       manifestPath: loaded.manifestPath,
       manifestVersion: loaded.manifest.manifestVersion,
@@ -326,6 +351,7 @@ export class PluginService {
       approvedNetworkHosts: networkHosts,
       config: existing?.config ?? {},
     });
+    this.#onLocalPluginSourceLoaded?.(realSourceFolder);
     if (enabled || wasEnabled) await this.runtime.reloadPlugin(loaded.manifest.id);
     return { ok: true, snapshot: await this.getSnapshot() };
   }
@@ -425,7 +451,7 @@ export class PluginService {
   }
 
   async #safeRecord(record: PluginStateRecord): Promise<SafePluginRecord> {
-    const base = { id: record.id, version: record.version, source: record.source, bundled: record.bundled, enabled: record.enabled, brokenReason: record.brokenReason, approvedPermissions: record.approvedPermissions, runtime: record.runtime, sdkVersion: record.sdkVersion, catalogDisabled: record.catalogDisabled, catalogDeprecated: record.catalogDeprecated, catalogStatusReason: record.catalogStatusReason };
+    const base = { id: record.id, version: record.version, source: record.source, sourcePath: record.sourcePath, bundled: record.bundled, enabled: record.enabled, brokenReason: record.brokenReason, approvedPermissions: record.approvedPermissions, runtime: record.runtime, sdkVersion: record.sdkVersion, catalogDisabled: record.catalogDisabled, catalogDeprecated: record.catalogDeprecated, catalogStatusReason: record.catalogStatusReason };
     try {
       const manifest = await this.#readManifest(record);
       const config = getEffectivePluginConfig(manifest, record.config);
@@ -510,8 +536,8 @@ export class PluginService {
 
 let appPluginService: PluginService | null = null;
 
-export function initializePluginService(userDataPath: string, petApi: PluginPetApi, currentAppVersion = "0.0.0", jsHost?: PluginJsHost, runtimeLogger?: (level: PluginLogLevel, message: string, fields?: Record<string, unknown>) => void, disableCatalog?: boolean, bundledPluginSourceDirs: readonly string[] = [], seedBundledPlugins = true, capabilities?: PluginHostCapabilities, onPluginRuntimeError?: PluginRuntimeOptions["onPluginRuntimeError"]): PluginService {
-  appPluginService = new PluginService({ userDataPath, petApi, currentAppVersion, jsHost, runtimeLogger, disableCatalog, bundledPluginSourceDirs, seedBundledPlugins, capabilities, onPluginRuntimeError });
+export function initializePluginService(userDataPath: string, petApi: PluginPetApi, currentAppVersion = "0.0.0", jsHost?: PluginJsHost, runtimeLogger?: (level: PluginLogLevel, message: string, fields?: Record<string, unknown>) => void, disableCatalog?: boolean, bundledPluginSourceDirs: readonly string[] = [], seedBundledPlugins = true, capabilities?: PluginHostCapabilities, onPluginRuntimeError?: PluginRuntimeOptions["onPluginRuntimeError"], onLocalPluginSourceLoaded?: (sourcePath: string) => void, onLocalPluginSourceRemoved?: (sourcePath: string) => void): PluginService {
+  appPluginService = new PluginService({ userDataPath, petApi, currentAppVersion, jsHost, runtimeLogger, disableCatalog, bundledPluginSourceDirs, seedBundledPlugins, capabilities, onPluginRuntimeError, onLocalPluginSourceLoaded, onLocalPluginSourceRemoved });
   return appPluginService;
 }
 

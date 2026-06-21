@@ -113,7 +113,6 @@ export async function greet(ctx, { force = false, now = Date.now() } = {}) {
   if (!shouldGreet(config, state, now, force)) return false;
 
   const text = selectMessage(ctx, config, now);
-  const icon = ctx.assets.icon("launchbuddy");
   if (config.reaction !== "none") await ctx.pet.react(config.reaction, { showMessage: false });
   if (config.soundEnabled) {
     const sound = config.soundChoice === "custom" ? config.customSound : config.soundChoice;
@@ -121,7 +120,6 @@ export async function greet(ctx, { force = false, now = Date.now() } = {}) {
   }
   await ctx.pet.speak({
     text,
-    indicator: { icon, label: ctx.t("indicator.label"), tone: "info", color: "#ec4899", background: "#fdf2f8", borderColor: "#f9a8d4" },
     tone: "info",
     durationMs: 6500,
     dismissOn: ["petClick", "click"],

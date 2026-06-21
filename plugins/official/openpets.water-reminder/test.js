@@ -89,6 +89,23 @@ const LOCALES = {
   h.expectNoErrors();
 }
 
+// 2b) stale due times reset on launch instead of firing immediately.
+{
+  const nowMs = 2_500_000;
+  const h = createTestHarness(register, {
+    permissions: PERMISSIONS,
+    config: { pace: "often" },
+    locales: LOCALES,
+    nowMs,
+  });
+  await h.ctx.storage.set("state", { nextDueAt: nowMs - 1, lastDrinkAt: nowMs - 31 * 60_000 });
+  await h.start();
+  h.expectStored("state", (v) => v.nextDueAt > Date.now() + 29 * 60_000);
+  await h.clock.advance("1s");
+  assert.equal(h.calls.alerts.length, 0, "stale launch state should not fire immediately");
+  h.expectNoErrors();
+}
+
 // 3) Done records a drink and does not create duplicate success reactions.
 {
   const h = createTestHarness(register, {

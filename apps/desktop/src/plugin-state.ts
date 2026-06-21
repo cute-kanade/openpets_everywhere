@@ -19,6 +19,7 @@ export type PluginStateRecord = {
   readonly manifestPath: string;
   readonly installPath: string;
   readonly source: PluginSource;
+  readonly sourcePath?: string;
   readonly bundled?: boolean;
   readonly manifestVersion?: 1 | 2 | 3;
   readonly runtime?: KnownPluginRuntime;
@@ -193,6 +194,7 @@ function normalizePluginRecordFromDisk(key: string, value: unknown): PluginState
       manifestPath: value.manifestPath,
       installPath: value.installPath,
       source: value.source,
+      sourcePath: value.source === "local" && isNonEmptyString(value.sourcePath) ? value.sourcePath : undefined,
       bundled: value.bundled === true ? true : undefined,
       manifestVersion: value.manifestVersion === 1 || value.manifestVersion === 2 || value.manifestVersion === 3 ? value.manifestVersion : undefined,
       runtime: value.runtime === "declarative" || value.runtime === "javascript" ? value.runtime : undefined,
@@ -223,6 +225,7 @@ function normalizePluginRecordForApi(record: PluginStateRecord): PluginStateReco
     manifestPath: record.manifestPath,
     installPath: record.installPath,
     source: record.source,
+    sourcePath: record.source === "local" && isNonEmptyString(record.sourcePath) ? record.sourcePath : undefined,
     bundled: record.bundled === true ? true : undefined,
     manifestVersion: record.manifestVersion === 1 || record.manifestVersion === 2 || record.manifestVersion === 3 ? record.manifestVersion : undefined,
     runtime: record.runtime === "declarative" || record.runtime === "javascript" ? record.runtime : undefined,

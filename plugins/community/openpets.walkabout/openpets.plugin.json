@@ -6,6 +6,11 @@
   "version": "1.0.0",
   "runtime": "javascript",
   "icon": "sparkles",
+  "assets": {
+    "icons": {
+      "footprints": "assets/footprints.svg"
+    }
+  },
   "sdkVersion": "3.0.0",
   "entry": "index.js",
   "permissions": ["pet:move", "events", "pets:read", "status"],

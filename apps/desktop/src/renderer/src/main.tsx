@@ -58,7 +58,7 @@ type PluginCommand = { id: string; title: string; description?: string; form?: P
 type PluginStatus = { text: string; tone?: "info" | "success" | "warning" | "error" };
 type PluginConfigError = { path?: string; code?: string; message?: string };
 type PluginCategory = "Companion" | "Wellness" | "Focus" | "Developer" | "Advanced";
-type SafePluginRecord = { id: string; name?: string; description?: string; version: string; icon?: PluginIconName; iconDataUrl?: string; source: "catalog" | "local"; bundled?: boolean; category?: PluginCategory; enabled: boolean; brokenReason?: string; approvedPermissions: PluginPermission[]; runtime?: "declarative" | "javascript"; sdkVersion?: string; catalogDisabled?: boolean; catalogDeprecated?: boolean; catalogStatusReason?: string; configSchema?: PluginConfigSchema; effectiveConfig?: PluginConfig; configErrors?: PluginConfigError[]; commands?: PluginCommand[]; status?: PluginStatus };
+type SafePluginRecord = { id: string; name?: string; description?: string; version: string; icon?: PluginIconName; iconDataUrl?: string; source: "catalog" | "local"; sourcePath?: string; bundled?: boolean; category?: PluginCategory; enabled: boolean; brokenReason?: string; approvedPermissions: PluginPermission[]; runtime?: "declarative" | "javascript"; sdkVersion?: string; catalogDisabled?: boolean; catalogDeprecated?: boolean; catalogStatusReason?: string; configSchema?: PluginConfigSchema; effectiveConfig?: PluginConfig; configErrors?: PluginConfigError[]; commands?: PluginCommand[]; status?: PluginStatus };
 type SafeCatalogPluginRecord = { id: string; name: string; version: string; description: string; runtime: "declarative" | "javascript"; icon?: PluginIconName; iconDataUrl?: string; sdkVersion?: string; permissions: PluginPermission[]; installed: boolean; bundled?: boolean; category?: PluginCategory; deprecated?: boolean; statusReason?: string; publisherType?: "official" | "community" };
 type PluginServiceSnapshot = { plugins: SafePluginRecord[] };
 type PluginCatalogSnapshot = { plugins: SafeCatalogPluginRecord[] };
@@ -87,6 +87,7 @@ type ControlCenterApi = {
   savePluginConfig(id: string, config: PluginConfig): Promise<PluginServiceResult>;
   pickPluginConfigSound(id: string): Promise<PluginConfigSoundPickResult>;
   reloadPlugin(id: string): Promise<PluginServiceResult>;
+  refreshLocalPlugin(id: string): Promise<PluginServiceResult>;
   executePluginCommand(id: string, commandId: string, args?: Record<string, unknown>): Promise<PluginServiceResult>;
   loadLocalPlugin(): Promise<PluginServiceResult>;
   installCatalogPlugin(id: string): Promise<PluginServiceResult>;
@@ -2324,6 +2325,7 @@ function PluginsView() {
   const [configDraft, setConfigDraft] = useState<PluginConfig>({});
   const [commandDrafts, setCommandDrafts] = useState<Record<string, Record<string, unknown>>>({});
   const [activeCommandId, setActiveCommandId] = useState("");
+  const [showDeveloperMode, setShowDeveloperMode] = useState(false);
 
   async function load(refreshCatalog = false, clearMessages = true) {
     if (clearMessages) setError("");
@@ -2419,6 +2421,22 @@ function PluginsView() {
     <div className="plugins-layout">
       {error && <div className="error settings-message">{error}</div>}
       {message && <div className="settings-success settings-message">{message}</div>}
+      <div className={`plugin-developer-panel ${showDeveloperMode ? "open" : ""}`}>
+        <button className="plugin-developer-toggle" type="button" onClick={() => setShowDeveloperMode((open) => !open)} aria-expanded={showDeveloperMode}>
+          <span>{t("plugins.developer.eyebrow")}</span>
+          <small>{showDeveloperMode ? t("plugins.developer.hide") : t("plugins.developer.show")}</small>
+        </button>
+        {showDeveloperMode && <div className="plugin-developer-body">
+          <p>{t("plugins.developer.description")}</p>
+          <Button variant="secondary" size="compact" icon={<FolderPlusIcon />} disabled={!!busy} onClick={() => void run(t("plugins.busy.loading"), async () => {
+            const beforeIds = new Set(snapshot?.plugins.map((plugin) => plugin.id) ?? []);
+            const result = await api.loadLocalPlugin();
+            if (!applyResult(result)) return;
+            const loadedPlugin = result.snapshot.plugins.find((plugin) => plugin.source === "local" && !beforeIds.has(plugin.id));
+            setMessage(loadedPlugin ? t("plugins.toast.localLoaded") : t("plugins.toast.noLocalLoaded"));
+          })}>{t("plugins.developer.loadUnpacked")}</Button>
+        </div>}
+      </div>
       <GlassCard className="plugins-hub">
         <div className="filters">
           {(["all", "installed", "catalog", "local", "broken"] as PluginFilter[]).map((nextFilter) => (
@@ -2468,7 +2486,10 @@ function PluginsView() {
                   )}
 
                   {entry.installed ? (
-                    <Button variant="secondary" size="compact" icon={<ConfigureIcon />} disabled={!!busy} onClick={() => setSelectedId(entry.id)}>{t("plugins.card.configure")}</Button>
+                    <>
+                      {entry.installed.source === "local" && entry.installed.sourcePath && <Button variant="secondary" size="compact" icon={<RefreshIcon />} disabled={!!busy} onClick={() => void run(t("plugins.busy.refreshingSource"), async () => { applyResult(await api.refreshLocalPlugin(entry.id), t("plugins.toast.localRefreshed")); })}>{t("plugins.card.refresh")}</Button>}
+                      <Button variant="secondary" size="compact" icon={<ConfigureIcon />} disabled={!!busy} onClick={() => setSelectedId(entry.id)}>{t("plugins.card.configure")}</Button>
+                    </>
                   ) : (
                     <Button variant="primary" size="compact" icon={<InstallIcon />} disabled={!!busy || entry.catalog?.deprecated} onClick={() => void run(t("plugins.busy.installing"), async () => { await installCatalogEntry(entry); })}>{t("plugins.card.installPlugin")}</Button>
                   )}
@@ -2483,11 +2504,8 @@ function PluginsView() {
           <span className="plugin-hub-actions">
             <Button variant="secondary" size="compact" disabled={!!busy} icon={<RefreshIcon />} onClick={() => void run(t("plugins.busy.refreshing"), async () => { await load(true); setMessage(t("plugins.toast.catalogRefreshed")); })}>{t("plugins.footer.refresh")}</Button>
             <Button variant="secondary" size="compact" icon={<FolderPlusIcon />} disabled={!!busy} onClick={() => void run(t("plugins.busy.loading"), async () => {
-              const beforeIds = new Set(snapshot?.plugins.map((plugin) => plugin.id) ?? []);
               const result = await api.loadLocalPlugin();
-              if (!applyResult(result)) return;
-              const loadedPlugin = result.snapshot.plugins.find((plugin) => plugin.source === "local" && !beforeIds.has(plugin.id));
-              setMessage(loadedPlugin ? t("plugins.toast.localLoaded") : t("plugins.toast.noLocalLoaded"));
+              if (applyResult(result, t("plugins.toast.localLoaded"))) await load(false, false);
             })}>{t("plugins.footer.loadLocal")}</Button>
           </span>
         </div>
@@ -2520,6 +2538,7 @@ function PluginsView() {
                 <div className="settings-row-info"><strong>{installed.enabled ? t("plugins.inspector.enabled") : t("plugins.inspector.disabled")}</strong><small>{installed.brokenReason || (installed.catalogDisabled ? t("plugins.inspector.catalogDisabledNote") : t("plugins.inspector.toggleNote"))}</small></div>
                 <input className="settings-toggle" type="checkbox" checked={installed.enabled} disabled={!!busy || installed.catalogDisabled || Boolean(installed.brokenReason)} onChange={(event) => { const nextEnabled = event.target.checked; void run(t("plugins.busy.saving"), async () => { applyResult(await api.setPluginEnabled(installed.id, nextEnabled), nextEnabled ? t("plugins.toast.pluginEnabled") : t("plugins.toast.pluginDisabled")); }); }} />
               </label>
+              {installed.source === "local" && installed.sourcePath && <div className="plugin-source-path"><small>{t("plugins.inspector.sourceFolder")}</small><code>{installed.sourcePath}</code></div>}
               <div className="badges plugin-permissions">{installed.approvedPermissions.length ? installed.approvedPermissions.map((permission) => <StatusPill key={permission} tone={sensitivePermissionSet.has(permission) ? "red" : permission === "network" || permission === "network:write" ? "orange" : "blue"}>{t(pluginPermissionLabelKeys[permission])}</StatusPill>) : <StatusPill tone="slate">{t("plugins.inspector.noPermissions")}</StatusPill>}</div>
             </section>
             {!!installed.configErrors?.length && <section className="plugin-section plugin-section-danger"><div className="plugin-section-title"><small>{t("plugins.inspector.configuration")}</small><strong>{t("plugins.inspector.needsAttention")}</strong></div><ul>{installed.configErrors.map((configError, index) => <li key={index}>{configError.message || String(configError)}</li>)}</ul></section>}
@@ -2558,6 +2577,7 @@ function PluginsView() {
               })()}
             </section>}
             <section className="plugin-section plugin-actions-section">
+              {installed.source === "local" && installed.sourcePath && <Button variant="secondary" disabled={!!busy} icon={<FolderPlusIcon />} onClick={() => void run(t("plugins.busy.refreshingSource"), async () => { applyResult(await api.refreshLocalPlugin(installed.id), t("plugins.toast.localRefreshed")); })}>{t("plugins.inspector.refreshFromFolder")}</Button>}
               <Button variant="secondary" disabled={!!busy} icon={<RefreshIcon />} onClick={() => void run(t("plugins.busy.reloading"), async () => { applyResult(await api.reloadPlugin(installed.id), t("plugins.toast.pluginReloaded")); })}>{t("plugins.inspector.reload")}</Button>
               {installed.source === "catalog" && !installed.bundled && catalogPlugin && catalogPlugin.version !== installed.version && <Button variant="primary" icon={<InstallIcon />} disabled={!!busy} onClick={() => void run(t("plugins.busy.updating"), async () => { await updateCatalogEntry(installed); })}>{t("plugins.inspector.update")}</Button>}
               {!installed.bundled && <Button variant="danger" icon={<RemoveIcon />} disabled={!!busy} onClick={() => { if (window.confirm(t("plugins.inspector.uninstallConfirm", { name: pluginName(selected) }))) void run(t("plugins.busy.uninstalling"), async () => { if (applyResult(await api.uninstallPlugin(installed.id), t("plugins.toast.pluginUninstalled"))) setSelectedId(""); }); }}>{t("plugins.inspector.uninstall")}</Button>}
