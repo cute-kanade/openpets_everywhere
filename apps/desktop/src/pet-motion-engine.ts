@@ -302,12 +302,17 @@ function tickPet(petHandleId: string, accessor: WindowAccessor, state: MotionSta
   }
 
   if (state.physics?.gravity) {
-    // Use bottom-center anchor (not geometric center) for display lookup to match
-    // the anchor used by isOnAnyDisplay() in display.ts. This prevents floor flips
-    // when the pet straddles the seam between displays of different workArea heights.
-    const bottomCenterX = x + Math.round(defaultPetWindowSize.width / 2);
-    const bottomCenterY = y + defaultPetWindowSize.height;
-    const display = getScreen().getDisplayNearestPoint({ x: bottomCenterX, y: bottomCenterY });
+    // Use the geometric center of the pet window for display lookup. This keeps the
+    // anchor well inside the work area even when the pet is resting on the floor, so
+    // getDisplayNearestPoint returns a stable display. The previous bottom-center anchor
+    // (y + petHeight) landed exactly on workArea.y + workArea.height — 1px outside the
+    // half-open work area — which triggered an unstable Euclidean nearest-display
+    // tie-break at monitor seams and caused rapid floor oscillation between
+    // mismatched-height displays. Using the geometric center also aligns with
+    // clampToVisibleWorkArea, which already uses the center for display selection.
+    const centerX = x + Math.round(defaultPetWindowSize.width / 2);
+    const centerY = y + Math.round(defaultPetWindowSize.height / 2);
+    const display = getScreen().getDisplayNearestPoint({ x: centerX, y: centerY });
     const confinementBounds = getEffectiveConfinementBounds(petHandleId);
     const floor = computeGravityFloor(confinementBounds, display.workArea.y, display.workArea.height, defaultPetWindowSize.height);
     state.physics.vy = Math.min(state.physics.vy + 2.2, 48);
