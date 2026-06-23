@@ -126,6 +126,28 @@ The `petCrossDisplayEnabled` toggle is in Control Center → Settings and is a
 global flag (not per-pet). Confinement remains strictly per-pet and always takes
 priority regardless of the cross-display flag.
 
+### Linux & Wayland
+
+All pet motion depends on the app being able to **programmatically position a
+top-level window** and keep it **always-on-top** (`setPosition`/`setBounds` plus
+`setAlwaysOnTop`). Native Wayland deliberately forbids clients from positioning
+or restacking their own toplevels, so under a native Wayland backend every
+position write is silently ignored by the compositor: gravity, walkabout,
+follow-cursor, cross-display roaming, drag, and z-order all become no-ops even
+though the motion engine keeps computing new coordinates. (This is the root
+cause behind "pet doesn't move / gravity doesn't work" reports on KDE/KWin
+Wayland.)
+
+To keep motion working, OpenPets forces the Linux Ozone backend to **x11
+(XWayland)**, where these window operations are honored. Drag selects its path
+at window creation via `isEffectiveWaylandBackend()` in `pet-window.ts`: under
+the forced x11 backend it returns `false` and the working `setBounds` drag path
+is used. The backend-forcing itself lives in `main.ts` and is documented in
+[desktop.md](desktop.md#linux-display-backend-ozonewayland), including the
+`OPENPETS_ALLOW_WAYLAND=1` opt-out (which restores native Wayland and therefore
+disables the motion/drag/always-on-top behavior above, with a one-time startup
+warning).
+
 ## Installation
 
 Two install paths exist; they share the same safety rules.

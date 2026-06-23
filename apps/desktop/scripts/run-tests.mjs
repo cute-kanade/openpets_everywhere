@@ -55,11 +55,13 @@ const behaviorTests = [
   ".test-dist/tests/pet-motion-engine-single-writer.test.js",
   ".test-dist/tests/pet-motion-engine-gravity-seam.test.js",
   ".test-dist/tests/pet-motion-engine-hidden-move.test.js",
+  ".test-dist/tests/pet-motion-engine-nan-guard.test.js",
   ".test-dist/tests/pet-roaming-controller.test.js",
   ".test-dist/tests/display.test.js",
   ".test-dist/tests/renderer-toggles.test.js",
   ".test-dist/tests/preference-patch.test.js",
   ".test-dist/tests/plugin-agent-activity.test.js",
+  ".test-dist/tests/pet-window-wayland-predicate.test.js",
 ];
 const contractTests = [
   ".test-dist/contracts/local-ipc-protocol.contract.js",

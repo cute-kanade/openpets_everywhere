@@ -193,7 +193,10 @@ export async function motionMoveTo(petHandleId: string, accessor: WindowAccessor
     const live = accessor();
     if (!live || live.isDestroyed() || state.moveGeneration !== generation || getIsPetWindowDragging()(live)) return;
     const t = easeProgress(step / steps, easing);
-    live.setPosition(Math.round(startX + (clamped.x - startX) * t), Math.round(startY + (clamped.y - startY) * t), false);
+    const nextX = Math.round(startX + (clamped.x - startX) * t);
+    const nextY = Math.round(startY + (clamped.y - startY) * t);
+    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;  // abort move if NaN (e.g. startX was NaN from mid-destroy getPosition)
+    live.setPosition(nextX, nextY, false);
     await delay(durationMs / steps);
   }
 }
@@ -256,6 +259,7 @@ function tickPet(petHandleId: string, accessor: WindowAccessor, state: MotionSta
     return;
   }
   const [x, y] = window.getPosition();
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;  // skip tick when native position is unavailable/NaN
   let rawX = x + state.fracX;
   let rawY = y + state.fracY;
 
@@ -312,6 +316,7 @@ function tickPet(petHandleId: string, accessor: WindowAccessor, state: MotionSta
 
   if (nextX !== x || nextY !== y) {
     const clamped = clampPosition(petHandleId, { x: nextX, y: nextY });
+    if (!Number.isFinite(clamped.x) || !Number.isFinite(clamped.y)) return;  // skip write when clamp produces NaN (e.g. from NaN workArea on monitor disconnect)
     window.setPosition(clamped.x, clamped.y, false);
   }
 }

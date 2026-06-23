@@ -41,6 +41,29 @@ runs the reverse: stop the plugin service, IPC server, and pet windows on quit.
 Key files: `main.ts` (entry/bootstrap), `lifecycle.ts` (app events + cleanup),
 `state.ts` (shell pause flag).
 
+## Linux display backend (Ozone/Wayland)
+
+On Linux, `main.ts` appends `--ozone-platform=x11` **before** `app` is ready, so
+the app always runs under x11/XWayland. This is required because OpenPets pets
+depend on programmatic top-level window positioning (`setPosition`/`setBounds`)
+and z-order control (`setAlwaysOnTop`); native Wayland forbids clients from
+positioning or restacking their own toplevels, which silently breaks motion,
+gravity, walkabout, drag, and always-on-top stacking. The forcing is
+unconditional (it overrides even an explicit `--ozone-platform=wayland`) so a
+mistaken launch flag cannot disable pet movement.
+
+The escape hatch is the environment variable `OPENPETS_ALLOW_WAYLAND=1`: when
+set, the app honors the system default backend (or an explicit
+`--ozone-platform`) and emits a one-time `warn("app", ...)` at startup (after the
+startup-begin log) stating that positioning, gravity, walkabout, and drag are
+unsupported under native Wayland and how to restore full functionality. The
+pet-drag path keys off this same effective backend via
+`isEffectiveWaylandBackend()` in `pet-window.ts`, which is evaluated at
+window-creation time (after the switch is applied) and cached.
+
+The x11-forcing branch and the `OPENPETS_ALLOW_WAYLAND` opt-out are asserted by
+`check-packaging-contract.ts`, so this behavior cannot silently regress.
+
 ## Subsystems
 
 ### Tray & windows

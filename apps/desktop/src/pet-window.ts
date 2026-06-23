@@ -82,11 +82,47 @@ const windowLoadSequences = new WeakMap<BrowserWindow, number>();
 const petMouseInteropRecovery = new WeakMap<BrowserWindow, (reason: string) => void>();
 const petWindowDragging = new WeakMap<BrowserWindow, boolean>();
 
+/**
+ * Returns true when Electron is effectively running on the native Wayland
+ * backend (ozone-platform=wayland). Under x11/XWayland this returns false
+ * even on a Wayland session, because the positioning and z-order APIs work.
+ *
+ * Must be called after app is ready (after main.ts has appended the switch).
+ * Cached on first call so window-creation cost is negligible.
+ */
+let _effectiveWaylandBackendCache: boolean | undefined;
+export function isEffectiveWaylandBackend(): boolean {
+  if (_effectiveWaylandBackendCache !== undefined) return _effectiveWaylandBackendCache;
+  if (process.platform !== "linux") {
+    _effectiveWaylandBackendCache = false;
+    return false;
+  }
+  const ozone = app.commandLine.getSwitchValue("ozone-platform");
+  if (ozone === "wayland") {
+    _effectiveWaylandBackendCache = true;
+    return true;
+  }
+  if (ozone === "x11") {
+    _effectiveWaylandBackendCache = false;
+    return false;
+  }
+  // ozone is "" or "auto" — fall back to session-type env vars
+  const result =
+    process.env.XDG_SESSION_TYPE === "wayland" || Boolean(process.env.WAYLAND_DISPLAY);
+  _effectiveWaylandBackendCache = result;
+  return result;
+}
+
+export function _resetEffectiveWaylandBackendCache(): void {
+  _effectiveWaylandBackendCache = undefined;
+}
+
+/**
+ * Whether to use Wayland native window-move drag instead of the manual
+ * setBounds drag path.  Under x11/XWayland the manual path works correctly.
+ */
 export function shouldUseWaylandNativePetDrag(): boolean {
-  return (
-    process.platform === "linux" &&
-    (process.env.XDG_SESSION_TYPE === "wayland" || Boolean(process.env.WAYLAND_DISPLAY))
-  );
+  return isEffectiveWaylandBackend();
 }
 
 export function isPetWindowDragging(window: BrowserWindow): boolean {

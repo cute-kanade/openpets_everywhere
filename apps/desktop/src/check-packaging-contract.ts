@@ -123,8 +123,8 @@ assert.doesNotMatch(webAnalyticsSource, /pet_name|\bhref\s*:/, "web analytics mu
 assert.match(webAnalyticsSource, /pathname:\s*safePathOf\(href\)/, "web outbound analytics must send only a conservative safe pathname bucket.");
 assert.doesNotMatch(windowsSource, /plugin_id|pet_id|command_id/, "desktop analytics must not send raw local pet, plugin, or command identifiers.");
 assert.doesNotMatch(windowsSource + localIpcSourceForLogging + mainSource, /trackDesktopEvent\([^\n]*(filePaths|selectedPath|installPath|manifestPath|href\s*:)/, "desktop analytics must not send local paths or hrefs.");
-assert.match(mainSource, /process\.platform === "linux"[\s\S]*?appendSwitch\("ozone-platform", "x11"\)/, "Linux desktop pets must prefer X11/Xwayland because GNOME Wayland blocks always-on-top and programmatic window dragging.");
-assert.match(mainSource, /hasSwitch\("ozone-platform"\)/, "Linux X11 preference must let users override Electron's Ozone backend explicitly.");
+assert.match(mainSource, /isLinux && !allowWayland[\s\S]*?appendSwitch\("ozone-platform", "x11"\)/, "Linux desktop pets must force X11/Xwayland because native Wayland blocks always-on-top and programmatic window positioning.");
+assert.match(mainSource, /OPENPETS_ALLOW_WAYLAND/, "Linux X11 override must support the OPENPETS_ALLOW_WAYLAND opt-out escape hatch.");
 assert.match(traySource, /t\("tray\.openLogsFolder"\)/, "desktop tray must expose user-sendable logs for bug reports.");
 assert.match(enCatalogSource, /Open Logs Folder/, "English catalog must keep the user-sendable logs label.");
 assert.match(localIpcSourceForLogging, /request received/, "desktop IPC must log request methods for diagnostics.");
