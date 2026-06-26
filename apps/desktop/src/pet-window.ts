@@ -17,7 +17,7 @@ import type { ActiveBubble } from "./plugin-bubble-arbiter.js";
 import type { PluginBubbleIndicator, PluginCommandForm, PluginBubbleHud, PluginBubbleHudItem } from "./plugin-sdk-bridge.js";
 import { defaultPetSprite, motionToSpriteState, resolveReactionSpriteState, type PetMotionState, type UniversalSpriteState } from "./reaction-animation-mapping.js";
 import { isFocusActionAvailable } from "./capabilities.js";
-import { computeEffectiveWaylandBackend } from "./wayland-backend.js";
+import { computeEffectiveWaylandBackend, shouldPetWindowBeFocusable } from "./wayland-backend.js";
 
 export interface PetWindowInteractionHooks {
   readonly onBubbleDismissed?: (dismissToken: string) => void;
@@ -612,6 +612,7 @@ function createBasePetWindow(title: string, position: Point): BrowserWindow {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
+    focusable: shouldPetWindowBeFocusable(process.platform, isEffectiveWaylandBackend()),
     show: false,
     hasShadow: false,
     backgroundColor: "#00000000",

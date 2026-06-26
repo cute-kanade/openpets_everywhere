@@ -30,3 +30,18 @@ export function computeEffectiveWaylandBackend(
   // ozone is "" or "auto" — fall back to session-type env vars.
   return xdgSessionType === "wayland" || Boolean(waylandDisplay);
 }
+
+/**
+ * Whether the transparent pet overlay should be allowed to receive input focus.
+ *
+ * Linux compositors, especially native Wayland compositors such as Niri, can
+ * treat the pet as a normal focusable toplevel unless Electron opts it out.
+ * Keep the overlay non-focusable on Linux while preserving the existing
+ * focusable behavior on macOS and Windows.
+ */
+export function shouldPetWindowBeFocusable(
+  platform: NodeJS.Platform | string,
+  _effectiveWaylandBackend: boolean,
+): boolean {
+  return platform !== "linux";
+}

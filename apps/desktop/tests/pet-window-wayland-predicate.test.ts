@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { computeEffectiveWaylandBackend } from "../src/wayland-backend.js";
+import { computeEffectiveWaylandBackend, shouldPetWindowBeFocusable } from "../src/wayland-backend.js";
 
 // ─── real-function predicate tests ───────────────────────────────────────────
 // These exercise the REAL production predicate — the pure, Electron-free core
@@ -36,5 +36,17 @@ describe("computeEffectiveWaylandBackend (production predicate)", () => {
     assert.equal(computeEffectiveWaylandBackend("linux", "", undefined, "/run/user/1000/wayland-0"), true);
     assert.equal(computeEffectiveWaylandBackend("linux", "", undefined, undefined), false);
     assert.equal(computeEffectiveWaylandBackend("linux", "", undefined, ""), false);
+  });
+});
+
+describe("shouldPetWindowBeFocusable", () => {
+  it("keeps Linux pet windows non-focusable", () => {
+    assert.equal(shouldPetWindowBeFocusable("linux", true), false);
+    assert.equal(shouldPetWindowBeFocusable("linux", false), false);
+  });
+
+  it("preserves focusable pet windows on macOS and Windows", () => {
+    assert.equal(shouldPetWindowBeFocusable("darwin", false), true);
+    assert.equal(shouldPetWindowBeFocusable("win32", false), true);
   });
 });
