@@ -36,12 +36,15 @@ export function computeEffectiveWaylandBackend(
  *
  * Linux compositors, especially native Wayland compositors such as Niri, can
  * treat the pet as a normal focusable toplevel unless Electron opts it out.
- * Keep the overlay non-focusable on Linux while preserving the existing
- * focusable behavior on macOS and Windows.
+ * Keep passive overlays non-focusable on Linux, but allow focus when a plugin
+ * bubble hosts an inline input/select that needs keyboard input. Preserve the
+ * existing focusable behavior on macOS and Windows.
  */
 export function shouldPetWindowBeFocusable(
   platform: NodeJS.Platform | string,
   _effectiveWaylandBackend: boolean,
+  hasInteractiveInput = false,
 ): boolean {
+  if (hasInteractiveInput) return true;
   return platform !== "linux";
 }

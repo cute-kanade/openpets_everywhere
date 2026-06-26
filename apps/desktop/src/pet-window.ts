@@ -80,6 +80,7 @@ const petWindowRenderCache = new WeakMap<BrowserWindow, string>();
 
 const windowLoadChains = new WeakMap<BrowserWindow, Promise<void>>();
 const windowLoadSequences = new WeakMap<BrowserWindow, number>();
+const petWindowFocusPolicy = new WeakMap<BrowserWindow, boolean>();
 const petMouseInteropRecovery = new WeakMap<BrowserWindow, (reason: string) => void>();
 const petWindowDragging = new WeakMap<BrowserWindow, boolean>();
 
@@ -123,7 +124,9 @@ export function isPetWindowDragging(window: BrowserWindow): boolean {
 }
 
 export function createDefaultPetWindow(options: DefaultPetWindowOptions, dismissToken?: string): BrowserWindow {
-  const window = createBasePetWindow("OpenPets — Default Pet", options.position);
+  const window = createBasePetWindow("OpenPets — Default Pet", options.position, {
+    hasInteractiveInput: petPluginBubblesHaveInteractiveInput(options.pluginBubbles ?? null),
+  });
   info("pet.window", "default window create", { windowId: window.id, position: options.position, paused: options.paused, hasDisplay: Boolean(options.display), badge: options.badge });
   installMousePassthroughAndDrag(window, options);
   installMotionStatePublisher(window);
@@ -597,7 +600,9 @@ function isScreenPoint(value: unknown): value is { readonly screenX: number; rea
   return typeof value === "object" && value !== null && typeof (value as { readonly screenX?: unknown }).screenX === "number" && typeof (value as { readonly screenY?: unknown }).screenY === "number";
 }
 
-function createBasePetWindow(title: string, position: Point): BrowserWindow {
+function createBasePetWindow(title: string, position: Point, focusOptions: { readonly hasInteractiveInput?: boolean } = {}): BrowserWindow {
+  const effectiveWaylandBackend = isEffectiveWaylandBackend();
+  const focusable = shouldPetWindowBeFocusable(process.platform, effectiveWaylandBackend, focusOptions.hasInteractiveInput === true);
   const window = new BrowserWindow({
     title,
     width: defaultPetWindowSize.width,
@@ -612,7 +617,7 @@ function createBasePetWindow(title: string, position: Point): BrowserWindow {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    focusable: shouldPetWindowBeFocusable(process.platform, isEffectiveWaylandBackend()),
+    focusable,
     show: false,
     hasShadow: false,
     backgroundColor: "#00000000",
@@ -624,6 +629,7 @@ function createBasePetWindow(title: string, position: Point): BrowserWindow {
     },
   });
 
+  petWindowFocusPolicy.set(window, focusable);
   window.setMenu(null);
   applyPetAlwaysOnTop(window);
   window.on("show", () => applyPetAlwaysOnTop(window));
@@ -675,6 +681,7 @@ function applyPetAlwaysOnTop(window: BrowserWindow): void {
 export async function loadDefaultPetContent(window: BrowserWindow, paused: boolean, display: PetTransientDisplay | null = null, badge: PetStatusBadgeReaction | null = null, dismissToken?: string, pluginBubbles: PetPluginBubbles | null = null): Promise<void> {
   const sequence = allocateWindowLoadSequence(window);
   debug("pet.window", "default content render begin", { windowId: window.id, sequence, paused, hasDisplay: Boolean(display), reaction: display?.reaction, hasMessage: Boolean(display?.message), badge, hasPluginBubble: Boolean(pluginBubbles?.transient), hasPinned: Boolean(pluginBubbles?.pinned), defaultPetId: getAppStateSnapshot().preferences.defaultPetId });
+  applyPetWindowFocusPolicy(window, petPluginBubblesHaveInteractiveInput(pluginBubbles));
   const render = await createDefaultPetRender(paused, display, badge, dismissToken, pluginBubbles);
   applyLinuxPetWindowShape(window, getAppStateSnapshot().preferences.petScale as PetScaleValue, Boolean(display?.message || display?.reactionMessage || display?.reaction || badge || paused || pluginBubbles?.transient || pluginBubbles?.pinned));
   if (tryUpdateLoadedPetContent(window, render, "default", sequence)) return;
@@ -689,6 +696,7 @@ export async function loadDefaultPetContent(window: BrowserWindow, paused: boole
 export async function loadExplicitPetContent(window: BrowserWindow, petId: string, display: PetTransientDisplay | null = null, badge: PetStatusBadgeReaction | null = null, dismissToken?: string, scaleOverride?: PetScaleValue, pluginBubbles: PetPluginBubbles | null = null): Promise<void> {
   const sequence = allocateWindowLoadSequence(window);
   try {
+    applyPetWindowFocusPolicy(window, petPluginBubblesHaveInteractiveInput(pluginBubbles));
     const state = getAppStateSnapshot();
     const pet = state.pets.installed.find((candidate) => candidate.id === petId);
     if (!pet || pet.broken || pet.id === builtInPet.id) {
@@ -704,6 +712,24 @@ export async function loadExplicitPetContent(window: BrowserWindow, petId: strin
   } catch (error: unknown) {
     logError("pet.window", "explicit content load failed", error instanceof Error ? error : { petId, error });
     console.error(`Failed to load explicit pet ${petId} URL.`, error);
+  }
+}
+
+function petPluginBubblesHaveInteractiveInput(pluginBubbles: PetPluginBubbles | null | undefined): boolean {
+  return Boolean(pluginBubbles?.transient?.bubble.input || pluginBubbles?.pinned?.bubble.input);
+}
+
+function applyPetWindowFocusPolicy(window: BrowserWindow, hasInteractiveInput: boolean): void {
+  if (window.isDestroyed()) return;
+  const effectiveWaylandBackend = isEffectiveWaylandBackend();
+  const focusable = shouldPetWindowBeFocusable(process.platform, effectiveWaylandBackend, hasInteractiveInput);
+  if (petWindowFocusPolicy.get(window) === focusable) return;
+  try {
+    window.setFocusable(focusable);
+    petWindowFocusPolicy.set(window, focusable);
+    debug("pet.window", "focus policy applied", { windowId: window.id, focusable, hasInteractiveInput, platform: process.platform, effectiveWaylandBackend });
+  } catch (error) {
+    logError("pet.window", "focus policy failed", error instanceof Error ? error : { windowId: window.id, focusable, hasInteractiveInput, error });
   }
 }
 

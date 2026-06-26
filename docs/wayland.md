@@ -37,12 +37,15 @@ Speech bubbles and other non-drag UI remain regular client content. Emoji/status
 glyph rendering is handled by the bundled `NotoColorEmoji.ttf`, so fresh Linux
 installs do not depend on system emoji fonts.
 
-Pet windows are created as non-focusable on Linux and are shown inactive, so the
-transparent overlay should not take keyboard focus when it appears or re-assert
-focus during the session. This addresses the focus-stealing class of issues on
-Wayland compositors such as Niri, but it does not change the accepted native
-Wayland limitations around cross-workspace stickiness or compositor-controlled
-window placement.
+Passive pet windows are created as non-focusable on Linux and are shown inactive,
+so the transparent overlay should not take keyboard focus when it appears or
+re-assert focus during the session. Pet windows temporarily opt back into
+focusability when the rendered plugin bubble includes an inline input/select,
+because those controls need keyboard focus after the user clicks them. This
+addresses the focus-stealing class of issues on Wayland compositors such as Niri,
+without breaking plugin bubbles that need typed input, but it does not change the
+accepted native Wayland limitations around cross-workspace stickiness or
+compositor-controlled window placement.
 
 ## Reproduction and validation notes
 
