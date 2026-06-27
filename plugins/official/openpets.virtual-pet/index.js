@@ -113,6 +113,21 @@ async function playActionSound(ctx) {
 }
 
 export async function updatePinned(ctx, state, now = Date.now()) {
+  let showStats = true;
+  try {
+    const cfg = (await ctx.config.get()) ?? {};
+    if (cfg.showStats === false) showStats = false;
+  } catch {}
+
+  if (!showStats) {
+    const pinned = getPinnedBubble(ctx);
+    if (pinned) {
+      try { await pinned.dismiss(); } catch {}
+      setPinnedBubble(ctx, null);
+    }
+    return;
+  }
+
   const spec = {
     tone: "info",
     sticky: true,

@@ -5,6 +5,8 @@
   "hud.energy": "Energy",
   "hud.play": "Play",
   "hud.bond": "Bond",
+  "config.showStats.label": "Show stats panel",
+  "config.showStats.description": "Show the Food, Energy, Play, and Bond panel next to your pet. Turn off to hide it and free up screen space.",
   "config.sound.label": "Action sound",
   "config.sound.description": "Optionally play a sound for direct care actions like feeding, playing, petting, or resting.",
   

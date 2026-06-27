@@ -5,6 +5,8 @@
   "hud.energy": "元気",
   "hud.play": "遊び",
   "hud.bond": "絆",
+  "config.showStats.label": "ステータスパネルを表示",
+  "config.showStats.description": "ペットの横に「ごはん」「元気」「遊び」「絆」のパネルを表示します。オフにすると非表示になり、画面が広く使えます。",
   "config.sound.label": "アクション音",
   "config.sound.description": "ごはん、遊び、なでる、休むなど直接のお世話で任意の音を鳴らします。",
 

@@ -124,6 +124,16 @@ const LOCALES = { en: JSON.parse(await readFile(new URL("./locales/en.json", imp
   h.expectNoErrors();
 }
 
+// 2b) With showStats disabled, no HUD bubble is pinned
+{
+  const h = createTestHarness(register, { permissions: PERMISSIONS, locales: LOCALES, nowMs: 100_000_000_000, config: { showStats: false } });
+  activeHarness = h;
+  await h.start();
+  // No pinned status bubble should be created when stats are hidden
+  assert.equal(h.calls.bubbles.length, 0, "Should not create a HUD bubble when showStats is false");
+  h.expectNoErrors();
+}
+
 // 3) Reconcile with wall-clock decay catch-up
 {
   const h = createTestHarness(register, { permissions: PERMISSIONS, locales: LOCALES, nowMs: 101_000_000_000 });
