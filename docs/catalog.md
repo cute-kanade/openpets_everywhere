@@ -47,7 +47,10 @@ v3 is **paginated** to keep each runtime fetch small. The flow the app follows:
    `searchText`, `category`, `catalogPage`, `featured`, `original`.
 
 Only pets with a valid `category` (`western` or `asian`) appear in v3 — the
-generator drops the rest and logs a warning. The validators on the app side live
+generator drops the rest and logs a warning. To keep the app UI clean, the
+Control Center browsing/search indexes surface only "curated" (original or
+featured) pets. However, explicit lookup/installation by ID allows installing
+any valid v3 catalog pet. The validators on the app side live
 in `catalog-validation.ts` (`validateCatalogV3Index`, `validateCatalogV3Page`,
 `validateCatalogV3SearchIndex`, `validateCatalogV3SearchPage`, plus
 `validateCatalogV2`). The canonical field list is maintained in
@@ -139,8 +142,8 @@ testing only.
 
 - **Browsing**: the Pets page in the Control Center pages through v3 and uses the
   search index for filtering.
-- **Installing**: see the install flow in [pets.md](pets.md) — catalog lookup →
-  ZIP download → validated extraction → state update → tray refresh.
+- **Installing**: see the install flow in [pets.md](pets.md) — catalog lookup (which allows installing any valid v3 catalog pet by ID, even if not original or featured) →
+  ZIP download → validated extraction → state update → tray refresh. (Control Center UI surfaces only curated original/featured pets, but explicit install by ID allows any valid v3 pet).
 - **Plugins**: the Plugins page lists catalog v2 entries filtered by app version
   and install state; install downloads + verifies the plugin ZIP. See
   [plugins.md](plugins.md).

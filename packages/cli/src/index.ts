@@ -28,7 +28,9 @@ interface ConfigureOptions {
 }
 
 interface InstallOptions {
-  readonly petId: string;
+  readonly petId?: string;
+  readonly fromZip?: string;
+  readonly fromFolder?: string;
 }
 
 interface ReactOptions {
@@ -186,8 +188,18 @@ async function main(): Promise<void> {
 
 async function installPetFromCatalog(options: InstallOptions): Promise<void> {
   const client = createOpenPetsClient({ responseTimeoutMs: 60_000 });
-  const result = await client.installPet(options.petId);
-  process.stdout.write(`Installed OpenPets pet: ${sanitizeTerminalText(result.displayName)} (${result.petId})\n`);
+  if (options.petId !== undefined) {
+    const result = await client.installPet(options.petId);
+    process.stdout.write(`Installed OpenPets pet: ${sanitizeTerminalText(result.displayName)} (${result.petId})\n`);
+  } else {
+    const path = options.fromZip ?? options.fromFolder;
+    if (path === undefined) {
+      throw new CliError("Missing install path.");
+    }
+    const absPath = resolve(path);
+    const result = await client.installLocalPet(absPath, { kind: options.fromZip !== undefined ? "zip" : "folder" });
+    process.stdout.write(`Installed OpenPets pet: ${sanitizeTerminalText(result.displayName)} (${result.petId})\n`);
+  }
 }
 
 async function showStatus(args: readonly string[]): Promise<void> {
@@ -427,8 +439,64 @@ function setCursorRulesMode(current: ConfigureOptions["cursorRulesMode"], next: 
 }
 
 export function parseInstallArgs(args: readonly string[]): InstallOptions {
-  if (args.length !== 1) throw new CliError("Usage: openpets install <pet-id>");
-  return { petId: validateOpenPetsPetArg(args[0] ?? "") };
+  let petId: string | undefined;
+  let fromZip: string | undefined;
+  let fromFolder: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--from-zip") {
+      if (fromZip !== undefined) throw new CliError("Duplicate --from-zip option.");
+      if (i + 1 >= args.length || args[i + 1].startsWith("--")) {
+        throw new CliError("Missing value for --from-zip.");
+      }
+      fromZip = args[i + 1];
+      i++;
+    } else if (arg.startsWith("--from-zip=")) {
+      if (fromZip !== undefined) throw new CliError("Duplicate --from-zip option.");
+      fromZip = arg.slice("--from-zip=".length);
+      if (!fromZip) throw new CliError("Missing value for --from-zip.");
+    } else if (arg === "--from-folder") {
+      if (fromFolder !== undefined) throw new CliError("Duplicate --from-folder option.");
+      if (i + 1 >= args.length || args[i + 1].startsWith("--")) {
+        throw new CliError("Missing value for --from-folder.");
+      }
+      fromFolder = args[i + 1];
+      i++;
+    } else if (arg.startsWith("--from-folder=")) {
+      if (fromFolder !== undefined) throw new CliError("Duplicate --from-folder option.");
+      fromFolder = arg.slice("--from-folder=".length);
+      if (!fromFolder) throw new CliError("Missing value for --from-folder.");
+    } else if (arg.startsWith("--")) {
+      throw new CliError(`Unknown install option: ${arg}`);
+    } else {
+      if (petId !== undefined) {
+        throw new CliError("Unexpected multiple pet IDs / arguments.");
+      }
+      petId = arg;
+    }
+  }
+
+  const presentCount = [
+    petId !== undefined,
+    fromZip !== undefined,
+    fromFolder !== undefined
+  ].filter(Boolean).length;
+
+  if (presentCount === 0) {
+    throw new CliError("Usage: openpets install <pet-id> or openpets install --from-zip <path> or openpets install --from-folder <path>");
+  }
+  if (presentCount > 1) {
+    throw new CliError("Conflicting install options. Choose only one of <pet-id>, --from-zip, or --from-folder.");
+  }
+
+  if (petId !== undefined) {
+    return { petId: validateOpenPetsPetArg(petId) };
+  }
+  if (fromZip !== undefined) {
+    return { fromZip };
+  }
+  return { fromFolder };
 }
 
 export function parsePluginNewArgs(args: readonly string[]): PluginNewOptions {
@@ -779,7 +847,7 @@ function getPackageVersion(): string {
 }
 
 function printUsage(): void {
-  process.stdout.write("Usage:\n  openpets status\n  openpets doctor [--cwd <path>] [--json]\n  openpets pets\n  openpets react <reaction>\n  openpets say <message> [--reaction <reaction>]\n  openpets install <pet-id>\n  openpets configure [--agent claude|opencode|cursor] [--pet <id>] [--cwd <path>] [--yes] [--force] [--with-rules|--rules-only|--remove-rules]\n  openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]\n  openpets mcp [--pet <id>]\n  openpets hook --openpets-managed [--pet <id>]\n\nRun `openpets <command> --help` for command options.\n");
+  process.stdout.write("Usage:\n  openpets status\n  openpets doctor [--cwd <path>] [--json]\n  openpets pets\n  openpets react <reaction>\n  openpets say <message> [--reaction <reaction>]\n  openpets install <pet-id> | --from-zip <path> | --from-folder <path>\n  openpets configure [--agent claude|opencode|cursor] [--pet <id>] [--cwd <path>] [--yes] [--force] [--with-rules|--rules-only|--remove-rules]\n  openpets plugin new <name> [--id <id>] [--dir <path>] [--author <name>]\n  openpets mcp [--pet <id>]\n  openpets hook --openpets-managed [--pet <id>]\n\nRun `openpets <command> --help` for command options.\n");
 }
 
 function printPluginUsage(): void {
@@ -801,7 +869,7 @@ function printPluginUsage(): void {
 }
 
 function printInstallUsage(): void {
-  process.stdout.write("Usage:\n  openpets install <pet-id>\n\nDownloads a gallery pet through the running OpenPets desktop app and installs it locally.\n");
+  process.stdout.write("Usage:\n  openpets install <pet-id>\n  openpets install --from-zip <path>\n  openpets install --from-folder <path>\n\nDownloads and installs a gallery pet by ID, or installs a local pet from a zip file or a folder, through the running OpenPets desktop app.\n");
 }
 
 function printStatusUsage(): void {

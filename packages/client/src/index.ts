@@ -1,5 +1,6 @@
 import net from "node:net";
 import { randomUUID } from "node:crypto";
+import { isAbsolute } from "node:path";
 
 import { parseIpcEndpoint, readDiscoveryFile, type OpenPetsDiscoveryFile } from "./discovery.js";
 import { connectTimeoutMs, maxIpcMessageBytes, openPetsIpcVersion, parseIpcResponse, responseTimeoutMs, validateReaction, OpenPetsClientError, type OpenPetsIpcMethod, type OpenPetsIpcRequest, type OpenPetsReaction } from "./protocol.js";
@@ -65,6 +66,7 @@ export interface OpenPetsClient {
   status(options?: { readonly leaseId?: string }): Promise<OpenPetsStatusResult>;
   listPets(): Promise<OpenPetsPetListResult>;
   installPet(petId: string): Promise<OpenPetsPetInstallResult>;
+  installLocalPet(path: string, options: { readonly kind: "zip" | "folder" }): Promise<OpenPetsPetInstallResult>;
   acquireLease(options?: { readonly requestedPetId?: string }): Promise<OpenPetsLeaseResult>;
   heartbeatLease(leaseId: string): Promise<{ readonly leaseId: string; readonly expiresAt: number }>;
   releaseLease(leaseId: string): Promise<{ readonly released: boolean }>;
@@ -88,6 +90,19 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     },
     listPets: async () => parsePetListResult(await sendDiscoveredRequest("pets.list", {}, options)),
     installPet: async (petId) => parsePetInstallResult(await sendDiscoveredRequest("pets.install", { petId: validatePetId(petId) }, { ...options, responseTimeoutMs: options.responseTimeoutMs ?? 60_000 })),
+    installLocalPet: async (path, installOptions) => {
+      if (typeof path !== "string" || path.trim().length === 0) {
+        throw new OpenPetsClientError("invalid_params", "Path must be a non-empty string.");
+      }
+      const trimmedPath = path.trim();
+      if (!isLocalInstallAbsolutePath(trimmedPath)) {
+        throw new OpenPetsClientError("invalid_params", "Path must be absolute.");
+      }
+      if (!installOptions || (installOptions.kind !== "zip" && installOptions.kind !== "folder")) {
+        throw new OpenPetsClientError("invalid_params", "Local install kind must be zip or folder.");
+      }
+      return parsePetInstallResult(await sendDiscoveredRequest("pets.install-local", { path: trimmedPath, kind: installOptions.kind }, { ...options, responseTimeoutMs: options.responseTimeoutMs ?? 60_000 }));
+    },
     acquireLease: (leaseOptions) => sendDiscoveredRequest("lease.acquire", { requestedPetId: leaseOptions?.requestedPetId, clientPid: process.pid, sessionNonce: SESSION_NONCE }, options),
     heartbeatLease: (leaseId) => sendDiscoveredRequest("lease.heartbeat", { leaseId }, options),
     releaseLease: (leaseId) => sendDiscoveredRequest("lease.release", { leaseId }, options),
@@ -108,6 +123,10 @@ function validatePetId(value: string): string {
     throw new OpenPetsClientError("invalid_pet_id", "Invalid OpenPets pet id.");
   }
   return value;
+}
+
+function isLocalInstallAbsolutePath(value: string): boolean {
+  return isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(value);
 }
 
 export function parsePetListResult(value: unknown): OpenPetsPetListResult {

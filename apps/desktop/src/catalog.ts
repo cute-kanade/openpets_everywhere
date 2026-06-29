@@ -102,21 +102,15 @@ export async function getCatalogSearchUiState(): Promise<CatalogSearchUiState> {
 export async function getCatalogPet(petId: string): Promise<CatalogPetV2> {
   const remoteV3 = await tryLoadRemoteCatalogV3Index();
   if (remoteV3.ok) {
-    let blockedHiddenV3Pet = false;
     try {
       const searchPets = await getRemoteCatalogV3Search(remoteV3.index);
       const searchPet = searchPets.find((pet) => pet.id === petId);
-      if (searchPet && !isSurfaceablePet(searchPet)) {
-        blockedHiddenV3Pet = true;
-        throw new Error(`Pet is not available in the curated catalog: ${petId}`);
-      }
       if (searchPet) {
         const page = await getRemoteCatalogV3Page(searchPet.catalogPage, remoteV3.index);
         const pet = page.find((candidate) => candidate.id === petId);
-        if (pet && isSurfaceablePet(pet)) return pet;
+        if (pet) return pet;
       }
     } catch (error) {
-      if (blockedHiddenV3Pet) throw error;
       // Fall through to v2/fixture so visible v2-compatible pets remain installable during partial v3 outages.
     }
   }
