@@ -169,6 +169,14 @@ Two install paths exist; they share the same safety rules.
 4. Extraction is atomic (temp dir → rename) into `userData/pets/{id}/`, and
    `installPetState()` records it in app state.
 
+Local pet packages can also be installed through the running app via the CLI:
+- `openpets install --from-zip <path-to-zip>`
+- `openpets install --from-folder <path-to-folder>`
+
+These send a `pets.install-local` request to the running app over IPC, which validates and imports the local zip file or folder.
+The CLI resolves relative paths before sending them; the IPC/client protocol
+itself requires an absolute path plus an explicit `zip` or `folder` kind.
+
 ### Standalone installer (`install-pet`)
 
 `packages/install-pet/` is a standalone CLI (`install-pet <pet-id>` or

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { errorResponse, maxIpcMessageBytes, parseIpcRequest, validateReaction, validateSayMessage } from "../src/local-ipc-protocol.js";
+import { errorResponse, maxIpcMessageBytes, parseIpcRequest, validateReaction, validateSayMessage, validateInstallLocalKind, validateInstallLocalPath } from "../src/local-ipc-protocol.js";
 
 const token = "test-token";
 const valid = {
@@ -13,6 +13,7 @@ const valid = {
 
 parseIpcRequest(JSON.stringify(valid), token);
 parseIpcRequest(JSON.stringify({ ...valid, method: "pets.list" }), token);
+parseIpcRequest(JSON.stringify({ ...valid, method: "pets.install-local" }), token);
 assert.throws(() => parseIpcRequest(JSON.stringify({ ...valid, token: "bad" }), token));
 assert.throws(() => parseIpcRequest(JSON.stringify({ ...valid, version: 2 }), token));
 assert.throws(() => parseIpcRequest(JSON.stringify({ ...valid, method: "pet.install" }), token));
@@ -39,6 +40,15 @@ for (const unsafe of [
 if (Buffer.byteLength(JSON.stringify({ message: "x".repeat(maxIpcMessageBytes) }), "utf8") <= maxIpcMessageBytes) {
   throw new Error("Oversized fixture was not oversized.");
 }
+
+validateInstallLocalPath("/tmp/my-pet.zip");
+assert.throws(() => validateInstallLocalPath(""));
+assert.throws(() => validateInstallLocalPath("./my-pet"));
+assert.throws(() => validateInstallLocalPath("\x00"));
+assert.throws(() => validateInstallLocalPath("a".repeat(2049)));
+assert.equal(validateInstallLocalKind("zip"), "zip");
+assert.equal(validateInstallLocalKind("folder"), "folder");
+assert.throws(() => validateInstallLocalKind("file"));
 
 const response = errorResponse("1", new Error("boom"));
 if (response.ok || response.error?.code !== "internal_error") {

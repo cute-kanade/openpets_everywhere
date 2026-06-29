@@ -30,8 +30,16 @@ assert.throws(() => parseConfigureArgs(["--agent", "cursor", "--with-rules", "--
 assert.throws(() => parseConfigureArgs(["--agent", "claude", "--rules-only"]));
 assert.throws(() => parseConfigureArgs(["--pet", "bad/pet"]));
 assert.deepEqual(parseInstallArgs(["review-owl"]), { petId: "review-owl" });
+assert.deepEqual(parseInstallArgs(["--from-zip", "my-pet.zip"]), { fromZip: "my-pet.zip" });
+assert.deepEqual(parseInstallArgs(["--from-zip=my-pet.zip"]), { fromZip: "my-pet.zip" });
+assert.deepEqual(parseInstallArgs(["--from-folder", "my-folder"]), { fromFolder: "my-folder" });
+assert.deepEqual(parseInstallArgs(["--from-folder=my-folder"]), { fromFolder: "my-folder" });
 assert.throws(() => parseInstallArgs([]));
 assert.throws(() => parseInstallArgs(["bad/pet"]));
+assert.throws(() => parseInstallArgs(["review-owl", "--from-zip", "my-pet.zip"]));
+assert.throws(() => parseInstallArgs(["--from-zip", "my-pet.zip", "--from-folder", "my-folder"]));
+assert.throws(() => parseInstallArgs(["--from-zip"]));
+assert.throws(() => parseInstallArgs(["--from-folder"]));
 assert.deepEqual(parseReactArgs(["success"]), { reaction: "success" });
 assert.throws(() => parseReactArgs([]));
 assert.throws(() => parseReactArgs(["bad"]));

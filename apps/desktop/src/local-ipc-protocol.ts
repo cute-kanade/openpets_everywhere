@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isAbsolute } from "node:path";
 
 export const openPetsIpcProtocol = "openpets-ipc";
 export const openPetsIpcVersion = 1;
@@ -20,7 +21,7 @@ export const allowedReactions = [
 ] as const;
 
 export type OpenPetsReaction = typeof allowedReactions[number];
-export type OpenPetsIpcMethod = "hello" | "status" | "pets.list" | "pets.install" | "lease.acquire" | "lease.heartbeat" | "lease.release" | "pet.react" | "pet.say";
+export type OpenPetsIpcMethod = "hello" | "status" | "pets.list" | "pets.install" | "lease.acquire" | "lease.heartbeat" | "lease.release" | "pet.react" | "pet.say" | "pets.install-local";
 
 export interface OpenPetsIpcRequest {
   readonly id: string;
@@ -55,7 +56,7 @@ export function parseIpcRequest(raw: string, expectedToken: string): OpenPetsIpc
   if (typeof parsed.id !== "string" || parsed.id.length < 1 || parsed.id.length > 120) throw new IpcProtocolError("invalid_request", "IPC request id is invalid.");
   if (parsed.version !== openPetsIpcVersion) throw new IpcProtocolError("invalid_version", "Unsupported IPC protocol version.");
   if (parsed.token !== expectedToken) throw new IpcProtocolError("invalid_token", "Invalid IPC token.");
-  if (parsed.method !== "hello" && parsed.method !== "status" && parsed.method !== "pets.list" && parsed.method !== "pets.install" && parsed.method !== "lease.acquire" && parsed.method !== "lease.heartbeat" && parsed.method !== "lease.release" && parsed.method !== "pet.react" && parsed.method !== "pet.say") {
+  if (parsed.method !== "hello" && parsed.method !== "status" && parsed.method !== "pets.list" && parsed.method !== "pets.install" && parsed.method !== "lease.acquire" && parsed.method !== "lease.heartbeat" && parsed.method !== "lease.release" && parsed.method !== "pet.react" && parsed.method !== "pet.say" && parsed.method !== "pets.install-local") {
     throw new IpcProtocolError("unknown_method", "Unknown IPC method.");
   }
 
@@ -154,4 +155,31 @@ export class IpcProtocolError extends Error {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function validateInstallLocalPath(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new IpcProtocolError("invalid_params", "Path must be a string.");
+  }
+  const trimmed = value.trim();
+  if (trimmed.length < 1) {
+    throw new IpcProtocolError("invalid_params", "Path cannot be empty.");
+  }
+  if (Buffer.byteLength(trimmed, "utf8") > 2048) {
+    throw new IpcProtocolError("invalid_params", "Path is too long.");
+  }
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) {
+    throw new IpcProtocolError("invalid_params", "Path contains invalid control characters.");
+  }
+  if (!isAbsolute(trimmed)) {
+    throw new IpcProtocolError("invalid_params", "Path must be absolute.");
+  }
+  return trimmed;
+}
+
+export function validateInstallLocalKind(value: unknown): "zip" | "folder" {
+  if (value !== "zip" && value !== "folder") {
+    throw new IpcProtocolError("invalid_params", "Local install kind must be zip or folder.");
+  }
+  return value;
 }

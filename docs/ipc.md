@@ -67,13 +67,16 @@ shapes before returning.
 | `status` | App + pet status snapshot |
 | `pets.list` | Installed pets |
 | `pets.install` | Install a catalog pet through the running app |
+| `pets.install-local` | Install a local pet from an absolute zip-file or folder path |
 | `pet.react` | Set a pet reaction (animation state) |
 | `pet.say` | Show a speech bubble on a pet |
 | `lease.acquire` / `lease.heartbeat` / `lease.release` | Manage a pet lease |
 
 Client method names (`hello()`, `status()`, `listPets()`, `installPet()`,
-`acquireLease()`, `heartbeatLease()`, `releaseLease()`, `react()`, `say()`) wrap
-these. `react()`/`say()` accept an optional `leaseId` to target a specific pet.
+`installLocalPet()`, `acquireLease()`, `heartbeatLease()`, `releaseLease()`,
+`react()`, `say()`) wrap these. `installLocalPet()` requires an absolute path
+and an explicit `zip`/`folder` kind. `react()`/`say()` accept an optional
+`leaseId` to target a specific pet.
 
 ## The lease model
 
