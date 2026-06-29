@@ -5,6 +5,8 @@
   "hud.energy": "Energia",
   "hud.play": "Brincar",
   "hud.bond": "Vínculo",
+  "config.showStats.label": "Mostrar painel de status",
+  "config.showStats.description": "Mostra o painel de Comida, Energia, Brincar e Vínculo ao lado do seu pet. Desative para ocultá-lo e liberar espaço na tela.",
   "config.sound.label": "Som de ação",
   "config.sound.description": "Opcionalmente reproduz um som para ações diretas de cuidado, como alimentar, brincar, fazer carinho ou descansar.",
 

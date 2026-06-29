@@ -3,7 +3,7 @@
   "id": "openpets.virtual-pet",
   "name": "$t:plugin.name",
   "description": "$t:plugin.description",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "runtime": "javascript",
   "icon": "heart",
   "sdkVersion": "3.0.0",
@@ -25,6 +25,12 @@
     "events"
   ],
   "configSchema": {
+    "showStats": {
+      "type": "boolean",
+      "default": true,
+      "label": "$t:config.showStats.label",
+      "description": "$t:config.showStats.description"
+    },
     "sound": {
       "type": "sound",
       "label": "$t:config.sound.label",

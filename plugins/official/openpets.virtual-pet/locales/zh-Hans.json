@@ -5,6 +5,8 @@
   "hud.energy": "能量",
   "hud.play": "玩耍",
   "hud.bond": "羁绊",
+  "config.showStats.label": "显示状态面板",
+  "config.showStats.description": "在宠物旁边显示食物、能量、玩耍和羁绊面板。关闭后将其隐藏以腾出屏幕空间。",
   "config.sound.label": "动作声音",
   "config.sound.description": "喂食、玩耍、抚摸或休息等直接照顾动作可选择播放声音。",
 

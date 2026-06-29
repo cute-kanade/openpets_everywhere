@@ -5,6 +5,8 @@
   "hud.energy": "Energía",
   "hud.play": "Juego",
   "hud.bond": "Vínculo",
+  "config.showStats.label": "Mostrar panel de estado",
+  "config.showStats.description": "Muestra el panel de Comida, Energía, Juego y Vínculo junto a tu mascota. Desactívalo para ocultarlo y liberar espacio en pantalla.",
   "config.sound.label": "Sonido de acción",
   "config.sound.description": "Opcionalmente reproduce un sonido para acciones directas de cuidado como alimentar, jugar, acariciar o descansar.",
 
