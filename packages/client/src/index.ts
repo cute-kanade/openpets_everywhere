@@ -1,6 +1,6 @@
 import net from "node:net";
 import { randomUUID } from "node:crypto";
-import { isAbsolute } from "node:path";
+import { posix, win32 } from "node:path";
 
 import { parseIpcEndpoint, readDiscoveryFile, type OpenPetsDiscoveryFile } from "./discovery.js";
 import { connectTimeoutMs, maxIpcMessageBytes, openPetsIpcVersion, parseIpcResponse, responseTimeoutMs, validateReaction, OpenPetsClientError, type OpenPetsIpcMethod, type OpenPetsIpcRequest, type OpenPetsReaction } from "./protocol.js";
@@ -126,7 +126,7 @@ function validatePetId(value: string): string {
 }
 
 function isLocalInstallAbsolutePath(value: string): boolean {
-  return isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(value);
+  return posix.isAbsolute(value) || win32.isAbsolute(value);
 }
 
 export function parsePetListResult(value: unknown): OpenPetsPetListResult {

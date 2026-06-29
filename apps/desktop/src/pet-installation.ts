@@ -7,7 +7,7 @@ import { Transform } from "node:stream";
 import yauzl from "yauzl";
 import type { Entry, ZipFile } from "yauzl";
 
-import { getAppStateSnapshot, installPetState, removePetState, setDefaultPet, type OpenPetsStateV1 } from "./app-state.js";
+import { getAppStateSnapshot, installPetState, removePetState, setDefaultPet, upsertPetState, type OpenPetsStateV1 } from "./app-state.js";
 import { getCatalogPet } from "./catalog.js";
 import { maxCodexPetJsonBytes, maxCodexSpritesheetBytes, validateCodexPetMetadata, type CodexPetMetadata } from "./codex-pets-core.js";
 import { builtInPet } from "./built-in-pet.js";
@@ -21,6 +21,12 @@ const maxIndividualFileBytes = 100 * 1024 * 1024;
 const downloadTimeoutMs = 30_000;
 
 const operations = new Set<string>();
+
+export interface LocalPetInstallResult {
+  readonly state: OpenPetsStateV1;
+  readonly petId: string;
+  readonly displayName: string;
+}
 
 export async function installPet(petId: string): Promise<OpenPetsStateV1> {
   return withPetOperation(petId, async () => {
@@ -71,6 +77,10 @@ export async function installPet(petId: string): Promise<OpenPetsStateV1> {
 }
 
 export async function installPetFromZipFile(zipPath: string): Promise<OpenPetsStateV1> {
+  return (await installPetFromZipFileWithResult(zipPath)).state;
+}
+
+export async function installPetFromZipFileWithResult(zipPath: string): Promise<LocalPetInstallResult> {
   return withPetOperation("local-import", async () => {
     const zip = await readRegularFile(zipPath, maxZipDownloadBytes, "pet zip");
     validateZipMagic(zip);
@@ -82,7 +92,8 @@ export async function installPetFromZipFile(zipPath: string): Promise<OpenPetsSt
       await extractPetZip(zip, tempDir);
       const metadata = await validateExtractedPet(tempDir);
       await finalizeLocalPetInstall(metadata, tempDir);
-      return installLocalPetState(metadata);
+      const state = await installLocalPetState(metadata);
+      return { state, petId: metadata.id, displayName: metadata.displayName };
     } catch (error) {
       await rm(tempDir, { recursive: true, force: true });
       throw error;
@@ -91,6 +102,10 @@ export async function installPetFromZipFile(zipPath: string): Promise<OpenPetsSt
 }
 
 export async function installPetFromFolder(folderPath: string): Promise<OpenPetsStateV1> {
+  return (await installPetFromFolderWithResult(folderPath)).state;
+}
+
+export async function installPetFromFolderWithResult(folderPath: string): Promise<LocalPetInstallResult> {
   return withPetOperation("local-import", async () => {
     const sourceDir = resolve(folderPath);
     const sourceStats = await lstat(sourceDir);
@@ -101,7 +116,6 @@ export async function installPetFromFolder(folderPath: string): Promise<OpenPets
     const parsedId = isRecord(parsed) && typeof parsed.id === "string" ? parsed.id : basename(sourceDir);
     const metadata = validateCodexPetMetadata(parsed, parsedId);
     assertSafePetId(metadata.id);
-    if (getAppStateSnapshot().pets.installed.some((pet) => pet.id === metadata.id)) throw new Error(`Pet is already installed: ${metadata.id}`);
     const spritesheet = await readRegularFile(join(sourceDir, metadata.spritesheetPath), maxCodexSpritesheetBytes, "spritesheet.webp");
     const petsRoot = getPetsRoot();
     await mkdir(petsRoot, { recursive: true, mode: 0o700 });
@@ -111,7 +125,8 @@ export async function installPetFromFolder(folderPath: string): Promise<OpenPets
       await writeFile(join(tempDir, "spritesheet.webp"), spritesheet, { mode: 0o600, flag: "wx" });
       await writeFile(join(tempDir, "pet.json"), `${JSON.stringify(metadata, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
       await finalizeLocalPetInstall(metadata, tempDir);
-      return installLocalPetState(metadata);
+      const state = await installLocalPetState(metadata);
+      return { state, petId: metadata.id, displayName: metadata.displayName };
     } catch (error) {
       await rm(tempDir, { recursive: true, force: true });
       throw error;
@@ -386,7 +401,6 @@ async function validateExtractedPet(tempDir: string): Promise<CodexPetMetadata> 
 }
 
 async function finalizeLocalPetInstall(metadata: CodexPetMetadata, tempDir: string): Promise<void> {
-  if (getAppStateSnapshot().pets.installed.some((pet) => pet.id === metadata.id)) throw new Error(`Pet is already installed: ${metadata.id}`);
   const petsRoot = getPetsRoot();
   const finalDir = getInstalledPetDir(metadata.id);
   assertInsideRoot(petsRoot, finalDir);
@@ -432,7 +446,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 async function installLocalPetState(metadata: CodexPetMetadata): Promise<OpenPetsStateV1> {
   try {
-    return installPetState({ id: metadata.id, displayName: metadata.displayName, description: metadata.description });
+    return upsertPetState({ id: metadata.id, displayName: metadata.displayName, description: metadata.description });
   } catch (error) {
     await rm(getInstalledPetDir(metadata.id), { recursive: true, force: true });
     throw error;

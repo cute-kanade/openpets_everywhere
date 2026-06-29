@@ -11,9 +11,9 @@ import { applyExternalPetReaction, applyExternalPetSay, getDefaultPetPaused, isD
 import { createStaleLeaseStatus, LeaseManager } from "./lease-manager.js";
 import { debug, error as logError, info } from "./logger.js";
 import { cleanupUnixSocket, getDiscoveryFilePath, getIpcEndpointConfig, parseIpcEndpoint, protectUnixSocket, removeDiscoveryFile, writeDiscoveryFile, type IpcEndpoint, type IpcEndpointConfig, type OpenPetsDiscoveryFile } from "./local-ipc-paths.js";
-import { lstat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { errorResponse, IpcProtocolError, isRecord, maxIpcMessageBytes, okResponse, parseIpcRequest, validateInstallLocalKind, validateInstallLocalPath, validateInstallPetId, validateOptionalLeaseId, validateReaction, validateRequestedPetId, validateSayMessage, validateSessionNonce, type OpenPetsIpcRequest } from "./local-ipc-protocol.js";
-import { installPet, installPetFromFolder, installPetFromZipFile } from "./pet-installation.js";
+import { installPet, installPetFromFolderWithResult, installPetFromZipFileWithResult } from "./pet-installation.js";
 import { clearConfinementState, setConfinementState } from "./confinement-manager.js";
 import { isConfinementSupported } from "./capabilities.js";
 import { resolveAndSubscribe, type ConfinementPollerDeps } from "./confinement-poller.js";
@@ -358,19 +358,18 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     const localPath = validateInstallLocalPath(params.path);
     const kind = validateInstallLocalKind(params.kind);
     trackDesktopEvent("desktop_pet_install_started", { source: "local", entrypoint: "ipc" });
-    let state;
     try {
-      const stats = await lstat(localPath);
-      const stateBefore = getAppStateSnapshot().pets.installed.map((pet) => pet.id);
+      const stats = await stat(localPath);
+      let installResult;
       if (kind === "folder") {
         if (!stats.isDirectory()) throw new IpcProtocolError("invalid_params", "Local pet path must be a folder.");
-        state = await installPetFromFolder(localPath);
+        installResult = await installPetFromFolderWithResult(localPath);
       } else {
         if (!stats.isFile()) throw new IpcProtocolError("invalid_params", "Local pet path must be a zip file.");
-        state = await installPetFromZipFile(localPath);
+        installResult = await installPetFromZipFileWithResult(localPath);
       }
       trackDesktopEvent("desktop_pet_install_completed", { source: "local", entrypoint: "ipc" });
-      const installedPet = state.pets.installed.find((pet) => !stateBefore.includes(pet.id));
+      const installedPet = installResult.state.pets.installed.find((pet) => pet.id === installResult.petId);
       if (!installedPet) throw new IpcProtocolError("install_failed", "Local pet install did not complete.");
       return { ok: true, petId: installedPet.id, displayName: installedPet.displayName, installed: true };
     } catch (error) {

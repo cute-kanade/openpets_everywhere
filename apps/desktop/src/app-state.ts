@@ -388,6 +388,28 @@ export function installPetState(pet: Omit<InstalledPetState, "builtIn" | "protec
   return getAppStateSnapshot();
 }
 
+export function upsertPetState(pet: Omit<InstalledPetState, "builtIn" | "protected" | "installed">): OpenPetsStateV1 {
+  const state = getInitializedState();
+  const nextPet: InstalledPetState = {
+    ...pet,
+    builtIn: false,
+    protected: false,
+    installed: true,
+  };
+  const exists = state.pets.installed.some((installedPet) => installedPet.id === pet.id);
+  const nextState = normalizeState({
+    ...state,
+    pets: {
+      installed: exists
+        ? state.pets.installed.map((installedPet) => installedPet.id === pet.id ? nextPet : installedPet)
+        : [...state.pets.installed, nextPet],
+    },
+  });
+
+  commitState(nextState);
+  return getAppStateSnapshot();
+}
+
 export function removePetState(petId: string): OpenPetsStateV1 {
   if (petId === builtInPet.id) {
     throw new Error("Built-in pet cannot be removed.");
