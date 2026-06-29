@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { addOpenPetsHooks, claudeHookEvents, createOpenPetsHookCommand, createOpenPetsHookSettingsPreview, doctorClaudeHooks, getBundledClaudeCliPath, getLocalClaudeCliPath, installClaudeHooks, openPetsHookMarker, removeOpenPetsHooks, uninstallClaudeHooks } from "./hook-settings.js";
+import { addOpenPetsHooks, assertInstalledClaudeCliPath, claudeHookEvents, createOpenPetsHookCommand, createOpenPetsHookSettingsPreview, doctorClaudeHooks, findInstalledOpenPetsClaudeCli, getBundledClaudeCliPath, getLocalClaudeCliPath, installClaudeHooks, openPetsHookMarker, removeOpenPetsHooks, uninstallClaudeHooks } from "./hook-settings.js";
 import { hookSpeechPools } from "./hook-messages.js";
 import { handleClaudeHookPayload, hasProjectLocalOpenPetsHook, mapClaudeHookEvent, validateHookSpeech } from "./hooks.js";
 
@@ -38,6 +38,7 @@ const client = {
   status: async () => ({ ok: true, appRunning: true }),
   listPets: async () => ({ ok: true as const, pets: [], defaultPetId: "builtin" }),
   installPet: async () => { throw new Error("unused"); },
+  installLocalPet: async () => { throw new Error("unused"); },
   acquireLease: async (options?: { readonly requestedPetId?: string }) => {
     calls.push({ kind: "lease", value: "acquire", requestedPetId: options?.requestedPetId });
     return { leaseId: "lease-fixer", requestedPetId: options?.requestedPetId, targetKind: "explicit" as const, actualTargetPetId: options?.requestedPetId ?? "builtin", actualTargetPetName: "Fixer", usingDefaultPet: false, expiresAt: Date.now() + 15_000, leaseActive: true };
@@ -162,6 +163,41 @@ assert.equal(missingPetHook.status, 1);
 const malformedHook = spawnSync(process.execPath, [new URL("./cli.js", import.meta.url).pathname, "hook", "--openpets-managed"], { input: "not json", encoding: "utf8", env: isolatedEnv });
 assert.equal(malformedHook.status, 0);
 assert.equal(malformedHook.stdout, "");
+
+// Explicit installed-CLI path: hooks run as `node <abs-path> hook ...`, and the
+// resolved command must round-trip cleanly through install -> doctor (status
+// stays "installed", not "needs_update").
+const fakeAppCliDir = join(dir, "OpenPets.app", "Contents", "Resources", "app.asar.unpacked", "node_modules", "@open-pets", "claude", "dist");
+mkdirSync(fakeAppCliDir, { recursive: true });
+const fakeAppCliPath = join(fakeAppCliDir, "cli.js");
+writeFileSync(fakeAppCliPath, "// bundled cli", "utf8");
+assertInstalledClaudeCliPath(fakeAppCliPath);
+const installedCliCommand = createOpenPetsHookCommand("published", undefined, "node", fakeAppCliPath);
+assert.ok(installedCliCommand.startsWith(`node ${fakeAppCliPath} hook ${openPetsHookMarker}`), "explicit installed CLI path must produce a node + absolute-path hook command");
+assert.ok(!installedCliCommand.includes("npx"), "explicit installed CLI path must not fall back to npx");
+const installedCliPreview = createOpenPetsHookSettingsPreview("published", undefined, "node", fakeAppCliPath);
+const installedCliHook = (((installedCliPreview.hooks as Record<string, unknown>).Stop as Array<{ hooks: Array<{ command: string }> }>)[0]?.hooks[0]);
+assert.equal(installedCliHook?.command, installedCliCommand);
+const explicitSettingsPath = join(dir, "explicit-cli-settings.json");
+writeFileSync(explicitSettingsPath, JSON.stringify(settings), "utf8");
+assert.equal(installClaudeHooks(explicitSettingsPath, "published", undefined, "node", fakeAppCliPath).status, "installed");
+assert.equal(doctorClaudeHooks(explicitSettingsPath, "published", undefined, "node", fakeAppCliPath).status, "installed");
+// A published-mode doctor sees the explicit-path hooks as stale (npx command differs).
+assert.equal(doctorClaudeHooks(explicitSettingsPath).status, "needs_update");
+
+// findInstalledOpenPetsClaudeCli returns the first valid candidate and skips
+// missing / malformed ones; returns null when nothing valid is present.
+assert.equal(findInstalledOpenPetsClaudeCli([join(dir, "nope", "cli.js"), fakeAppCliPath]), fakeAppCliPath);
+assert.equal(findInstalledOpenPetsClaudeCli([join(dir, "absent", "@open-pets", "claude", "dist", "cli.js")]), null);
+
+// Path validation rejects unsafe / wrong-shaped CLI paths.
+assert.throws(() => assertInstalledClaudeCliPath("relative/cli.js"));
+assert.throws(() => assertInstalledClaudeCliPath(join(dir, "OpenPets.app", "Contents", "Resources", "app.asar", "node_modules", "@open-pets", "claude", "dist", "cli.js")));
+assert.throws(() => assertInstalledClaudeCliPath(join(fakeAppCliDir, "index.js")));
+const symlinkedCliPath = join(dir, "linked-cli.js-target", "@open-pets", "claude", "dist", "cli.js");
+mkdirSync(join(dir, "linked-cli.js-target", "@open-pets", "claude", "dist"), { recursive: true });
+symlinkSync(fakeAppCliPath, symlinkedCliPath);
+assert.throws(() => assertInstalledClaudeCliPath(symlinkedCliPath));
 
 } finally {
   rmSync(dir, { recursive: true, force: true });
