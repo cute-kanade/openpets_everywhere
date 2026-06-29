@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { computeEffectiveWaylandBackend } from "../src/wayland-backend.js";
+import { computeEffectiveWaylandBackend, shouldPetWindowBeFocusable } from "../src/wayland-backend.js";
 
 // ─── real-function predicate tests ───────────────────────────────────────────
 // These exercise the REAL production predicate — the pure, Electron-free core
@@ -36,5 +36,25 @@ describe("computeEffectiveWaylandBackend (production predicate)", () => {
     assert.equal(computeEffectiveWaylandBackend("linux", "", undefined, "/run/user/1000/wayland-0"), true);
     assert.equal(computeEffectiveWaylandBackend("linux", "", undefined, undefined), false);
     assert.equal(computeEffectiveWaylandBackend("linux", "", undefined, ""), false);
+  });
+});
+
+describe("shouldPetWindowBeFocusable", () => {
+  it("keeps passive Linux pet windows non-focusable", () => {
+    assert.equal(shouldPetWindowBeFocusable("linux", true, false), false);
+    assert.equal(shouldPetWindowBeFocusable("linux", false, false), false);
+    assert.equal(shouldPetWindowBeFocusable("linux", true), false);
+  });
+
+  it("allows Linux pet windows with interactive inputs to receive focus", () => {
+    assert.equal(shouldPetWindowBeFocusable("linux", true, true), true);
+    assert.equal(shouldPetWindowBeFocusable("linux", false, true), true);
+  });
+
+  it("preserves focusable pet windows on macOS and Windows", () => {
+    assert.equal(shouldPetWindowBeFocusable("darwin", false, false), true);
+    assert.equal(shouldPetWindowBeFocusable("darwin", false, true), true);
+    assert.equal(shouldPetWindowBeFocusable("win32", false, false), true);
+    assert.equal(shouldPetWindowBeFocusable("win32", false, true), true);
   });
 });
