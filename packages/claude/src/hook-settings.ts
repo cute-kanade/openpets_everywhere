@@ -29,14 +29,80 @@ export function getClaudeUserSettingsPath(): string {
   return join(homedir(), ".claude", "settings.json");
 }
 
-export function createOpenPetsHookCommand(commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node"): string {
+export function createOpenPetsHookCommand(commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node", explicitCliPath?: string): string {
   const petArgs = selectedPetId === undefined ? "" : ` --pet ${shellQuote(validateOpenPetsPetArg(selectedPetId))}`;
+  // An explicitly resolved CLI path (e.g. the bundled CLI inside an installed
+  // OpenPets app, discovered by the external install-hooks command) always wins
+  // over the package-relative bundled/local paths and the npx fallback.
+  if (explicitCliPath !== undefined) {
+    assertInstalledClaudeCliPath(explicitCliPath);
+    return `${shellQuote(nodeCommand)} ${shellQuote(explicitCliPath)} hook ${openPetsHookMarker}${petArgs}`;
+  }
   if (commandMode === "local" || commandMode === "bundled") {
     const cliPath = commandMode === "bundled" ? getBundledClaudeCliPath() : getLocalClaudeCliPath();
     commandMode === "bundled" ? assertBundledClaudeCliPath() : assertLocalClaudeCliPath();
     return `${shellQuote(nodeCommand)} ${shellQuote(cliPath)} hook ${openPetsHookMarker}${petArgs}`;
   }
   return `npx -y @open-pets/claude hook ${openPetsHookMarker}${petArgs}`;
+}
+
+// Candidate locations of an installed OpenPets desktop app's bundled
+// `@open-pets/claude` CLI, by platform. The bundled CLI runs through `node`
+// against an absolute path, which avoids the per-invocation package-manager
+// resolution cost (`npx -y ...`) that the published fallback pays on every hook
+// firing. Order is most-specific/most-common first.
+function installedClaudeCliCandidates(): readonly string[] {
+  const rel = join("Contents", "Resources", "app.asar.unpacked", "node_modules", "@open-pets", "claude", "dist", "cli.js");
+  const linuxRel = join("resources", "app.asar.unpacked", "node_modules", "@open-pets", "claude", "dist", "cli.js");
+  const winRel = join("resources", "app.asar.unpacked", "node_modules", "@open-pets", "claude", "dist", "cli.js");
+  if (process.platform === "darwin") {
+    return [
+      join("/Applications", "OpenPets.app", rel),
+      join(homedir(), "Applications", "OpenPets.app", rel),
+    ];
+  }
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA;
+    const programFiles = process.env.PROGRAMFILES;
+    return [
+      ...(localAppData ? [join(localAppData, "Programs", "openpets", winRel)] : []),
+      ...(programFiles ? [join(programFiles, "OpenPets", winRel)] : []),
+    ];
+  }
+  // Linux deb/rpm installs unpack here; AppImage mounts at runtime and is not
+  // discoverable, so those users keep the published fallback.
+  return [
+    join("/opt", "OpenPets", linuxRel),
+    join("/usr", "lib", "openpets", linuxRel),
+  ];
+}
+
+// Returns the absolute path to an installed OpenPets app's bundled Claude CLI,
+// or null when no valid install is found (the caller then keeps the npx
+// published fallback). Each candidate is validated the same way the bundled
+// command path is, minus the package-relative root check (the app lives outside
+// this package).
+export function findInstalledOpenPetsClaudeCli(candidates: readonly string[] = installedClaudeCliCandidates()): string | null {
+  for (const candidate of candidates) {
+    try {
+      assertInstalledClaudeCliPath(candidate);
+      return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null;
+}
+
+export function assertInstalledClaudeCliPath(path: string): void {
+  if (!isAbsolute(path)) throw new Error("Installed Claude hook CLI path must be absolute.");
+  if (path.includes("\n") || path.includes("\r") || path.includes("\0")) throw new Error("Installed Claude hook CLI path contains unsupported characters.");
+  if (isTrueAsarPath(path)) throw new Error("Installed Claude hook CLI path must be unpacked outside app.asar.");
+  const cliDir = join("@open-pets", "claude", "dist");
+  if (!path.endsWith(join(cliDir, "cli.js"))) throw new Error("Installed Claude hook CLI path must point at @open-pets/claude/dist/cli.js.");
+  if (lstatSync(path).isSymbolicLink()) throw new Error("Installed Claude hook CLI path must not be a symlink.");
+  const stat = statSync(path);
+  if (!stat.isFile()) throw new Error("Installed Claude hook CLI path is not a regular file.");
 }
 
 export function getLocalClaudeCliPath(): string {
@@ -72,20 +138,20 @@ function isTrueAsarPath(path: string): boolean {
   return /app\.asar(?:$|[\\/])/.test(path) && !/app\.asar\.unpacked(?:$|[\\/])/.test(path);
 }
 
-export function createOpenPetsHookSettingsPreview(commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node"): Record<string, unknown> {
+export function createOpenPetsHookSettingsPreview(commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node", explicitCliPath?: string): Record<string, unknown> {
   const hooks: Record<string, unknown> = {};
   for (const event of claudeHookEvents) {
-    hooks[event] = [{ hooks: [createHookCommandEntry(commandMode, selectedPetId, nodeCommand)] }];
+    hooks[event] = [{ hooks: [createHookCommandEntry(commandMode, selectedPetId, nodeCommand, explicitCliPath)] }];
   }
   return { hooks };
 }
 
-export function doctorClaudeHooks(settingsPath = getClaudeUserSettingsPath(), commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node"): ClaudeHookDoctorResult {
-  const preview = createOpenPetsHookSettingsPreview(commandMode, selectedPetId, nodeCommand);
+export function doctorClaudeHooks(settingsPath = getClaudeUserSettingsPath(), commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node", explicitCliPath?: string): ClaudeHookDoctorResult {
+  const preview = createOpenPetsHookSettingsPreview(commandMode, selectedPetId, nodeCommand, explicitCliPath);
   const asyncSupported = isClaudeHookAsyncSupported();
   try {
     const settings = readClaudeSettings(settingsPath);
-    const status = getHookInstallStatus(settings, commandMode, selectedPetId, nodeCommand);
+    const status = getHookInstallStatus(settings, commandMode, selectedPetId, nodeCommand, explicitCliPath);
     return {
       status,
       settingsPath,
@@ -100,15 +166,15 @@ export function doctorClaudeHooks(settingsPath = getClaudeUserSettingsPath(), co
   }
 }
 
-export function installClaudeHooks(settingsPath = getClaudeUserSettingsPath(), commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node"): ClaudeHookWriteResult {
+export function installClaudeHooks(settingsPath = getClaudeUserSettingsPath(), commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node", explicitCliPath?: string): ClaudeHookWriteResult {
   if (!isClaudeHookAsyncSupported()) throw new Error("Claude async hook support is not enabled for this OpenPets build.");
   const settings = readClaudeSettings(settingsPath);
-  const status = getHookInstallStatus(settings, commandMode, selectedPetId, nodeCommand);
-  if (status === "installed") return { ...doctorClaudeHooks(settingsPath, commandMode, selectedPetId, nodeCommand), changed: false };
+  const status = getHookInstallStatus(settings, commandMode, selectedPetId, nodeCommand, explicitCliPath);
+  if (status === "installed") return { ...doctorClaudeHooks(settingsPath, commandMode, selectedPetId, nodeCommand, explicitCliPath), changed: false };
   const backupPath = backupSettings(settingsPath);
-  const next = addOpenPetsHooks(removeOpenPetsHooks(settings), commandMode, selectedPetId, nodeCommand);
+  const next = addOpenPetsHooks(removeOpenPetsHooks(settings), commandMode, selectedPetId, nodeCommand, explicitCliPath);
   writeClaudeSettings(settingsPath, next);
-  return { ...doctorClaudeHooks(settingsPath, commandMode, selectedPetId, nodeCommand), backupPath, changed: true };
+  return { ...doctorClaudeHooks(settingsPath, commandMode, selectedPetId, nodeCommand, explicitCliPath), backupPath, changed: true };
 }
 
 export function uninstallClaudeHooks(settingsPath = getClaudeUserSettingsPath(), commandMode: OpenPetsCommandMode = "published"): ClaudeHookWriteResult {
@@ -121,13 +187,13 @@ export function uninstallClaudeHooks(settingsPath = getClaudeUserSettingsPath(),
   return { ...doctorClaudeHooks(settingsPath, commandMode), backupPath, changed: true };
 }
 
-export function addOpenPetsHooks(settings: Record<string, unknown>, commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node"): Record<string, unknown> {
+export function addOpenPetsHooks(settings: Record<string, unknown>, commandMode: OpenPetsCommandMode = "published", selectedPetId?: string, nodeCommand = "node", explicitCliPath?: string): Record<string, unknown> {
   const next = structuredClone(settings) as Record<string, unknown>;
   assertSelectedHookEventsAreArrays(next);
   const hooks = isRecord(next.hooks) ? { ...next.hooks } : {};
   for (const event of claudeHookEvents) {
     const existing = Array.isArray(hooks[event]) ? hooks[event].filter((entry) => !containsOpenPetsHook(entry)) : [];
-    hooks[event] = [...existing, { hooks: [createHookCommandEntry(commandMode, selectedPetId, nodeCommand)] }];
+    hooks[event] = [...existing, { hooks: [createHookCommandEntry(commandMode, selectedPetId, nodeCommand, explicitCliPath)] }];
   }
   next.hooks = hooks;
   return next;
@@ -149,7 +215,7 @@ export function removeOpenPetsHooks(settings: Record<string, unknown>): Record<s
   return next;
 }
 
-function getHookInstallStatus(settings: Record<string, unknown>, commandMode: OpenPetsCommandMode, selectedPetId?: string, nodeCommand = "node"): ClaudeHookInstallStatus {
+function getHookInstallStatus(settings: Record<string, unknown>, commandMode: OpenPetsCommandMode, selectedPetId?: string, nodeCommand = "node", explicitCliPath?: string): ClaudeHookInstallStatus {
   if (settings.hooks !== undefined && !isRecord(settings.hooks)) throw new Error("Claude settings hooks field is not an object.");
   const hooks = isRecord(settings.hooks) ? settings.hooks : {};
   let foundAny = false;
@@ -157,7 +223,7 @@ function getHookInstallStatus(settings: Record<string, unknown>, commandMode: Op
   for (const event of claudeHookEvents) {
     const entries = hooks[event];
     if (!Array.isArray(entries)) return foundAny ? "needs_update" : "not_installed";
-    const currentCount = entries.filter((entry) => containsCurrentOpenPetsHook(entry, commandMode, selectedPetId, nodeCommand)).length;
+    const currentCount = entries.filter((entry) => containsCurrentOpenPetsHook(entry, commandMode, selectedPetId, nodeCommand, explicitCliPath)).length;
     const managedCount = entries.filter((entry) => containsOpenPetsHook(entry)).length;
     const hasCurrent = currentCount === 1;
     if (managedCount > 0) foundAny = true;
@@ -168,13 +234,13 @@ function getHookInstallStatus(settings: Record<string, unknown>, commandMode: Op
   return staleManaged ? "needs_update" : "installed";
 }
 
-function createHookCommandEntry(commandMode: OpenPetsCommandMode, selectedPetId?: string, nodeCommand = "node"): Record<string, unknown> {
-  return { type: "command", command: createOpenPetsHookCommand(commandMode, selectedPetId, nodeCommand), timeout: 3, async: true, asyncRewake: false };
+function createHookCommandEntry(commandMode: OpenPetsCommandMode, selectedPetId?: string, nodeCommand = "node", explicitCliPath?: string): Record<string, unknown> {
+  return { type: "command", command: createOpenPetsHookCommand(commandMode, selectedPetId, nodeCommand, explicitCliPath), timeout: 3, async: true, asyncRewake: false };
 }
 
-function containsCurrentOpenPetsHook(value: unknown, commandMode: OpenPetsCommandMode, selectedPetId?: string, nodeCommand = "node"): boolean {
+function containsCurrentOpenPetsHook(value: unknown, commandMode: OpenPetsCommandMode, selectedPetId?: string, nodeCommand = "node", explicitCliPath?: string): boolean {
   if (!isRecord(value) || !Array.isArray(value.hooks)) return false;
-  const command = createOpenPetsHookCommand(commandMode, selectedPetId, nodeCommand);
+  const command = createOpenPetsHookCommand(commandMode, selectedPetId, nodeCommand, explicitCliPath);
   return value.hooks.some((hook) => isRecord(hook) && hook.type === "command" && hook.command === command && hook.timeout === 3 && hook.async === true && hook.asyncRewake === false);
 }
 
