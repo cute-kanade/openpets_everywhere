@@ -52,28 +52,31 @@ export function createOpenPetsHookCommand(commandMode: OpenPetsCommandMode = "pu
 // resolution cost (`npx -y ...`) that the published fallback pays on every hook
 // firing. Order is most-specific/most-common first.
 function installedClaudeCliCandidates(): readonly string[] {
-  const rel = join("Contents", "Resources", "app.asar.unpacked", "node_modules", "@open-pets", "claude", "dist", "cli.js");
-  const linuxRel = join("resources", "app.asar.unpacked", "node_modules", "@open-pets", "claude", "dist", "cli.js");
-  const winRel = join("resources", "app.asar.unpacked", "node_modules", "@open-pets", "claude", "dist", "cli.js");
+  // Path from the app's resources dir down to the bundled CLI. macOS nests
+  // resources under Contents/Resources; Windows and Linux use a top-level
+  // resources/ dir (identical from there on).
+  const cliFromResources = join("app.asar.unpacked", "node_modules", "@open-pets", "claude", "dist", "cli.js");
+  const macRel = join("Contents", "Resources", cliFromResources);
+  const resourcesRel = join("resources", cliFromResources);
   if (process.platform === "darwin") {
     return [
-      join("/Applications", "OpenPets.app", rel),
-      join(homedir(), "Applications", "OpenPets.app", rel),
+      join("/Applications", "OpenPets.app", macRel),
+      join(homedir(), "Applications", "OpenPets.app", macRel),
     ];
   }
   if (process.platform === "win32") {
     const localAppData = process.env.LOCALAPPDATA;
     const programFiles = process.env.PROGRAMFILES;
     return [
-      ...(localAppData ? [join(localAppData, "Programs", "openpets", winRel)] : []),
-      ...(programFiles ? [join(programFiles, "OpenPets", winRel)] : []),
+      ...(localAppData ? [join(localAppData, "Programs", "openpets", resourcesRel)] : []),
+      ...(programFiles ? [join(programFiles, "OpenPets", resourcesRel)] : []),
     ];
   }
   // Linux deb/rpm installs unpack here; AppImage mounts at runtime and is not
   // discoverable, so those users keep the published fallback.
   return [
-    join("/opt", "OpenPets", linuxRel),
-    join("/usr", "lib", "openpets", linuxRel),
+    join("/opt", "OpenPets", resourcesRel),
+    join("/usr", "lib", "openpets", resourcesRel),
   ];
 }
 
@@ -282,7 +285,7 @@ function isClaudeHookAsyncSupported(): boolean {
 
 function shellQuote(value: string): string {
   if (/^[a-zA-Z0-9_@%+=:,./-]+$/.test(value)) return value;
-  if (/[\r\n"]/.test(value) || value.includes("\0")) throw new Error("Local Claude hook path contains unsupported shell characters.");
+  if (/[\r\n"]/.test(value) || value.includes("\0")) throw new Error("Claude hook path contains unsupported shell characters.");
   return `"${value.replaceAll("\\", "\\\\").replaceAll("$", "\\$").replaceAll("`", "\\`")}"`;
 }
 
