@@ -294,9 +294,11 @@ export class AirmailQueueManager {
 
     for (const [dk, queue] of this.queues.entries()) {
       const expiredItems = queue.filter((item) => item.expiresAt <= now);
-      for (const item of expiredItems) {
-        this.dismiss(item.pluginId, item.key, "expired");
-      }
+      if (expiredItems.length === 0) continue;
+
+      this.queues.set(dk, queue.filter((item) => item.expiresAt > now));
+      this.advanceQueue(dk);
+      for (const item of expiredItems) this.finishDismissal(item, "expired");
     }
   }
 
@@ -368,6 +370,13 @@ export const testActiveWindows = activeWindows;
 const windowGenerations = new WeakMap<any, { generationId: string; pluginId: string; key: string }>();
 let activeWindowAnimations = new Map<string, NodeJS.Timeout>();
 let expiryInterval: NodeJS.Timeout | null = null;
+
+function stopWindowAnimation(displayKey: string): void {
+  const animation = activeWindowAnimations.get(displayKey);
+  if (!animation) return;
+  clearInterval(animation);
+  activeWindowAnimations.delete(displayKey);
+}
 
 function getSafeInt(val: any, fallback: number): number {
   if (val === undefined || val === null) return fallback;
@@ -678,10 +687,7 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
 
     if (!window || window.isDestroyed()) {
       // Stop any running animations for this slot
-      if (activeWindowAnimations.has(displayKey)) {
-        clearInterval(activeWindowAnimations.get(displayKey)!);
-        activeWindowAnimations.delete(displayKey);
-      }
+      stopWindowAnimation(displayKey);
 
       window = new BrowserWindow({
         width,
@@ -774,10 +780,7 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
         if (activeWindows.get(displayKey) === window) {
           activeWindows.delete(displayKey);
         }
-        if (activeWindowAnimations.has(displayKey)) {
-          clearInterval(activeWindowAnimations.get(displayKey)!);
-          activeWindowAnimations.delete(displayKey);
-        }
+        stopWindowAnimation(displayKey);
 
         // Native closure: clean active queues safes (uses mutable window generation)
         const currentGen = windowGenerations.get(window);
@@ -794,7 +797,7 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
       const targetUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}#${activeItem.generationId}`;
       await window.loadURL(targetUrl);
 
-      if (window.isDestroyed()) return;
+      if (window.isDestroyed() || getActiveItem()?.generationId !== activeItem.generationId) return;
       window.setPosition(x_start, y_pos);
       window.showInactive();
       const [visibleXStart, visibleYStart] = window.getPosition();
@@ -829,7 +832,9 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
 
         if (progress >= 1) {
           clearInterval(animTimer);
-          activeWindowAnimations.delete(displayKey);
+          if (activeWindowAnimations.get(displayKey) === animTimer) {
+            activeWindowAnimations.delete(displayKey);
+          }
           // Set to waiting state when parked
           if (!window.webContents.isDestroyed()) {
             window.webContents.send("openpets:pet-reaction-state", "waiting");
@@ -840,6 +845,7 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
       activeWindowAnimations.set(displayKey, animTimer);
     } else {
       // Reused window case: Update mutable current generation mapping
+      stopWindowAnimation(displayKey);
       windowGenerations.set(window, {
         generationId: activeItem.generationId,
         pluginId: activeItem.pluginId,
@@ -849,7 +855,7 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
       // If window already exists, update content in place
       const targetUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}#${activeItem.generationId}`;
       await window.loadURL(targetUrl);
-      if (window.isDestroyed()) return;
+      if (window.isDestroyed() || getActiveItem()?.generationId !== activeItem.generationId) return;
       // Set straight to parked/waiting if we did an in-place update
       window.setPosition(x_end, y_pos);
       window.webContents.send("openpets:pet-reaction-state", "waiting");

@@ -51,6 +51,28 @@ assert.equal(overflowDismissal, "expired", "overflow from a removed display dism
 assert.equal(migrationWindowUpdates.filter((display) => display === removedDisplayKey).length, removedWindowUpdates, "removed-display overflow does not recreate its delivery window");
 assert.equal(migrationQueue.queues.get(removedDisplayKey), undefined, "removed display queue is cleared before overflow callbacks run");
 
+let expiryNow = 1_000;
+const expiryWindowUpdates: string[] = [];
+const expiryDestroyed: string[] = [];
+const expiryQueue = new AirmailQueueManager({
+  now: () => expiryNow,
+  getActiveDisplays: () => [],
+  getCursorDisplayKey: () => "0,0,100x100",
+  getDisplayKey: () => "0,0,100x100",
+  createOrUpdateWindow: (display) => expiryWindowUpdates.push(display),
+  destroyWindow: (display) => expiryDestroyed.push(display),
+});
+expiryQueue.register("expiry", { key: "first", courier: { kind: "sprite", name: "courier" }, title: "First", detail: "Soon", expiresAt: 2_000 }, courier);
+expiryQueue.register("expiry", { key: "second", courier: { kind: "sprite", name: "courier" }, title: "Second", detail: "Soon", expiresAt: 2_000 }, courier);
+const expiryDismissals: string[] = [];
+expiryQueue.registerDismissHandler("expiry", "first", (reason) => expiryDismissals.push(`first:${reason}`));
+expiryQueue.registerDismissHandler("expiry", "second", (reason) => expiryDismissals.push(`second:${reason}`));
+expiryNow = 2_000;
+expiryQueue.cleanupExpired();
+assert.deepEqual(expiryWindowUpdates, ["0,0,100x100"], "simultaneous expiry does not create an intermediate successor window");
+assert.deepEqual(expiryDestroyed, ["0,0,100x100"], "simultaneous expiry closes the delivery surface once");
+assert.deepEqual(expiryDismissals, ["first:expired", "second:expired"], "simultaneous expiry dismisses every delivery handle");
+
 console.log("Courier delivery lifecycle tests passed.");
 
 async function testAnimationTiming() {
