@@ -296,8 +296,11 @@ export class AirmailQueueManager {
       const expiredItems = queue.filter((item) => item.expiresAt <= now);
       if (expiredItems.length === 0) continue;
 
-      this.queues.set(dk, queue.filter((item) => item.expiresAt > now));
-      this.advanceQueue(dk);
+      const remainingItems = queue.filter((item) => item.expiresAt > now);
+      this.queues.set(dk, remainingItems);
+      if (queue[0]?.expiresAt <= now || remainingItems.length === 0) {
+        this.advanceQueue(dk);
+      }
       for (const item of expiredItems) this.finishDismissal(item, "expired");
     }
   }

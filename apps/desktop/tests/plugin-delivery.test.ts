@@ -73,6 +73,22 @@ assert.deepEqual(expiryWindowUpdates, ["0,0,100x100"], "simultaneous expiry does
 assert.deepEqual(expiryDestroyed, ["0,0,100x100"], "simultaneous expiry closes the delivery surface once");
 assert.deepEqual(expiryDismissals, ["first:expired", "second:expired"], "simultaneous expiry dismisses every delivery handle");
 
+let backgroundExpiryNow = 1_000;
+const backgroundExpiryUpdates: string[] = [];
+const backgroundExpiryQueue = new AirmailQueueManager({
+  now: () => backgroundExpiryNow,
+  getActiveDisplays: () => [],
+  getCursorDisplayKey: () => "0,0,100x100",
+  getDisplayKey: () => "0,0,100x100",
+  createOrUpdateWindow: (display) => backgroundExpiryUpdates.push(display),
+  destroyWindow: () => {},
+});
+backgroundExpiryQueue.register("background-expiry", { key: "active", courier: { kind: "sprite", name: "courier" }, title: "Active", detail: "Soon", expiresAt: 5_000 }, courier);
+backgroundExpiryQueue.register("background-expiry", { key: "expired-background", courier: { kind: "sprite", name: "courier" }, title: "Expired", detail: "Soon", expiresAt: 2_000 }, courier);
+backgroundExpiryNow = 2_000;
+backgroundExpiryQueue.cleanupExpired();
+assert.deepEqual(backgroundExpiryUpdates, ["0,0,100x100"], "background expiry does not interrupt the active delivery window");
+
 console.log("Courier delivery lifecycle tests passed.");
 
 async function testAnimationTiming() {
