@@ -243,10 +243,10 @@ export class AirmailQueueManager {
         if (generationId && item.generationId !== generationId) {
           continue; // generation mismatch, skip dismissing this successor!
         }
-        
+
         queue.splice(idx, 1);
         this.finishDismissal(item, reason, skipCallbacks);
-        
+
         if (idx === 0) {
           this.advanceQueue(dk);
         }
@@ -547,7 +547,7 @@ function buildAirmailHtml(
       animation: none;
       background-position: -${layout.frameWidth * (layout.frames - 1)}px var(--sprite-row-y);
     }
-    
+
     @keyframes pet-frames {
       from { background-position: 0 var(--sprite-row-y); }
       to { background-position: calc(-${layout.frameWidth}px * var(--sprite-frames)) var(--sprite-row-y); }
@@ -556,10 +556,10 @@ function buildAirmailHtml(
     .envelope-card {
       flex: 1;
       height: 110px;
-      background: repeating-linear-gradient(-45deg, 
-        #ef4444, #ef4444 8px, 
-        #ffffff 8px, #ffffff 16px, 
-        #3b82f6 16px, #3b82f6 24px, 
+      background: repeating-linear-gradient(-45deg,
+        #ef4444, #ef4444 8px,
+        #ffffff 8px, #ffffff 16px,
+        #3b82f6 16px, #3b82f6 24px,
         #ffffff 24px, #ffffff 32px
       );
       padding: 4px;
@@ -662,7 +662,7 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
     const bounds = getDisplayBoundsFromKey(displayKey);
     const width = 480;
     const height = 155;
-    
+
     // Upper portion coordinates (Y = 15% down display)
     const y_pos = Math.round(bounds.y + bounds.height * 0.15);
     const x_start = Math.round(bounds.x - width); // starts offscreen left
@@ -793,7 +793,7 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
 
       const targetUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}#${activeItem.generationId}`;
       await window.loadURL(targetUrl);
-      
+
       if (window.isDestroyed()) return;
       window.setPosition(x_start, y_pos);
       window.showInactive();
@@ -811,9 +811,9 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
       // Start from the position the window manager actually displayed; some platforms clamp off-screen windows on show.
       const animationDuration = 15_000; // 15 seconds sliding
       const animationStart = Date.now();
-      
+
       const easeLinear = (t: number) => t;
-      
+
       const animTimer = setInterval(() => {
         if (window.isDestroyed()) {
           clearInterval(animTimer);
@@ -824,7 +824,7 @@ async function createOrUpdateAirmailWindow(displayKey: string, activeItem: Queue
         const progress = Math.min(elapsed / animationDuration, 1);
         const t = easeLinear(progress);
         const x = Math.round(visibleXStart + (x_end - visibleXStart) * t);
-        
+
         window.setPosition(x, visibleYStart);
 
         if (progress >= 1) {

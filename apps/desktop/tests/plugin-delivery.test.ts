@@ -96,7 +96,7 @@ async function testAnimationTiming() {
 
   function tick(ms: number) {
     mockTime += ms;
-    
+
     // Process timeouts (which trigger on window cleanup, etc.)
     for (const [id, t] of [...timeouts.entries()]) {
       t.cb();
