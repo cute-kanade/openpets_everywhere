@@ -126,6 +126,9 @@ export type PluginAiRequest = { system?: string; messages: Array<{ role: "user" 
 export type PluginAiResult = { text: string; toolCalls?: Array<{ name: string; input: Record<string, unknown> }> };
 export type PluginOauthTokens = { accessToken: string; refreshToken?: string; expiresAt?: number };
 export interface PluginPanelHostHandle { readonly id: string; show(): Promise<void>; hide(): Promise<void>; postMessage(msg: unknown): Promise<void>; close(): Promise<void> }
+export type PluginDeliveryDescriptor = { key: string; courier: { kind: "sprite"; name: string }; title: string; detail: string; expiresAt: number };
+export type PluginDeliveryDismissReason = "click" | "manual" | "expired" | "plugin-stopped";
+export interface PluginDeliveryHostHandle { dismiss(): void; onDismiss(handler: (reason: PluginDeliveryDismissReason) => void): void }
 
 export interface PluginHostCapabilities {
   bubbles: {
@@ -166,6 +169,10 @@ export interface PluginHostCapabilities {
   panels: {
     open(opts: { pluginId: string; installPath: string; panelPath: string; title?: string; width?: number; height?: number; onMessage: (msg: unknown) => void; onClosed: () => void }): Promise<PluginPanelHostHandle>;
   };
+  delivery: {
+    register(pluginId: string, descriptor: PluginDeliveryDescriptor): Promise<PluginDeliveryHostHandle>;
+    teardown(pluginId: string): void;
+  };
   secrets: {
     get(pluginId: string, key: string): Promise<string | undefined>;
     set(pluginId: string, key: string, value: string): Promise<void>;
@@ -182,7 +189,7 @@ export interface PluginHostCapabilities {
     listen(opts: { timeoutMs?: number }): Promise<{ text: string }>;
   };
   auth: {
-    oauth(pluginId: string, config: { provider: string; authorizationUrl: string; tokenUrl: string; clientId: string; scopes: string[]; pkce: boolean; redirect: "loopback" | "appProtocol" }): Promise<PluginOauthTokens>;
+    oauth(pluginId: string, config: { provider: "google" | "spotify"; clientId: string; scopes: string[] }): Promise<PluginOauthTokens>;
     refresh(pluginId: string, provider: string): Promise<{ accessToken: string; expiresAt?: number }>;
     signOut(pluginId: string, provider: string): Promise<void>;
   };
@@ -255,6 +262,7 @@ export function createDefaultPluginHostCapabilities(petApi: PluginPetApi): Plugi
     toast: async () => undefined,
     notify: async () => undefined,
     panels: { open: unavailable("panels.open") },
+    delivery: { register: unavailable("delivery.register"), teardown: () => undefined },
     secrets: (() => {
       const store = new Map<string, string>();
       return {
@@ -830,6 +838,8 @@ export class PluginSdkBridge {
     state.storageSubscriptions.clear();
     for (const slot of state.bubbles.values()) { void slot.host.dismiss().catch(() => undefined); }
     state.bubbles.clear();
+    state.deliveries.clear();
+    this.#capabilities.delivery.teardown(id);
     for (const panel of state.panels.values()) { void panel.close().catch(() => undefined); }
     state.panels.clear();
     for (const petHandleId of state.spawnedPets) { void this.#capabilities.pets.close(id, petHandleId).catch(() => undefined); }
@@ -837,7 +847,7 @@ export class PluginSdkBridge {
     state.pickedFiles.clear();
     state.userCommandDepth = 0;
     state.lastError = undefined;
-    state.petWindow.reset(); state.logWindow.reset(); state.httpWindow.reset(); state.busWindow.reset(); state.audioWindow.reset(); state.notifyWindow.reset(); state.toastWindow.reset(); state.aiWindow.reset(); state.voiceWindow.reset();
+    state.petWindow.reset(); state.logWindow.reset(); state.httpWindow.reset(); state.busWindow.reset(); state.audioWindow.reset(); state.notifyWindow.reset(); state.toastWindow.reset(); state.deliveryWindow.reset(); state.aiWindow.reset(); state.voiceWindow.reset();
   }
 
   #pluginState(id: string): PluginRuntimeState {
@@ -846,9 +856,9 @@ export class PluginSdkBridge {
       state = {
         commands: new Map(), menuItems: [], menuHandlers: new Set(), schedules: new Map(), configListeners: new Set(),
         storageSubscriptions: new Map(), busSubscriptions: new Map(), eventSubscriptions: new Map(), tickSubscriptions: new Map(),
-        bubbles: new Map(), panels: new Map(), spawnedPets: new Set(), pickedFiles: new Set(), userCommandDepth: 0,
+        bubbles: new Map(), deliveries: new Map(), panels: new Map(), spawnedPets: new Set(), pickedFiles: new Set(), userCommandDepth: 0,
         petWindow: new WindowCounter(), logWindow: new WindowCounter(), httpWindow: new WindowCounter(), busWindow: new WindowCounter(),
-        audioWindow: new WindowCounter(), notifyWindow: new WindowCounter(), toastWindow: new WindowCounter(), aiWindow: new WindowCounter(), voiceWindow: new WindowCounter(),
+        audioWindow: new WindowCounter(), notifyWindow: new WindowCounter(), toastWindow: new WindowCounter(), deliveryWindow: new WindowCounter(), aiWindow: new WindowCounter(), voiceWindow: new WindowCounter(),
       };
       this.#states.set(id, state);
     }
@@ -1102,20 +1112,20 @@ function validateAiRequest(value: unknown): PluginAiRequest {
   return out;
 }
 
-function validateOauthConfig(value: unknown): { provider: string; authorizationUrl: string; tokenUrl: string; clientId: string; scopes: string[]; pkce: boolean; redirect: "loopback" | "appProtocol" } {
+function validateOauthConfig(value: unknown): { provider: "google" | "spotify"; clientId: string; scopes: string[] } {
   if (!isRecord(value)) throw new Error("Invalid OAuth config.");
-  const authorizationUrl = new URL(String(value.authorizationUrl));
-  const tokenUrl = new URL(String(value.tokenUrl));
-  check(authorizationUrl.protocol === "https:" && tokenUrl.protocol === "https:", "OAuth URLs must be HTTPS.");
-  check(!authorizationUrl.username && !tokenUrl.username, "OAuth URLs must not carry credentials.");
+  check(value.authUrl === undefined && value.authorizationUrl === undefined && value.tokenUrl === undefined && value.pkce === undefined && value.usePkce === undefined && value.redirect === undefined && value.redirectUri === undefined, "OAuth endpoints and protected parameters are host-controlled.");
   const clientId = String(value.clientId ?? "");
   check(clientId.length >= 1 && clientId.length <= 512 && !/[\s\0]/.test(clientId), "Invalid OAuth clientId.");
-  check(Array.isArray(value.scopes) && value.scopes.length <= 32, "Invalid OAuth scopes.");
+  check(Array.isArray(value.scopes) && value.scopes.length >= 1 && value.scopes.length <= 32, "Invalid OAuth scopes.");
   const scopes = (value.scopes as unknown[]).map((scope) => { const text = String(scope); check(text.length >= 1 && text.length <= 256 && !/[\r\n\0]/.test(text), "Invalid OAuth scope."); return text; });
-  const provider = value.provider === undefined ? "generic" : validateProviderName(value.provider);
-  const redirect = value.redirect === undefined ? "loopback" : String(value.redirect);
-  check(redirect === "loopback" || redirect === "appProtocol", "Invalid OAuth redirect mode.");
-  return { provider, authorizationUrl: authorizationUrl.toString(), tokenUrl: tokenUrl.toString(), clientId, scopes, pkce: value.pkce !== false, redirect: redirect as "loopback" | "appProtocol" };
+  const provider = String(value.provider);
+  check(provider === "google" || provider === "spotify", "OAuth provider is not supported.");
+  const allowedScopes = provider === "google"
+    ? new Set(["https://www.googleapis.com/auth/calendar.events.readonly"])
+    : new Set(["user-read-playback-state", "user-modify-playback-state", "user-read-currently-playing"]);
+  check(new Set(scopes).size === scopes.length && scopes.every((scope) => allowedScopes.has(scope)), `OAuth scopes are not allowed for provider: ${provider}`);
+  return { provider: provider as "google" | "spotify", clientId, scopes };
 }
 
 function validateProviderName(value: unknown): string { const provider = String(value); check(/^[a-z0-9][a-z0-9._-]{0,63}$/.test(provider), "Invalid OAuth provider name."); return provider; }

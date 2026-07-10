@@ -103,6 +103,7 @@ await scenario("config save replaces and reloads", async ({ service, store, runt
   assert.deepEqual(runtime.reloads, ["plug"]);
 });
 
+
 await scenario("config save reload preserves plugin user sounds", async ({ root, userData, store, runtime }) => {
   const service = new PluginService({ userDataPath: userData, stateStore: store, runtime: runtime as never, allowedPluginRoots: [root] });
   addPlugin(store, { manifestVersion: 3, runtime: "javascript", sdkVersion: "3.0.0", config: { customSound: { kind: "user-sound", id: "a".repeat(32), name: "Bell" } } }, { manifestVersion: 3, id: "plug", name: "Plug", version: "1.0.0", runtime: "javascript", sdkVersion: "3.0.0", entry: "index.js", permissions: [], configSchema: { customSound: { type: "sound" } } });

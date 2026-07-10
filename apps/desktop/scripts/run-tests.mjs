@@ -28,6 +28,8 @@ const behaviorTests = [
   ".test-dist/tests/codex-pets.test.js",
   ".test-dist/tests/claude-memory.test.js",
   ".test-dist/tests/plugin-config.test.js",
+  ".test-dist/tests/plugin-assets.test.js",
+  ".test-dist/tests/plugin-delivery.test.js",
   ".test-dist/tests/plugin-state.test.js",
   ".test-dist/tests/plugin-runtime.test.js",
   ".test-dist/tests/plugin-catalog-validation.test.js",
@@ -62,6 +64,7 @@ const behaviorTests = [
   ".test-dist/tests/preference-patch.test.js",
   ".test-dist/tests/plugin-agent-activity.test.js",
   ".test-dist/tests/pet-window-wayland-predicate.test.js",
+  ".test-dist/tests/plugin-courier-picker.test.js",
 ];
 const contractTests = [
   ".test-dist/contracts/local-ipc-protocol.contract.js",

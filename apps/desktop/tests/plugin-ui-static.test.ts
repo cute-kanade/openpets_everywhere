@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 
 const desktopRoot = process.env.OPENPETS_DESKTOP_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const windowsSource = readFileSync(resolve(desktopRoot, "src/windows.ts"), "utf8");
 const controlCenterPreloadSource = readFileSync(resolve(desktopRoot, "control-center-preload.cjs"), "utf8");
 const controlCenterRendererSource = readFileSync(resolve(desktopRoot, "src/renderer/src/main.tsx"), "utf8");
+const stylesSource = readFileSync(resolve(desktopRoot, "src/renderer/src/styles.css"), "utf8");
 const jsHostSource = readFileSync(resolve(desktopRoot, "src/plugin-js-host.ts"), "utf8");
 const pluginSdkPreloadSource = readFileSync(resolve(desktopRoot, "plugin-sdk-preload.cjs"), "utf8");
 
@@ -40,6 +42,14 @@ assert.doesNotMatch(controlCenterRendererSource, /OnboardingView|currentRoute ==
 assert.match(controlCenterRendererSource, /materializeListItemDefaults/);
 assert.match(controlCenterRendererSource, /updateCatalogEntry[\s\S]*api\.updateCatalogPlugin/);
 assert.match(controlCenterRendererSource, /installed\.source === "catalog"[\s\S]*updateCatalogEntry/);
+assert.match(controlCenterRendererSource, /presentation === "sprite-grid"/);
+assert.match(controlCenterRendererSource, /className="courier-sprite-grid"/);
+assert.match(controlCenterRendererSource, /role="radio"/);
+assert.match(controlCenterRendererSource, /onKeyDown/);
+assert.match(stylesSource, /\.courier-sprite-grid/);
+assert.match(stylesSource, /\.courier-card/);
+assert.match(stylesSource, /@keyframes picker-fly/);
+assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)/);
 
 assert.match(jsHostSource, /OpenPetsPlugin[\s\S]*register/);
 assert.match(jsHostSource, /start\(sdk\)/);
@@ -51,6 +61,33 @@ assert.match(pluginSdkPreloadSource, /register: \(command, handler\) => call\("c
 // SDK v3 namespaces are exposed to the plugin sandbox.
 assert.match(pluginSdkPreloadSource, /bubble: \(spec\) => call\("ui\.bubble", \[spec\]\)/);
 assert.match(pluginSdkPreloadSource, /on: \(event, fn\) => subscription\("events\.on", "events\.off"/);
+
+const oauthError = Object.assign(new Error("OAuth authorization has expired or was revoked."), { code: "invalid_grant" });
+const serializedOauthError = { __openPetsError: { message: oauthError.message, code: "invalid_grant" } };
+assert.match(jsHostSource, /export type PluginSdkErrorEnvelope/);
+assert.match(jsHostSource, /export function serializePluginSdkError\(error: unknown\)/);
+assert.match(jsHostSource, /return serializePluginSdkError\(error\);/);
+assert.match(jsHostSource, /Plugin SDK call failed\./);
+
+let exposedSdk: { auth: { refresh(provider: string): Promise<unknown> } } | undefined;
+let invokeResult: unknown = serializedOauthError;
+vm.runInNewContext(pluginSdkPreloadSource, {
+  require: (id: string) => {
+    assert.equal(id, "electron");
+    return {
+      contextBridge: { exposeInMainWorld: (name: string, value: unknown) => { if (name === "__openPetsSdk") exposedSdk = value as typeof exposedSdk; } },
+      ipcRenderer: { invoke: async () => { if (invokeResult instanceof Error) throw invokeResult; return invokeResult; }, sendSync: () => undefined },
+    };
+  },
+  process: { argv: ["electron", "--openpets-plugin-token=test"] },
+  Map,
+  Object,
+  Error,
+  Uint8Array,
+});
+await assert.rejects(exposedSdk!.auth.refresh("spotify"), (error: unknown) => error instanceof Error && error.message === oauthError.message && (error as Error & { code?: unknown }).code === "invalid_grant");
+invokeResult = new Error("ordinary SDK failure");
+await assert.rejects(exposedSdk!.auth.refresh("spotify"), /ordinary SDK failure/);
 assert.match(pluginSdkPreloadSource, /publish: \(topic, payload\) => call\("bus\.publish", \[topic, payload\]\)/);
 // Plugin platform settings are reachable from the Control Center.
 assert.match(windowsSource, /openpets:get-lan-status/);
