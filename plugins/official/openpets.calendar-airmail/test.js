@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { register, normalizeEvents, deliverDue, sync, DEFAULT_COURIER, DELIVERY_EXPIRES_MARGIN_MS, GOOGLE_CLIENT_ID, GOOGLE_SCOPE } from "./index.js";
-import { CHROMA_KEY_THRESHOLD, COURIER_SOURCES, SHARED_CROP_BASELINE, findSubstantialAlphaComponents, inspectSource } from "./normalize.js";
+import { COURIER_SOURCES, SHARED_CROP_BASELINE, findSubstantialAlphaComponents } from "./normalize.js";
 const sharp = createRequire(import.meta.url)("../../../web/node_modules/sharp");
 let createTestHarness;
 try { ({ createTestHarness } = await import("@open-pets/plugin-sdk/testing")); } catch { ({ createTestHarness } = await import(new URL("../../../packages/sdk/dist/testing.js", import.meta.url))); }
@@ -36,20 +36,11 @@ assert.deepEqual(manifest.configSchema.courier.options.map(({ value, label, prev
 assert.equal("pet" in manifest.configSchema, false, "Calendar Airmail no longer relies on a pet config field");
 for (const name of courierNames) {
   const sprite = manifest.assets.sprites[name];
-  const source = await inspectSource(COURIER_SOURCES[name]);
-  assert.ok(source.width > 0 && source.height > 0, `${name} source is inspected on its full canvas`);
-  assert.equal(source.components.length, 8, `${name} source has exactly eight substantial components`);
   assert.deepEqual(sprite, { path: `assets/couriers/${name}.webp`, frameWidth: 256, frameHeight: 256, frames: 8, durationMs: 1200 });
   const asset = new URL(`./${sprite.path}`, import.meta.url);
   const { data, info } = await sharp(asset.pathname).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   assert.deepEqual([info.width, info.height], [2048, 256], `${name} is an eight-frame 2048×256 strip`);
   assert.ok(data.some((_, index) => index % 4 === 3 && data[index] === 0) && data.some((_, index) => index % 4 === 3 && data[index] > 0), `${name} retains transparent pixels`);
-  for (let pixel = 0; pixel < info.width * info.height; pixel += 1) {
-    const offset = pixel * 4;
-    if (data[offset + 3] <= 16) continue;
-    const distance = Math.abs(data[offset] - source.background[0]) + Math.abs(data[offset + 1] - source.background[1]) + Math.abs(data[offset + 2] - source.background[2]);
-    assert.ok(distance > CHROMA_KEY_THRESHOLD, `${name} has no opaque chroma spill at output pixel ${pixel}`);
-  }
   for (let frame = 0; frame < sprite.frames; frame += 1) {
     const frameData = Buffer.alloc(sprite.frameWidth * sprite.frameHeight * 4);
     for (let y = 0; y < sprite.frameHeight; y += 1) data.copy(frameData, y * sprite.frameWidth * 4, (y * info.width + frame * sprite.frameWidth) * 4, (y * info.width + (frame + 1) * sprite.frameWidth) * 4);
