@@ -98,11 +98,12 @@ export function createPluginUiApi(options: {
     const title = typeof value.title === "string" ? value.title : "";
     const detail = typeof value.detail === "string" ? value.detail : "";
     const expiresAt = Number(value.expiresAt);
+    const now = Date.now();
     check(/^[A-Za-z0-9._:-]{1,96}$/.test(key), "Invalid delivery key.");
     check(isRecord(courier) && courier.kind === "sprite" && typeof courier.name === "string" && /^[a-z0-9][a-z0-9._-]{0,63}$/.test(courier.name) && Object.keys(courier).every((key) => key === "kind" || key === "name"), "Invalid delivery courier.");
     check(title.length >= 1 && title.length <= 160 && !/[\u0000-\u001f\u007f]/.test(title), "Invalid delivery title.");
     check(detail.length <= 200 && !/[\u0000-\u001f\u007f]/.test(detail), "Invalid delivery detail.");
-    check(Number.isFinite(expiresAt) && expiresAt > Date.now() && expiresAt <= Date.now() + 7 * 24 * 60 * 60 * 1000, "Invalid delivery expiresAt.");
+    check(Number.isFinite(expiresAt) && expiresAt > now && expiresAt <= now + 7 * 24 * 60 * 60 * 1000, "Invalid delivery expiresAt.");
     return { key, courier: { kind: "sprite", name: courier.name }, title, detail, expiresAt };
   };
 

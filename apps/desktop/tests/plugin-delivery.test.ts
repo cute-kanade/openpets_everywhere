@@ -25,6 +25,32 @@ queue.dismiss("local.alpha", "delivery", "manual", false, active?.generationId);
 assert.equal(dismissal, "manual", "courier delivery lifecycle invokes its handle callback");
 assert.deepEqual(destroyed, ["0,0,100x100"], "empty courier queue destroys its delivery surface");
 
+const removedDisplayKey = "0,0,100x100";
+const targetDisplayKey = "100,0,100x100";
+let cursorDisplayKey = removedDisplayKey;
+const migrationWindowUpdates: string[] = [];
+const migrationQueue = new AirmailQueueManager({
+  now: () => 1_000,
+  getActiveDisplays: () => [],
+  getCursorDisplayKey: () => cursorDisplayKey,
+  getDisplayKey: (bounds) => `${bounds.x},${bounds.y},${bounds.width}x${bounds.height}`,
+  createOrUpdateWindow: (display) => migrationWindowUpdates.push(display),
+  destroyWindow: () => {},
+});
+
+migrationQueue.register("removed", { key: "overflow", courier: { kind: "sprite", name: "courier" }, title: "Overflow", detail: "Soon", expiresAt: 2_000 }, courier);
+let overflowDismissal = "";
+migrationQueue.registerDismissHandler("removed", "overflow", (reason) => { overflowDismissal = reason; });
+cursorDisplayKey = targetDisplayKey;
+for (let index = 0; index < 16; index += 1) {
+  migrationQueue.register(`target-${index}`, { key: `delivery-${index}`, courier: { kind: "sprite", name: "courier" }, title: "Target", detail: "Soon", expiresAt: 2_000 }, courier);
+}
+const removedWindowUpdates = migrationWindowUpdates.filter((display) => display === removedDisplayKey).length;
+migrationQueue.handleDisplayRemoved(removedDisplayKey, [{ bounds: { x: 100, y: 0, width: 100, height: 100 } }]);
+assert.equal(overflowDismissal, "expired", "overflow from a removed display dismisses its delivery handle");
+assert.equal(migrationWindowUpdates.filter((display) => display === removedDisplayKey).length, removedWindowUpdates, "removed-display overflow does not recreate its delivery window");
+assert.equal(migrationQueue.queues.get(removedDisplayKey), undefined, "removed display queue is cleared before overflow callbacks run");
+
 console.log("Courier delivery lifecycle tests passed.");
 
 async function testAnimationTiming() {

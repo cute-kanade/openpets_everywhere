@@ -10,6 +10,22 @@ type ProtocolRegistry = { handle(scheme: string, handler: (request: { url: strin
 /** Register the sole renderer-visible plugin asset route. */
 export function registerPluginAssetProtocol(registry: ProtocolRegistry, getService: () => PluginServiceLookup, realpathFn: (path: string) => Promise<string> = (path) => fs.realpath(path)): void {
   const cache = new Map<string, Buffer>();
+  const maxCacheBytes = 20 * 1024 * 1024;
+  let cacheBytes = 0;
+
+  const cacheSprite = (key: string, bytes: Buffer): void => {
+    while (cache.size > 0 && cacheBytes + bytes.length > maxCacheBytes) {
+      const oldestKey = cache.keys().next().value as string;
+      const oldest = cache.get(oldestKey)!;
+      cache.delete(oldestKey);
+      cacheBytes -= oldest.length;
+    }
+    if (bytes.length <= maxCacheBytes) {
+      cache.set(key, bytes);
+      cacheBytes += bytes.length;
+    }
+  };
+
   registry.handle("openpets-plugin-asset", async (request) => {
     try {
       const parsed = parsePluginSpriteRequest(request.url, request.method);
@@ -26,6 +42,10 @@ export function registerPluginAssetProtocol(registry: ProtocolRegistry, getServi
       if (!isPathContained(realRoot, realAsset)) return new Response(null, { status: 404 });
       const key = `${pluginId}:${assetName}:${version}`;
       let bytes = cache.get(key);
+      if (bytes) {
+        cache.delete(key);
+        cache.set(key, bytes);
+      }
       if (!bytes) {
         const info = await fs.stat(realAsset);
         if (!info.isFile() || info.size <= 0 || info.size > 5 * 1024 * 1024) return new Response(null, { status: 404 });
@@ -33,7 +53,7 @@ export function registerPluginAssetProtocol(registry: ProtocolRegistry, getServi
         const sprite = manifest.assets.sprites[assetName]!;
         const metadata = await sharp(bytes, { limitInputPixels: 4_194_304, animated: false }).metadata();
         if (metadata.format !== "webp" || metadata.width !== sprite.frameWidth * sprite.frames || metadata.height !== sprite.frameHeight) return new Response(null, { status: 404 });
-        cache.set(key, bytes);
+        cacheSprite(key, bytes);
       }
       return new Response(request.method === "HEAD" ? null : bytes as unknown as never, { headers: { "Content-Type": "image/webp", "Cache-Control": "private, max-age=31536000, immutable" } });
     } catch { return new Response(null, { status: 404 }); }

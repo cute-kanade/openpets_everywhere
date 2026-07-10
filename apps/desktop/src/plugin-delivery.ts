@@ -236,9 +236,6 @@ export class AirmailQueueManager {
   }
 
   public dismiss(pluginId: string, key: string, reason: DismissReason, skipCallbacks = false, generationId?: string): void {
-    const callbackKey = `${pluginId}:${key}`;
-    const cb = this.dismissCallbacks.get(callbackKey);
-
     for (const [dk, queue] of this.queues.entries()) {
       const idx = queue.findIndex((item) => item.pluginId === pluginId && item.key === key);
       if (idx !== -1) {
@@ -247,22 +244,28 @@ export class AirmailQueueManager {
           continue; // generation mismatch, skip dismissing this successor!
         }
         
-        this.dismissCallbacks.delete(callbackKey);
         queue.splice(idx, 1);
-        logInfo("ui", "delivery dismissed", { pluginId, key, reason, generationId: item.generationId });
+        this.finishDismissal(item, reason, skipCallbacks);
         
         if (idx === 0) {
           this.advanceQueue(dk);
         }
 
-        if (cb && !skipCallbacks) {
-          try {
-            cb(reason);
-          } catch (err) {
-            logError("ui", "delivery dismiss callback exception", err);
-          }
-        }
         break;
+      }
+    }
+  }
+
+  private finishDismissal(item: QueuedDelivery, reason: DismissReason, skipCallbacks = false): void {
+    const callbackKey = `${item.pluginId}:${item.key}`;
+    const callback = this.dismissCallbacks.get(callbackKey);
+    this.dismissCallbacks.delete(callbackKey);
+    logInfo("ui", "delivery dismissed", { pluginId: item.pluginId, key: item.key, reason, generationId: item.generationId });
+    if (callback && !skipCallbacks) {
+      try {
+        callback(reason);
+      } catch (error) {
+        logError("ui", "delivery dismiss callback exception", error);
       }
     }
   }
@@ -308,11 +311,9 @@ export class AirmailQueueManager {
     if (survivingDisplays.length === 0) {
       // No display surviving, clear and close
       logInfo("ui", "no surviving displays left; clearing deliveries", { count: queue.length });
-      for (const item of [...queue]) {
-        this.dismiss(item.pluginId, item.key, "expired");
-      }
       this.queues.delete(removedDisplayKey);
       this.options.destroyWindow(removedDisplayKey);
+      for (const item of queue) this.finishDismissal(item, "expired");
       return;
     }
 
@@ -328,6 +329,9 @@ export class AirmailQueueManager {
     });
 
     const targetQueue = this.queues.get(closestDisplayKey) || [];
+    this.queues.delete(removedDisplayKey);
+    this.options.destroyWindow(removedDisplayKey);
+
     // Ensure display capacity limit: only copy up to what fits
     const copyLimit = Math.max(0, 16 - targetQueue.length);
     const copies = queue.slice(0, copyLimit);
@@ -339,12 +343,7 @@ export class AirmailQueueManager {
 
     // Any items that overflowed are expired/dismissed
     const overflows = queue.slice(copyLimit);
-    for (const item of overflows) {
-      this.dismiss(item.pluginId, item.key, "expired");
-    }
-
-    this.queues.delete(removedDisplayKey);
-    this.options.destroyWindow(removedDisplayKey);
+    for (const item of overflows) this.finishDismissal(item, "expired");
 
     this.queues.set(closestDisplayKey, targetQueue);
     this.advanceQueue(closestDisplayKey);
