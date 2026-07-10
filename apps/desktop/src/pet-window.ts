@@ -218,9 +218,16 @@ async function buildPetContextMenuTemplate(action: { readonly label: string; rea
     plugins.set(item.pluginId, group);
   }
   const template: Electron.MenuItemConstructorOptions[] = [];
+  const openControlCenter = (route: "dashboard" | "plugins"): void => {
+    import("./windows.js").then(({ openControlCenterWindow }) => openControlCenterWindow(route)).catch((error) => logError("pet.window", "open control center failed", error));
+  };
   if (topLevel.length > 0) template.push(...topLevel.slice(0, 8), { type: "separator" });
   if (plugins.size > 0) template.push(...[...plugins.values()].map((plugin) => ({ label: plugin.name, submenu: plugin.commands })), { type: "separator" });
-  template.push({ label: t("pet.menu.openControlCenter"), click: () => { import("./windows.js").then(({ openControlCenterWindow }) => openControlCenterWindow()).catch((error) => logError("pet.window", "open control center failed", error)); } }, { label: action.label, click: action.click });
+  template.push(
+    { label: t("tray.plugins"), click: () => openControlCenter("plugins") },
+    { label: t("pet.menu.openControlCenter"), click: () => openControlCenter("dashboard") },
+    { label: action.label, click: action.click },
+  );
   return template;
 }
 

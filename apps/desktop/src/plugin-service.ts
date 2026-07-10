@@ -16,6 +16,7 @@ import type { PluginPetApi } from "./plugin-pet-api.js";
 import { JsonPluginStorageStore, type PluginCommand, type PluginHostCapabilities, type PluginLogLevel, type PluginStatus } from "./plugin-sdk-bridge.js";
 import { PluginRuntime, type PluginRuntimeOptions, type PluginRuntimeScheduler } from "./plugin-runtime.js";
 import { PluginStateStore, type PluginSource, type PluginStateRecord } from "./plugin-state.js";
+import { getAppStateSnapshot } from "./app-state.js";
 
 export type SafePluginRecord = {
   readonly id: string;
@@ -38,6 +39,8 @@ export type SafePluginRecord = {
   readonly configSchema?: OpenPetsPluginManifest["configSchema"];
   readonly effectiveConfig?: PluginConfig;
   readonly configErrors?: readonly PluginConfigValidationError[];
+  /** Host-resolved plugin sprite URLs and animation metadata; never filesystem paths. */
+  readonly spritePreviews?: Readonly<Record<string, { readonly url: string; readonly frameWidth: number; readonly frameHeight: number; readonly frames: number; readonly durationMs: number }>>;
   readonly commands?: readonly PluginCommand[];
   readonly status?: PluginStatus;
 };
@@ -457,11 +460,13 @@ export class PluginService {
       const config = getEffectivePluginConfig(manifest, record.config);
       const runtimeState = typeof (this.runtime as unknown as { getPluginState?: unknown }).getPluginState === "function" ? this.runtime.getPluginState(record.id) : { commands: [] };
       await ensurePluginLocales(record.id, record.installPath).catch(() => undefined);
-      return { ...base, brokenReason: sanitizePluginUiMessage(record.brokenReason), name: resolvePluginText(record.id, manifest.name) ?? manifest.name, description: resolvePluginText(record.id, manifest.description), icon: manifest.icon, iconDataUrl: await readPluginIconDataUrl(manifest, record.installPath), configSchema: resolveConfigSchemaText(record.id, manifest.configSchema), effectiveConfig: config.ok ? resolveConfigValueText(record.id, config.config) : undefined, configErrors: config.ok ? undefined : config.errors, commands: runtimeState.commands.map((command) => resolveCommandText(record.id, command)), status: runtimeState.status };
+      return { ...base, brokenReason: sanitizePluginUiMessage(record.brokenReason), name: resolvePluginText(record.id, manifest.name) ?? manifest.name, description: resolvePluginText(record.id, manifest.description), icon: manifest.icon, iconDataUrl: await readPluginIconDataUrl(manifest, record.installPath), configSchema: resolveConfigSchemaText(record.id, manifest.configSchema), effectiveConfig: config.ok ? resolveConfigValueText(record.id, config.config) : undefined, configErrors: config.ok ? undefined : config.errors, spritePreviews: getSafeSpritePreviews(manifest), commands: runtimeState.commands.map((command) => resolveCommandText(record.id, command)), status: runtimeState.status };
     } catch (error) {
       return { ...base, brokenReason: sanitizePluginUiMessage(record.brokenReason) ?? safeError(error) };
     }
   }
+
+  /** Sole authority for pet config options and validation. */
 
   async #updateCatalogMetadata(entry: PluginCatalogEntryV2 | { readonly id: string }): Promise<void> {
     const existing = this.stateStore.getRecord(entry.id);
@@ -749,6 +754,17 @@ function resolveConfigValueText(pluginId: string, config: PluginConfig): PluginC
 function resolveConfigSchemaText(pluginId: string, schema: OpenPetsPluginManifest["configSchema"]): OpenPetsPluginManifest["configSchema"] {
   if (!schema) return schema;
   return Object.fromEntries(Object.entries(schema).map(([key, field]) => [key, resolveConfigFieldText(pluginId, field)]));
+}
+
+export function getSafeSpritePreviews(manifest: OpenPetsPluginManifest): SafePluginRecord["spritePreviews"] {
+  if (manifest.runtime !== "javascript" || manifest.manifestVersion !== 3) return undefined;
+  return Object.fromEntries(Object.entries(manifest.assets?.sprites ?? {}).map(([name, sprite]) => [name, {
+    url: `openpets-plugin-asset://${encodeURIComponent(manifest.id)}/sprites/${encodeURIComponent(name)}?v=${encodeURIComponent(manifest.version)}`,
+    frameWidth: sprite.frameWidth,
+    frameHeight: sprite.frameHeight,
+    frames: sprite.frames,
+    durationMs: sprite.durationMs,
+  }]));
 }
 
 function isPermissionSubset(next: readonly PluginPermission[], approved: readonly PluginPermission[]): boolean {

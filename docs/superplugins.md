@@ -41,7 +41,7 @@ in-the-moment interactions (snooze, done, feed).
 ## Official plugin lineup
 
 Official plugins live in `plugins/official/` and are the reviewed catalog set.
-Current lineup (verified 2026-06-13 against the folder + manifests):
+Current lineup (verified 2026-07-10 against the folder + manifests):
 
 | Plugin id | What it is |
 |-----------|------------|
@@ -54,6 +54,7 @@ Current lineup (verified 2026-06-13 against the folder + manifests):
 | `openpets.launch-buddy` | Launch/checklist companion for shipping moments |
 | `openpets.magic-8-ball` | Command-driven decision/fortune responses |
 | `openpets.fortune-cookie` | Periodic or command-triggered fortunes |
+| `openpets.calendar-airmail` | Google primary-calendar reminders delivered by a selected bundled courier sprite ten minutes before and at event start |
 
 `plugins/official/codemap.md` carries the per-plugin SDK-surface breakdown.
 
