@@ -121,7 +121,11 @@ async function checkStdioServerContract(): Promise<void> {
       throw new Error("Unavailable stdio status returned unexpected structured content.");
     }
   } finally {
-    await client.close();
+    try {
+      await client.close();
+    } finally {
+      await transport.close();
+    }
   }
 }
 
