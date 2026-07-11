@@ -832,7 +832,7 @@ Dry-run npm publishing first:
 pnpm release:npm
 ```
 
-Publish all missing packages to npm. Package versions that already exist on npm are skipped automatically:
+Publish all missing packages to npm. Package versions that already exist on npm are skipped automatically. The helper pins its npm authentication check, registry probes, and `pnpm publish` commands to `https://registry.npmjs.org`. Before the publish plan, it logs each registry probe. Its 30-second watchdog stops the release and terminates the probe process tree; only npm's structured `E404` missing-version response for that exact package version is treated as unpublished. Registry, process, network, and authentication failures stop the release:
 
 ```bash
 pnpm release:npm -- --yes
@@ -844,7 +844,7 @@ If npm requires two-factor auth:
 pnpm release:npm -- --yes --otp <code>
 ```
 
-Publishing with the npm helper requires `npm whoami` to succeed, a clean working tree, and local `HEAD` to match the upstream branch.
+Publishing with the npm helper requires `npm whoami --registry https://registry.npmjs.org` to succeed, a clean working tree, and local `HEAD` to match the upstream branch.
 
 After publishing, verify the npm dependency set resolves:
 
