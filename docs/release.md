@@ -193,7 +193,6 @@ artifact set:
 - macOS DMG: x64 + arm64
 - macOS ZIP: x64 + arm64
 - Windows NSIS installer: x64
-- Windows portable: x64
 - Linux AppImage: x64
 - Linux DEB: x64
 - Linux RPM: x64
@@ -207,7 +206,6 @@ OpenPets-<version>-mac-arm64.dmg
 OpenPets-<version>-mac-x64.zip
 OpenPets-<version>-mac-arm64.zip
 OpenPets-<version>-win-x64-setup.exe
-OpenPets-<version>-win-x64-portable.exe
 OpenPets-<version>-linux-x86_64.AppImage
 OpenPets-<version>-linux-amd64.deb
 OpenPets-<version>-linux-x86_64.rpm
@@ -301,7 +299,7 @@ gh workflow run signpath-windows.yml --repo alvinunreal/openpets --ref v<version
   -f artifact_configuration_installer_slug=openpets-windows-installer-zip
 ```
 
-Watch the run in GitHub Actions, then download its `signed-openpets-windows-x64` artifact. The workflow signs both the unpacked app executable and the final NSIS installer. It intentionally does not sign the portable Windows executable.
+Watch the run in GitHub Actions, then download its `signed-openpets-windows-x64` artifact. The workflow signs both the unpacked app executable and the final NSIS installer.
 
 After the workflow succeeds, send SignPath the signing request links from the workflow log / SignPath dashboard so they can review the setup and provision the production certificate.
 
@@ -628,7 +626,6 @@ names = [
     f'OpenPets-{version}-mac-arm64.zip',
     f'OpenPets-{version}-mac-x64.dmg',
     f'OpenPets-{version}-mac-x64.zip',
-    f'OpenPets-{version}-win-x64-portable.exe',
     f'OpenPets-{version}-win-x64-setup.exe',
 ]
 lines = []
