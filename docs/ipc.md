@@ -88,6 +88,14 @@ default 8000). The image never leaves the machine: the app reads the validated
 local file and renders it inside the bubble via a `file:` URL, sized to the
 bubble's media constraints.
 
+`pet.showMedia` also accepts an optional `clickUrl`: clicking the media bubble
+opens it via the shell on top of the normal dismiss behavior, so the sender
+can hand the click back to itself (a custom registered app protocol) or to a
+site (`https:`). Validation is deny-list based: local-content and script
+schemes (`file:`, `javascript:`, `data:`, …), plain `http:`, and side-effect
+Windows shell handlers are rejected; unregistered custom schemes are an OS
+no-op.
+
 ## The lease model
 
 Leases are how multiple agents and the default pet coexist without fighting over

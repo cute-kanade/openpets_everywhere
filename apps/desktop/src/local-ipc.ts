@@ -12,7 +12,7 @@ import { createStaleLeaseStatus, LeaseManager } from "./lease-manager.js";
 import { debug, error as logError, info } from "./logger.js";
 import { cleanupUnixSocket, getDiscoveryFilePath, getIpcEndpointConfig, parseIpcEndpoint, protectUnixSocket, removeDiscoveryFile, writeDiscoveryFile, type IpcEndpoint, type IpcEndpointConfig, type OpenPetsDiscoveryFile } from "./local-ipc-paths.js";
 import { stat } from "node:fs/promises";
-import { errorResponse, IpcProtocolError, isRecord, maxIpcMessageBytes, maxMediaFileBytes, okResponse, parseIpcRequest, validateInstallLocalKind, validateInstallLocalPath, validateInstallPetId, validateMediaDurationMs, validateMediaPath, validateOptionalLeaseId, validateReaction, validateRequestedPetId, validateSayMessage, validateSessionNonce, type OpenPetsIpcRequest } from "./local-ipc-protocol.js";
+import { errorResponse, IpcProtocolError, isRecord, maxIpcMessageBytes, maxMediaFileBytes, okResponse, parseIpcRequest, validateInstallLocalKind, validateInstallLocalPath, validateInstallPetId, validateMediaClickUrl, validateMediaDurationMs, validateMediaPath, validateOptionalLeaseId, validateReaction, validateRequestedPetId, validateSayMessage, validateSessionNonce, type OpenPetsIpcRequest } from "./local-ipc-protocol.js";
 import { installPet, installPetFromFolderWithResult, installPetFromZipFileWithResult } from "./pet-installation.js";
 import { clearConfinementState, setConfinementState } from "./confinement-manager.js";
 import { isConfinementSupported } from "./capabilities.js";
@@ -442,6 +442,7 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     const message = params.message === undefined ? undefined : validateSayMessage(params.message);
     const reaction = params.reaction === undefined ? undefined : validateReaction(params.reaction);
     const durationMs = validateMediaDurationMs(params.durationMs);
+    const clickUrl = validateMediaClickUrl(params.clickUrl);
     let mediaStat;
     try {
       mediaStat = await stat(mediaPath);
@@ -454,12 +455,12 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     const petId = lease?.actualTargetPetId ?? getCurrentDefaultPet().id;
     debug("ipc", "pet showMedia requested", { requestId: request.id, reaction, mediaBytes: mediaStat.size, durationMs, leaseId: lease?.leaseId, targetKind: lease?.targetKind, actualPetId: lease?.actualTargetPetId });
     if (lease?.targetKind === "explicit") {
-      const applied = applyAgentPetShowMedia(lease.actualTargetPetId, { mediaPath, message, reaction, durationMs });
+      const applied = applyAgentPetShowMedia(lease.actualTargetPetId, { mediaPath, message, reaction, durationMs, clickUrl });
       safeRecordOpenPetsActivity({ kind: "say", reaction, petId, surface: "agent" });
       trackDesktopIntegrationActivity("showMedia", { integration_type: "ipc", target_kind: lease.targetKind, shown: applied.shown, reason: applied.reason, has_reaction: Boolean(reaction) });
       return { ok: true, shown: applied.shown, reason: applied.reason, reaction, leaseId: lease.leaseId };
     }
-    const applied = applyExternalPetShowMedia({ mediaPath, message, reaction, durationMs });
+    const applied = applyExternalPetShowMedia({ mediaPath, message, reaction, durationMs, clickUrl });
     safeRecordOpenPetsActivity({ kind: "say", reaction, petId, surface: "default" });
     trackDesktopIntegrationActivity("showMedia", { integration_type: "ipc", target_kind: lease?.targetKind ?? "default", shown: applied.shown, reason: applied.reason, has_reaction: Boolean(reaction) });
     return { ok: true, shown: applied.shown, reason: applied.reason, reaction };

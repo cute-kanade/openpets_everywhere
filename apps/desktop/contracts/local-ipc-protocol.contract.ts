@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { errorResponse, maxIpcMessageBytes, parseIpcRequest, validateReaction, validateSayMessage, validateInstallLocalKind, validateInstallLocalPath, validateMediaDurationMs, validateMediaPath } from "../src/local-ipc-protocol.js";
+import { errorResponse, maxIpcMessageBytes, parseIpcRequest, validateReaction, validateSayMessage, validateInstallLocalKind, validateInstallLocalPath, validateMediaClickUrl, validateMediaDurationMs, validateMediaPath } from "../src/local-ipc-protocol.js";
 
 const token = "test-token";
 const valid = {
@@ -51,6 +51,22 @@ assert.equal(validateMediaDurationMs(undefined), undefined);
 assert.equal(validateMediaDurationMs(8_000), 8_000);
 for (const badDuration of [0, 999, 30_001, Number.NaN, "5000"]) {
   assert.throws(() => validateMediaDurationMs(badDuration));
+}
+
+assert.equal(validateMediaClickUrl(undefined), undefined);
+validateMediaClickUrl("https://example.com/result?id=1");
+validateMediaClickUrl("myapp://focus-something");
+for (const badClickUrl of [
+  "",
+  "not-a-url",
+  "http://example.com",
+  "file:///C:/secret.txt",
+  "javascript:alert(1)",
+  "data:text/html,x",
+  "https://example.com/with space",
+  "shell:startup",
+]) {
+  assert.throws(() => validateMediaClickUrl(badClickUrl));
 }
 
 validateInstallLocalPath("/tmp/my-pet.zip");

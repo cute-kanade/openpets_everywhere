@@ -72,7 +72,7 @@ export interface OpenPetsClient {
   releaseLease(leaseId: string): Promise<{ readonly released: boolean }>;
   react(reaction: OpenPetsReaction, options?: { readonly leaseId?: string }): Promise<unknown>;
   say(message: string, options?: { readonly reaction?: OpenPetsReaction; readonly leaseId?: string }): Promise<unknown>;
-  showMedia(path: string, options?: { readonly message?: string; readonly reaction?: OpenPetsReaction; readonly durationMs?: number; readonly leaseId?: string }): Promise<unknown>;
+  showMedia(path: string, options?: { readonly message?: string; readonly reaction?: OpenPetsReaction; readonly durationMs?: number; readonly clickUrl?: string; readonly leaseId?: string }): Promise<unknown>;
 }
 
 export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenPetsClient {
@@ -117,7 +117,7 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
       if (!isLocalInstallAbsolutePath(trimmedPath)) {
         throw new OpenPetsClientError("invalid_params", "Media path must be absolute.");
       }
-      return sendDiscoveredRequest("pet.showMedia", { path: trimmedPath, message: mediaOptions?.message, reaction: mediaOptions?.reaction === undefined ? undefined : validateReaction(mediaOptions.reaction), durationMs: mediaOptions?.durationMs, leaseId: mediaOptions?.leaseId }, options);
+      return sendDiscoveredRequest("pet.showMedia", { path: trimmedPath, message: mediaOptions?.message, reaction: mediaOptions?.reaction === undefined ? undefined : validateReaction(mediaOptions.reaction), durationMs: mediaOptions?.durationMs, clickUrl: mediaOptions?.clickUrl, leaseId: mediaOptions?.leaseId }, options);
     },
   };
 }

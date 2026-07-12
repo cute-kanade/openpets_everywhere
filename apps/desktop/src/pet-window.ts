@@ -69,6 +69,8 @@ export interface PetTransientDisplay {
   readonly mediaPath?: string;
   /** Explicit display duration override for media bubbles, already clamped by the IPC layer. */
   readonly displayDurationMs?: number;
+  /** Validated URL opened via shell when the media bubble is clicked (pet.showMedia). */
+  readonly clickUrl?: string;
 }
 
 /** Validated pet.showMedia request payload shared by the default/agent controllers. */
@@ -77,6 +79,7 @@ export interface PetShowMediaOptions {
   readonly message?: string;
   readonly reaction?: OpenPetsReaction;
   readonly durationMs?: number;
+  readonly clickUrl?: string;
 }
 
 export type PetStatusBadgeReaction = Exclude<OpenPetsReaction, "idle">;
@@ -1122,6 +1125,7 @@ function createPetWindowCss(paused: boolean, scale: PetScaleValue): string {
     .bubble.is-plugin .bubble-markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; background: rgba(30, 58, 138, 0.08); border-radius: 4px; padding: 0 3px; }
     .bubble-media { display: block; max-width: 96px; max-height: 64px; margin: 0 auto 2px; pointer-events: none; }
     .bubble.has-media { max-width: min(232px, calc(100vw - 18px)); max-height: 224px; }
+    .bubble.is-link { cursor: pointer; }
     .bubble-media-preview { display: block; max-width: 100%; max-height: 150px; margin: 0 auto 2px; border-radius: 8px; pointer-events: none; object-fit: contain; }
     .bubble-plugin-icon { display: inline-block; font-size: 13px; line-height: 14px; margin-bottom: 2px; }
     .bubble-hud-item-icon, .bubble-plugin-icon, .bubble-status-icon::before, .bubble-action [aria-hidden="true"] { font-family: "OpenPets Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif; }
@@ -1410,7 +1414,7 @@ function createBubbleMarkup(display: PetTransientDisplay | null, paused: boolean
   const media = !paused && display?.mediaPath ? `<img class="bubble-media-preview" src="${escapeHtml(pathToFileURL(display.mediaPath).toString())}" alt="" draggable="false">` : "";
   if (!text && !status && !media) return "";
   const isExplicitMessage = Boolean(display?.message && !display?.reactionMessage);
-  const className = getBubbleClassName(text, isExplicitMessage, status?.className) + (media ? " has-media" : "");
+  const className = getBubbleClassName(text, isExplicitMessage, status?.className) + (media ? " has-media" : "") + (media && display?.clickUrl ? " is-link" : "");
   const header = status ? `<div class="bubble-header"><span class="bubble-status-icon${status.iconSvg ? " has-svg" : ""}" data-icon="${escapeHtml(status.icon ?? "")}" aria-hidden="true">${status.iconSvg ?? ""}</span><span class="bubble-status-label">${escapeHtml(status.label)}</span></div>` : "";
   const divider = status && (text || media) ? `<div class="bubble-divider" aria-hidden="true"></div>` : "";
   const body = text ? `<div class="bubble-body"><span class="bubble-text">${escapeHtml(text)}</span></div>` : "";
