@@ -79,6 +79,12 @@ cache-bust the re-assert never reaches the OS
 flag is intact, and keeping the pet above fullscreen content matches the
 explicit macOS `visibleOnFullScreen: true` behavior.
 
+Separately, Chromium's native window occlusion tracker considers every window
+on a display occluded while a fullscreen app is active there and stops
+painting it — a transparent pet window goes blank even with its z-order
+intact. `main.ts` disables `CalculateNativeWinOcclusion` on Windows so the
+pet keeps rendering during fullscreen video and games.
+
 ## Subsystems
 
 ### Tray & windows

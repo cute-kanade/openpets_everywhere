@@ -27,6 +27,16 @@ import { installInternalUiHandlers, installInternalUiProtocol } from "./windows.
 app.commandLine.appendSwitch("use-mock-keychain");
 app.commandLine.appendSwitch("password-store", "basic");
 
+// Chromium's native window occlusion tracker treats every window on a display
+// as occluded while a fullscreen app is active there and stops painting it.
+// For transparent always-on-top pet windows that means the pet goes blank
+// during any fullscreen video or game even when its z-order is intact.
+// Occlusion-based paint throttling saves next to nothing for windows this
+// small, so trade it away to keep the pet drawn.
+if (process.platform === "win32") {
+  app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+}
+
 // OpenPets requires programmatic window positioning and z-ordering, which
 // native Wayland compositors disallow for XDG-shell toplevels. To ensure
 // gravity, drag, and always-on-top work correctly on all KDE/GNOME Linux
