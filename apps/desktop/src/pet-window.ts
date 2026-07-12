@@ -642,6 +642,23 @@ function createBasePetWindow(title: string, position: Point, focusOptions: { rea
   window.on("show", () => applyPetAlwaysOnTop(window));
   window.on("restore", () => applyPetAlwaysOnTop(window));
 
+  // Windows silently strips HWND_TOPMOST from other windows when an app
+  // enters fullscreen (browser video, games) and never restores it, and no
+  // Electron event fires when that happens — the pet stays buried behind
+  // normal windows until the user manually toggles it. Periodic re-assertion
+  // is the only reliable recovery; the call is a cheap no-op while the flag
+  // is intact, and matches the macOS visibleOnFullScreen intent below.
+  if (process.platform === "win32") {
+    const topmostTimer = setInterval(() => {
+      if (window.isDestroyed()) {
+        clearInterval(topmostTimer);
+        return;
+      }
+      if (window.isVisible()) applyPetAlwaysOnTop(window);
+    }, 5_000);
+    window.on("closed", () => clearInterval(topmostTimer));
+  }
+
   // Show the pet window on all macOS Spaces (desktop workspaces).
   // Without this, the window is bound to the Space where it was created
   // and disappears when the user switches to another Space.
@@ -677,6 +694,15 @@ function createBasePetWindow(title: string, position: Point, focusOptions: { rea
 
 function applyPetAlwaysOnTop(window: BrowserWindow): void {
   if (window.isDestroyed()) return;
+
+  // On Windows the shell strips WS_EX_TOPMOST behind Electron's back
+  // (fullscreen apps), but Electron's cached always-on-top state still says
+  // "on", so a plain setAlwaysOnTop(true) short-circuits without reaching the
+  // OS — verified live: the flag stayed off for minutes of re-asserts. Drop
+  // the cached flag first so the re-assert issues a real SetWindowPos.
+  if (process.platform === "win32" && window.isAlwaysOnTop()) {
+    window.setAlwaysOnTop(false);
+  }
 
   window.setAlwaysOnTop(true, process.platform === "linux" ? "screen-saver" : "floating");
 
