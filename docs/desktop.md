@@ -67,6 +67,18 @@ is factored into `computeEffectiveWaylandBackend()` in `wayland-backend.ts`;
 The x11-forcing branch and the `OPENPETS_ALLOW_WAYLAND` opt-out are asserted by
 `check-packaging-contract.ts`, so this behavior cannot silently regress.
 
+On Windows, the shell silently strips `HWND_TOPMOST` from other windows when an
+app enters fullscreen (browser video, games) and never restores it — and no
+Electron event fires when it happens, so the `show`/`restore` re-assertions
+never run and the pet stays buried until manually toggled. Pet windows
+therefore re-assert always-on-top on a 5s interval while visible, dropping
+Electron's cached always-on-top flag first — Electron short-circuits
+`setAlwaysOnTop(true)` when its cached state already matches, so without the
+cache-bust the re-assert never reaches the OS
+(`createBasePetWindow` in `pet-window.ts`); the call is a cheap no-op while the
+flag is intact, and keeping the pet above fullscreen content matches the
+explicit macOS `visibleOnFullScreen: true` behavior.
+
 ## Subsystems
 
 ### Tray & windows
