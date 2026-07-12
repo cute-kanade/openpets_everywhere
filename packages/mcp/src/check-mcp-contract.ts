@@ -53,6 +53,7 @@ async function checkMcpServerContract(): Promise<void> {
     releaseLease: async () => ({ released: true }),
     react: async (reaction: string, options?: { readonly leaseId?: string }) => ({ ok: true, reaction, leaseId: options?.leaseId }),
     say: async (message: string, options?: { readonly leaseId?: string }) => ({ ok: true, message, leaseId: options?.leaseId }),
+    showMedia: async () => ({ ok: true, shown: true }),
     hello: async () => ({ ok: true }),
   };
   const server = createOpenPetsMcpServer({ configuredPetId: "snoopy", client: fakeClient, lease: { lease: await fakeClient.acquireLease() }, leaseReady: Promise.resolve() });
@@ -166,6 +167,7 @@ async function checkT6TransportOnclose(): Promise<void> {
     releaseLease: async (leaseId: string) => { calls.push(`releaseLease:${leaseId}`); return { released: true }; },
     react: async () => ({ ok: true }),
     say: async () => ({ ok: true }),
+    showMedia: async () => ({ ok: true, shown: true }),
     hello: async () => ({ ok: true }),
   };
 
@@ -241,6 +243,7 @@ async function checkT7EnsureLeaseHeartbeatFirst(): Promise<void> {
       releaseLease: async () => { calls.push("releaseLease"); return { released: true }; },
       react: async (reaction: string, options?: { readonly leaseId?: string }) => ({ ok: true, reaction, leaseId: options?.leaseId }),
       say: async (message: string, options?: { readonly leaseId?: string }) => ({ ok: true, message, leaseId: options?.leaseId }),
+      showMedia: async () => ({ ok: true, shown: true }),
       hello: async () => ({ ok: true }),
     };
 
@@ -285,6 +288,7 @@ async function checkT7EnsureLeaseHeartbeatFirst(): Promise<void> {
       releaseLease: async () => { calls.push("releaseLease"); return { released: true }; },
       react: async (reaction: string, options?: { readonly leaseId?: string }) => ({ ok: true, reaction, leaseId: options?.leaseId }),
       say: async (message: string, options?: { readonly leaseId?: string }) => ({ ok: true, message, leaseId: options?.leaseId }),
+      showMedia: async () => ({ ok: true, shown: true }),
       hello: async () => ({ ok: true }),
     };
 
@@ -338,6 +342,7 @@ async function checkT8ExitOnce(): Promise<void> {
     releaseLease: async (leaseId: string) => { releaseOrder.push("release:" + leaseId); return { released: true }; },
     react: async () => ({ ok: true }),
     say: async () => ({ ok: true }),
+    showMedia: async () => ({ ok: true, shown: true }),
     hello: async () => ({ ok: true }),
   };
 

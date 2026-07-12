@@ -72,6 +72,7 @@ export interface OpenPetsClient {
   releaseLease(leaseId: string): Promise<{ readonly released: boolean }>;
   react(reaction: OpenPetsReaction, options?: { readonly leaseId?: string }): Promise<unknown>;
   say(message: string, options?: { readonly reaction?: OpenPetsReaction; readonly leaseId?: string }): Promise<unknown>;
+  showMedia(path: string, options?: { readonly message?: string; readonly reaction?: OpenPetsReaction; readonly durationMs?: number; readonly leaseId?: string }): Promise<unknown>;
 }
 
 export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenPetsClient {
@@ -108,6 +109,16 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     releaseLease: (leaseId) => sendDiscoveredRequest("lease.release", { leaseId }, options),
     react: (reaction, reactOptions) => sendDiscoveredRequest("pet.react", { reaction: validateReaction(reaction), leaseId: reactOptions?.leaseId }, options),
     say: (message, sayOptions) => sendDiscoveredRequest("pet.say", { message, reaction: sayOptions?.reaction, leaseId: sayOptions?.leaseId }, options),
+    showMedia: (path, mediaOptions) => {
+      if (typeof path !== "string" || path.trim().length === 0) {
+        throw new OpenPetsClientError("invalid_params", "Media path must be a non-empty string.");
+      }
+      const trimmedPath = path.trim();
+      if (!isLocalInstallAbsolutePath(trimmedPath)) {
+        throw new OpenPetsClientError("invalid_params", "Media path must be absolute.");
+      }
+      return sendDiscoveredRequest("pet.showMedia", { path: trimmedPath, message: mediaOptions?.message, reaction: mediaOptions?.reaction === undefined ? undefined : validateReaction(mediaOptions.reaction), durationMs: mediaOptions?.durationMs, leaseId: mediaOptions?.leaseId }, options);
+    },
   };
 }
 

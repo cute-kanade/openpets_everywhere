@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { errorResponse, maxIpcMessageBytes, parseIpcRequest, validateReaction, validateSayMessage, validateInstallLocalKind, validateInstallLocalPath } from "../src/local-ipc-protocol.js";
+import { errorResponse, maxIpcMessageBytes, parseIpcRequest, validateReaction, validateSayMessage, validateInstallLocalKind, validateInstallLocalPath, validateMediaDurationMs, validateMediaPath } from "../src/local-ipc-protocol.js";
 
 const token = "test-token";
 const valid = {
@@ -39,6 +39,18 @@ for (const unsafe of [
 
 if (Buffer.byteLength(JSON.stringify({ message: "x".repeat(maxIpcMessageBytes) }), "utf8") <= maxIpcMessageBytes) {
   throw new Error("Oversized fixture was not oversized.");
+}
+
+parseIpcRequest(JSON.stringify({ ...valid, method: "pet.showMedia" }), token);
+validateMediaPath("/tmp/generation.png");
+validateMediaPath("/tmp/generation.WEBP");
+for (const badMediaPath of ["", "./relative.png", "/tmp/no-extension", "/tmp/script.js", "/tmp/movie.mp4", "\x00"]) {
+  assert.throws(() => validateMediaPath(badMediaPath));
+}
+assert.equal(validateMediaDurationMs(undefined), undefined);
+assert.equal(validateMediaDurationMs(8_000), 8_000);
+for (const badDuration of [0, 999, 30_001, Number.NaN, "5000"]) {
+  assert.throws(() => validateMediaDurationMs(badDuration));
 }
 
 validateInstallLocalPath("/tmp/my-pet.zip");

@@ -3,16 +3,16 @@ import net from "node:net";
 
 import { Notification, shell, systemPreferences } from "electron";
 
-import { applyAgentPetReaction, applyAgentPetSay, clearAgentPetLeaseState, repositionConfinedPet, showAgentPet } from "./agent-pet-controller.js";
+import { applyAgentPetReaction, applyAgentPetSay, applyAgentPetShowMedia, clearAgentPetLeaseState, repositionConfinedPet, showAgentPet } from "./agent-pet-controller.js";
 import { classifyAnalyticsError, trackDesktopEvent, trackDesktopIntegrationActivity } from "./analytics.js";
 import { getAppStateSnapshot, recordOpenPetsActivity } from "./app-state.js";
 import { builtInPet } from "./built-in-pet.js";
-import { applyExternalPetReaction, applyExternalPetSay, getDefaultPetPaused, isDefaultPetVisible } from "./default-pet-controller.js";
+import { applyExternalPetReaction, applyExternalPetSay, applyExternalPetShowMedia, getDefaultPetPaused, isDefaultPetVisible } from "./default-pet-controller.js";
 import { createStaleLeaseStatus, LeaseManager } from "./lease-manager.js";
 import { debug, error as logError, info } from "./logger.js";
 import { cleanupUnixSocket, getDiscoveryFilePath, getIpcEndpointConfig, parseIpcEndpoint, protectUnixSocket, removeDiscoveryFile, writeDiscoveryFile, type IpcEndpoint, type IpcEndpointConfig, type OpenPetsDiscoveryFile } from "./local-ipc-paths.js";
 import { stat } from "node:fs/promises";
-import { errorResponse, IpcProtocolError, isRecord, maxIpcMessageBytes, okResponse, parseIpcRequest, validateInstallLocalKind, validateInstallLocalPath, validateInstallPetId, validateOptionalLeaseId, validateReaction, validateRequestedPetId, validateSayMessage, validateSessionNonce, type OpenPetsIpcRequest } from "./local-ipc-protocol.js";
+import { errorResponse, IpcProtocolError, isRecord, maxIpcMessageBytes, maxMediaFileBytes, okResponse, parseIpcRequest, validateInstallLocalKind, validateInstallLocalPath, validateInstallPetId, validateMediaDurationMs, validateMediaPath, validateOptionalLeaseId, validateReaction, validateRequestedPetId, validateSayMessage, validateSessionNonce, type OpenPetsIpcRequest } from "./local-ipc-protocol.js";
 import { installPet, installPetFromFolderWithResult, installPetFromZipFileWithResult } from "./pet-installation.js";
 import { clearConfinementState, setConfinementState } from "./confinement-manager.js";
 import { isConfinementSupported } from "./capabilities.js";
@@ -434,6 +434,35 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     safeRecordOpenPetsActivity({ kind: "react", reaction, petId, surface: "default" });
     trackDesktopIntegrationActivity("react", { integration_type: "ipc", target_kind: lease?.targetKind ?? "default", shown: applied.shown, reason: applied.reason });
     return { ok: true, reaction, shown: applied.shown, reason: applied.reason };
+  }
+
+  if (request.method === "pet.showMedia") {
+    const params = isRecord(request.params) ? request.params : {};
+    const mediaPath = validateMediaPath(params.path);
+    const message = params.message === undefined ? undefined : validateSayMessage(params.message);
+    const reaction = params.reaction === undefined ? undefined : validateReaction(params.reaction);
+    const durationMs = validateMediaDurationMs(params.durationMs);
+    let mediaStat;
+    try {
+      mediaStat = await stat(mediaPath);
+    } catch {
+      throw new IpcProtocolError("invalid_params", "Media path does not exist or is not readable.");
+    }
+    if (!mediaStat.isFile()) throw new IpcProtocolError("invalid_params", "Media path is not a file.");
+    if (mediaStat.size > maxMediaFileBytes) throw new IpcProtocolError("invalid_params", "Media file is too large.");
+    const lease = getLeaseTarget(params.leaseId);
+    const petId = lease?.actualTargetPetId ?? getCurrentDefaultPet().id;
+    debug("ipc", "pet showMedia requested", { requestId: request.id, reaction, mediaBytes: mediaStat.size, durationMs, leaseId: lease?.leaseId, targetKind: lease?.targetKind, actualPetId: lease?.actualTargetPetId });
+    if (lease?.targetKind === "explicit") {
+      const applied = applyAgentPetShowMedia(lease.actualTargetPetId, { mediaPath, message, reaction, durationMs });
+      safeRecordOpenPetsActivity({ kind: "say", reaction, petId, surface: "agent" });
+      trackDesktopIntegrationActivity("showMedia", { integration_type: "ipc", target_kind: lease.targetKind, shown: applied.shown, reason: applied.reason, has_reaction: Boolean(reaction) });
+      return { ok: true, shown: applied.shown, reason: applied.reason, reaction, leaseId: lease.leaseId };
+    }
+    const applied = applyExternalPetShowMedia({ mediaPath, message, reaction, durationMs });
+    safeRecordOpenPetsActivity({ kind: "say", reaction, petId, surface: "default" });
+    trackDesktopIntegrationActivity("showMedia", { integration_type: "ipc", target_kind: lease?.targetKind ?? "default", shown: applied.shown, reason: applied.reason, has_reaction: Boolean(reaction) });
+    return { ok: true, shown: applied.shown, reason: applied.reason, reaction };
   }
 
   const params = isRecord(request.params) ? request.params : {};

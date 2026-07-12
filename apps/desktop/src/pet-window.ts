@@ -9,7 +9,7 @@ import { clampToNearestDisplayIfOffscreen, clampToVisibleWorkArea, defaultPetWin
 import { builtInPet } from "./built-in-pet.js";
 import { getInstalledPetDir } from "./pet-paths.js";
 import { getActiveLocale, getActiveLocaleLang, t } from "./i18n/index.js";
-import type { OpenPetsReaction } from "./local-ipc-protocol.js";
+import { defaultMediaDurationMs, type OpenPetsReaction } from "./local-ipc-protocol.js";
 import { pickReactionMessage } from "./reaction-messages.js";
 import { debug, error as logError, info, warn } from "./logger.js";
 import { executeDefaultPetPluginCommand, executeDefaultPetPluginMenuSelect, getDefaultPetPluginCommands, getDefaultPetPluginMenuItems } from "./plugin-service.js";
@@ -65,6 +65,18 @@ export interface PetTransientDisplay {
   readonly reactionMessage?: string;
   readonly suppressReactionMessage?: boolean;
   readonly dismissToken?: string;
+  /** Absolute path to a validated local image shown inside the bubble (pet.showMedia). */
+  readonly mediaPath?: string;
+  /** Explicit display duration override for media bubbles, already clamped by the IPC layer. */
+  readonly displayDurationMs?: number;
+}
+
+/** Validated pet.showMedia request payload shared by the default/agent controllers. */
+export interface PetShowMediaOptions {
+  readonly mediaPath: string;
+  readonly message?: string;
+  readonly reaction?: OpenPetsReaction;
+  readonly durationMs?: number;
 }
 
 export type PetStatusBadgeReaction = Exclude<OpenPetsReaction, "idle">;
@@ -690,7 +702,7 @@ export async function loadDefaultPetContent(window: BrowserWindow, paused: boole
   debug("pet.window", "default content render begin", { windowId: window.id, sequence, paused, hasDisplay: Boolean(display), reaction: display?.reaction, hasMessage: Boolean(display?.message), badge, hasPluginBubble: Boolean(pluginBubbles?.transient), hasPinned: Boolean(pluginBubbles?.pinned), defaultPetId: getAppStateSnapshot().preferences.defaultPetId });
   applyPetWindowFocusPolicy(window, petPluginBubblesHaveInteractiveInput(pluginBubbles));
   const render = await createDefaultPetRender(paused, display, badge, dismissToken, pluginBubbles);
-  applyLinuxPetWindowShape(window, getAppStateSnapshot().preferences.petScale as PetScaleValue, Boolean(display?.message || display?.reactionMessage || display?.reaction || badge || paused || pluginBubbles?.transient || pluginBubbles?.pinned));
+  applyLinuxPetWindowShape(window, getAppStateSnapshot().preferences.petScale as PetScaleValue, Boolean(display?.message || display?.reactionMessage || display?.reaction || display?.mediaPath || badge || paused || pluginBubbles?.transient || pluginBubbles?.pinned));
   if (tryUpdateLoadedPetContent(window, render, "default", sequence)) return;
   await loadPetHtmlFile(window, render.html, "default", sequence).then(() => {
     petWindowRenderCache.set(window, render.cacheKey);
@@ -712,7 +724,7 @@ export async function loadExplicitPetContent(window: BrowserWindow, petId: strin
     debug("pet.window", "explicit content render begin", { windowId: window.id, sequence, petId, displayName: pet.displayName, hasDisplay: Boolean(display), reaction: display?.reaction, hasMessage: Boolean(display?.message), badge });
     const scale = scaleOverride ?? state.preferences.petScale as PetScaleValue;
     const render = await createInstalledPetRender(pet.id, pet.displayName, false, display, scale, badge, `explicit:${pet.id}`, dismissToken, pluginBubbles);
-    applyLinuxPetWindowShape(window, scale, Boolean(display?.message || display?.reactionMessage || display?.reaction || badge || pluginBubbles?.transient || pluginBubbles?.pinned));
+    applyLinuxPetWindowShape(window, scale, Boolean(display?.message || display?.reactionMessage || display?.reaction || display?.mediaPath || badge || pluginBubbles?.transient || pluginBubbles?.pinned));
     if (tryUpdateLoadedPetContent(window, render, `explicit-${pet.id}`, sequence)) return;
     await loadPetHtmlFile(window, render.html, `explicit-${pet.id}`, sequence);
     petWindowRenderCache.set(window, render.cacheKey);
@@ -747,7 +759,7 @@ export function preparePetTransientDisplay(display: PetTransientDisplay): PetTra
 }
 
 export function mergePetTransientDisplay(current: PetTransientDisplay | null, next: PetTransientDisplay): PetTransientDisplay {
-  if (next.message || !next.reaction || !current?.message) return preparePetTransientDisplay(next);
+  if (next.message || next.mediaPath || !next.reaction || !current?.message) return preparePetTransientDisplay(next);
   return { ...current, reaction: next.reaction, dismissToken: next.dismissToken ?? current.dismissToken };
 }
 
@@ -760,6 +772,8 @@ export function getTransientReactionAnimationMs(display: PetTransientDisplay): n
 }
 
 export function getTransientDisplayDurationMs(display: PetTransientDisplay): number {
+  if (display.displayDurationMs) return display.displayDurationMs;
+  if (display.mediaPath) return defaultMediaDurationMs;
   const baseMs = display.reaction === "success" || display.reaction === "error" ? 5_000 : 4_000;
   const message = display.message ?? display.reactionMessage;
   if (!message) return baseMs;
@@ -1077,6 +1091,8 @@ function createPetWindowCss(paused: boolean, scale: PetScaleValue): string {
     .bubble.is-plugin .bubble-markdown em { font-style: italic; }
     .bubble.is-plugin .bubble-markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; background: rgba(30, 58, 138, 0.08); border-radius: 4px; padding: 0 3px; }
     .bubble-media { display: block; max-width: 96px; max-height: 64px; margin: 0 auto 2px; pointer-events: none; }
+    .bubble.has-media { max-width: min(232px, calc(100vw - 18px)); max-height: 224px; }
+    .bubble-media-preview { display: block; max-width: 100%; max-height: 150px; margin: 0 auto 2px; border-radius: 8px; pointer-events: none; object-fit: contain; }
     .bubble-plugin-icon { display: inline-block; font-size: 13px; line-height: 14px; margin-bottom: 2px; }
     .bubble-hud-item-icon, .bubble-plugin-icon, .bubble-status-icon::before, .bubble-action [aria-hidden="true"] { font-family: "OpenPets Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif; }
     .bubble-actions { display: flex; flex-wrap: nowrap; gap: 5px; width: 100%; margin-top: 6px; min-width: 0; }
@@ -1361,16 +1377,17 @@ function createBubbleMarkup(display: PetTransientDisplay | null, paused: boolean
   const suppressReactionMessage = display?.suppressReactionMessage === true;
   const text = display?.message ?? display?.reactionMessage ?? (!suppressReactionMessage && display?.reaction ? pickReactionMessage(display.reaction, Math.random, getActiveLocale()) : undefined) ?? (paused ? t("pet.paused") : "");
   const status = !paused && !suppressReactionMessage && badgeReaction ? getStatusBadge(badgeReaction) : null;
-  if (!text && !status) return "";
+  const media = !paused && display?.mediaPath ? `<img class="bubble-media-preview" src="${escapeHtml(pathToFileURL(display.mediaPath).toString())}" alt="" draggable="false">` : "";
+  if (!text && !status && !media) return "";
   const isExplicitMessage = Boolean(display?.message && !display?.reactionMessage);
-  const className = getBubbleClassName(text, isExplicitMessage, status?.className);
+  const className = getBubbleClassName(text, isExplicitMessage, status?.className) + (media ? " has-media" : "");
   const header = status ? `<div class="bubble-header"><span class="bubble-status-icon${status.iconSvg ? " has-svg" : ""}" data-icon="${escapeHtml(status.icon ?? "")}" aria-hidden="true">${status.iconSvg ?? ""}</span><span class="bubble-status-label">${escapeHtml(status.label)}</span></div>` : "";
-  const divider = status && text ? `<div class="bubble-divider" aria-hidden="true"></div>` : "";
+  const divider = status && (text || media) ? `<div class="bubble-divider" aria-hidden="true"></div>` : "";
   const body = text ? `<div class="bubble-body"><span class="bubble-text">${escapeHtml(text)}</span></div>` : "";
   // Use provided dismissToken, fallback to display's dismissToken for transient messages
   const token = dismissToken ?? display?.dismissToken;
   const dismissAttr = token ? ` data-dismiss-token="${escapeHtml(token)}"` : "";
-  return `<div class="${className}" role="status" aria-live="polite"${dismissAttr}>${header}${divider}${body}</div>`;
+  return `<div class="${className}" role="status" aria-live="polite"${dismissAttr}>${header}${divider}${media}${body}</div>`;
 }
 
 const statusBadgeIcons = {
