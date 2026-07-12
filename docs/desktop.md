@@ -71,7 +71,10 @@ On Windows, the shell silently strips `HWND_TOPMOST` from other windows when an
 app enters fullscreen (browser video, games) and never restores it — and no
 Electron event fires when it happens, so the `show`/`restore` re-assertions
 never run and the pet stays buried until manually toggled. Pet windows
-therefore re-assert always-on-top on a 5s interval while visible, dropping
+therefore re-assert always-on-top on a 1s interval while visible (the
+shell's demotion sweep re-strips the flag every ~2-4s while a fullscreen app
+is foreground, so the cadence bounds the buried time to under a second),
+dropping
 Electron's cached always-on-top flag first — Electron short-circuits
 `setAlwaysOnTop(true)` when its cached state already matches, so without the
 cache-bust the re-assert never reaches the OS

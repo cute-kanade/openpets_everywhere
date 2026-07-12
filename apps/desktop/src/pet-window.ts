@@ -658,8 +658,12 @@ function createBasePetWindow(title: string, position: Point, focusOptions: { rea
   // enters fullscreen (browser video, games) and never restores it, and no
   // Electron event fires when that happens — the pet stays buried behind
   // normal windows until the user manually toggles it. Periodic re-assertion
-  // is the only reliable recovery; the call is a cheap no-op while the flag
-  // is intact, and matches the macOS visibleOnFullScreen intent below.
+  // is the only reliable recovery, and matches the macOS visibleOnFullScreen
+  // intent below. The shell's demotion sweep re-strips the flag every ~2-4s
+  // while a fullscreen app is foreground (measured: a forced re-assert held
+  // for ~2-3s before being swept), so a 1s cadence keeps the pet on top of
+  // fullscreen content with sub-second gaps at worst; the two SetWindowPos
+  // calls per tick are negligible.
   if (process.platform === "win32") {
     const topmostTimer = setInterval(() => {
       if (window.isDestroyed()) {
@@ -667,7 +671,7 @@ function createBasePetWindow(title: string, position: Point, focusOptions: { rea
         return;
       }
       if (window.isVisible()) applyPetAlwaysOnTop(window);
-    }, 5_000);
+    }, 1_000);
     window.on("closed", () => clearInterval(topmostTimer));
   }
 
