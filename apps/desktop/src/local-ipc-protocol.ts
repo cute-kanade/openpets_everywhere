@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { isAbsolute } from "node:path";
+import { extname, isAbsolute } from "node:path";
 
 export const openPetsIpcProtocol = "openpets-ipc";
 export const openPetsIpcVersion = 1;
 export const maxIpcMessageBytes = 16 * 1024;
 export const transientDisplayMs = 4_000;
+export const maxMediaFileBytes = 10 * 1024 * 1024;
+export const minMediaDurationMs = 1_000;
+export const maxMediaDurationMs = 30_000;
+export const defaultMediaDurationMs = 8_000;
+export const allowedMediaExtensions = [".png", ".jpg", ".jpeg", ".webp", ".gif"] as const;
 
 export const allowedReactions = [
   "idle",
@@ -21,7 +26,7 @@ export const allowedReactions = [
 ] as const;
 
 export type OpenPetsReaction = typeof allowedReactions[number];
-export type OpenPetsIpcMethod = "hello" | "status" | "pets.list" | "pets.install" | "lease.acquire" | "lease.heartbeat" | "lease.release" | "pet.react" | "pet.say" | "pets.install-local";
+export type OpenPetsIpcMethod = "hello" | "status" | "pets.list" | "pets.install" | "lease.acquire" | "lease.heartbeat" | "lease.release" | "pet.react" | "pet.say" | "pet.showMedia" | "pets.install-local";
 
 export interface OpenPetsIpcRequest {
   readonly id: string;
@@ -56,7 +61,7 @@ export function parseIpcRequest(raw: string, expectedToken: string): OpenPetsIpc
   if (typeof parsed.id !== "string" || parsed.id.length < 1 || parsed.id.length > 120) throw new IpcProtocolError("invalid_request", "IPC request id is invalid.");
   if (parsed.version !== openPetsIpcVersion) throw new IpcProtocolError("invalid_version", "Unsupported IPC protocol version.");
   if (parsed.token !== expectedToken) throw new IpcProtocolError("invalid_token", "Invalid IPC token.");
-  if (parsed.method !== "hello" && parsed.method !== "status" && parsed.method !== "pets.list" && parsed.method !== "pets.install" && parsed.method !== "lease.acquire" && parsed.method !== "lease.heartbeat" && parsed.method !== "lease.release" && parsed.method !== "pet.react" && parsed.method !== "pet.say" && parsed.method !== "pets.install-local") {
+  if (parsed.method !== "hello" && parsed.method !== "status" && parsed.method !== "pets.list" && parsed.method !== "pets.install" && parsed.method !== "lease.acquire" && parsed.method !== "lease.heartbeat" && parsed.method !== "lease.release" && parsed.method !== "pet.react" && parsed.method !== "pet.say" && parsed.method !== "pet.showMedia" && parsed.method !== "pets.install-local") {
     throw new IpcProtocolError("unknown_method", "Unknown IPC method.");
   }
 
@@ -175,6 +180,23 @@ export function validateInstallLocalPath(value: unknown): string {
     throw new IpcProtocolError("invalid_params", "Path must be absolute.");
   }
   return trimmed;
+}
+
+export function validateMediaPath(value: unknown): string {
+  const path = validateInstallLocalPath(value);
+  const extension = extname(path).toLowerCase();
+  if (!allowedMediaExtensions.includes(extension as typeof allowedMediaExtensions[number])) {
+    throw new IpcProtocolError("invalid_params", `Media path extension must be one of: ${allowedMediaExtensions.join(", ")}.`);
+  }
+  return path;
+}
+
+export function validateMediaDurationMs(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < minMediaDurationMs || value > maxMediaDurationMs) {
+    throw new IpcProtocolError("invalid_params", `Media duration must be a number between ${minMediaDurationMs} and ${maxMediaDurationMs} milliseconds.`);
+  }
+  return Math.round(value);
 }
 
 export function validateInstallLocalKind(value: unknown): "zip" | "folder" {

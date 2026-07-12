@@ -70,13 +70,23 @@ shapes before returning.
 | `pets.install-local` | Install a local pet from an absolute zip-file or folder path |
 | `pet.react` | Set a pet reaction (animation state) |
 | `pet.say` | Show a speech bubble on a pet |
+| `pet.showMedia` | Show a local image inside a pet's speech bubble |
 | `lease.acquire` / `lease.heartbeat` / `lease.release` | Manage a pet lease |
 
 Client method names (`hello()`, `status()`, `listPets()`, `installPet()`,
 `installLocalPet()`, `acquireLease()`, `heartbeatLease()`, `releaseLease()`,
-`react()`, `say()`) wrap these. `installLocalPet()` requires an absolute path
-and an explicit `zip`/`folder` kind. `react()`/`say()` accept an optional
-`leaseId` to target a specific pet.
+`react()`, `say()`, `showMedia()`) wrap these. `installLocalPet()` requires an
+absolute path and an explicit `zip`/`folder` kind. `react()`/`say()`/
+`showMedia()` accept an optional `leaseId` to target a specific pet.
+
+`pet.showMedia` renders a local image file as a transient media bubble on the
+pet — for example an image a local generation tool just produced. Params:
+`path` (required absolute path, extension must be `.png`/`.jpg`/`.jpeg`/
+`.webp`/`.gif`, file capped at 10 MB), optional `message` (validated exactly
+like `pet.say`), optional `reaction`, and optional `durationMs` (1000–30000,
+default 8000). The image never leaves the machine: the app reads the validated
+local file and renders it inside the bubble via a `file:` URL, sized to the
+bubble's media constraints.
 
 ## The lease model
 

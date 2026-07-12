@@ -56,6 +56,7 @@ try {
     say: async (message: string, options?: { readonly leaseId?: string }) => {
       calls.push({ kind: "say", value: message, leaseId: options?.leaseId });
     },
+    showMedia: async () => ({ ok: true, shown: true }),
   };
 
   const scheduled: Array<() => Promise<void>> = [];

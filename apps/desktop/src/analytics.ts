@@ -82,7 +82,7 @@ export function trackDesktopAnalyticsConsentChanged(consent: "granted" | "denied
   void flushDesktopAnalytics();
 }
 
-export function trackDesktopIntegrationActivity(activityKind: "react" | "say", properties: AnalyticsProps = {}): void {
+export function trackDesktopIntegrationActivity(activityKind: "react" | "say" | "showMedia", properties: AnalyticsProps = {}): void {
   if (getDesktopAnalyticsConsentState().consent !== "granted") return;
   const key = [activityKind, properties.integration_type, properties.target_kind, properties.shown, properties.reason].map((value) => String(value ?? "unknown")).join(":");
   if (integrationActivityKeys.has(key)) return;

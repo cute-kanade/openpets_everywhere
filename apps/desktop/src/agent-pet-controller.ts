@@ -6,7 +6,7 @@ import { clampToTerminalBounds, getConfinementState, getEffectiveConfinementBoun
 import { defaultPetWindowSize, clampToVisibleWorkArea, getDefaultPetInitialPosition } from "./display.js";
 import { debug, info } from "./logger.js";
 import { transientDisplayMs, type OpenPetsReaction } from "./local-ipc-protocol.js";
-import { clearTransientReaction, createAgentPetWindow, getTransientDisplayDurationMs, getTransientReactionAnimationMs, loadExplicitPetContent, mergePetTransientDisplay, readWindowPosition, setPetReactionState, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
+import { clearTransientReaction, createAgentPetWindow, getTransientDisplayDurationMs, getTransientReactionAnimationMs, loadExplicitPetContent, mergePetTransientDisplay, readWindowPosition, setPetReactionState, type PetShowMediaOptions, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
 import { focusTerminalWindow } from "./terminal-focus.js";
 
 const agentPetWindows = new Map<string, BrowserWindow>();
@@ -98,6 +98,14 @@ export function applyAgentPetSay(petId: string, message: string, reaction?: Open
   debug("pet.agent", "say apply", { petId, reaction, messageLength: message.length });
   if (!reaction) clearStatusBadge(petId);
   setAgentDisplay(petId, { message, reaction });
+  const shown = showAgentPet(petId);
+  return shown ? { shown } : { shown, reason: "dismissed" };
+}
+
+export function applyAgentPetShowMedia(petId: string, options: PetShowMediaOptions): { readonly shown: boolean; readonly reason?: string } {
+  debug("pet.agent", "showMedia apply", { petId, reaction: options.reaction, hasMessage: Boolean(options.message), durationMs: options.durationMs });
+  if (!options.reaction) clearStatusBadge(petId);
+  setAgentDisplay(petId, { message: options.message, reaction: options.reaction, mediaPath: options.mediaPath, displayDurationMs: options.durationMs });
   const shown = showAgentPet(petId);
   return shown ? { shown } : { shown, reason: "dismissed" };
 }

@@ -34,6 +34,7 @@ const runtime = createOpenPetsPiExtension(api, {
     releaseLease: async () => ({ released: true }),
     react: async (reaction) => { calls.push(`react:${reaction}`); },
     say: async (message, options) => { calls.push(`say:${message}:${options?.reaction ?? "none"}`); },
+    showMedia: async () => ({ ok: true, shown: true }),
   }),
 });
 

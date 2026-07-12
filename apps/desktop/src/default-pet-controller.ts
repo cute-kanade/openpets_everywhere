@@ -7,7 +7,7 @@ import { motionMoveTo } from "./pet-motion-engine.js";
 import { registerRoamingPet } from "./pet-roaming-controller.js";
 import { debug, info } from "./logger.js";
 import { transientDisplayMs, type OpenPetsReaction } from "./local-ipc-protocol.js";
-import { clearTransientReaction, createDefaultPetWindow, getSafeDefaultPetPosition, getTransientDisplayDurationMs, getTransientReactionAnimationMs, isPetWindowDragging, loadDefaultPetContent, mergePetTransientDisplay, readWindowPosition, recoverPetMouseInterop, setPetReactionState, type PetPluginBubbles, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
+import { clearTransientReaction, createDefaultPetWindow, getSafeDefaultPetPosition, getTransientDisplayDurationMs, getTransientReactionAnimationMs, isPetWindowDragging, loadDefaultPetContent, mergePetTransientDisplay, readWindowPosition, recoverPetMouseInterop, setPetReactionState, type PetPluginBubbles, type PetShowMediaOptions, type PetStatusBadgeReaction, type PetTransientDisplay } from "./pet-window.js";
 import { PetBubbleArbiter, type ActiveBubble, type PetBubbleSink } from "./plugin-bubble-arbiter.js";
 import { publishPluginPetEvent } from "./plugin-events-source.js";
 import { reclampAgentPetWindows } from "./agent-pet-controller.js";
@@ -164,6 +164,17 @@ export function applyExternalPetSay(message: string, reaction?: OpenPetsReaction
 
   if (!reaction) clearStatusBadge();
   setTransientDisplay({ message, reaction });
+  showDefaultPetForExternalEvent();
+  return { shown: isDefaultPetVisible() };
+}
+
+export function applyExternalPetShowMedia(options: PetShowMediaOptions): { readonly shown: boolean; readonly reason?: string } {
+  if (paused) {
+    return { shown: false, reason: "paused" };
+  }
+
+  if (!options.reaction) clearStatusBadge();
+  setTransientDisplay({ message: options.message, reaction: options.reaction, mediaPath: options.mediaPath, displayDurationMs: options.durationMs });
   showDefaultPetForExternalEvent();
   return { shown: isDefaultPetVisible() };
 }
