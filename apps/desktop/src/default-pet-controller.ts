@@ -1,4 +1,4 @@
-import { BrowserWindow, powerMonitor, screen, type Display } from "electron";
+import { BrowserWindow, powerMonitor, screen, shell, type Display } from "electron";
 
 import { getAppStateSnapshot, getDefaultPetPosition, getPerMonitorPetPosition, resetDefaultPetPosition, setDefaultPetPosition, setPerMonitorPetPosition, updatePreferences } from "./app-state.js";
 import { shouldShowDefaultPetForExternalEvent } from "./app-state-core.js";
@@ -174,7 +174,7 @@ export function applyExternalPetShowMedia(options: PetShowMediaOptions): { reado
   }
 
   if (!options.reaction) clearStatusBadge();
-  setTransientDisplay({ message: options.message, reaction: options.reaction, mediaPath: options.mediaPath, displayDurationMs: options.durationMs });
+  setTransientDisplay({ message: options.message, reaction: options.reaction, mediaPath: options.mediaPath, displayDurationMs: options.durationMs, clickUrl: options.clickUrl });
   showDefaultPetForExternalEvent();
   return { shown: isDefaultPetVisible() };
 }
@@ -267,6 +267,13 @@ function handleBubbleDismissed(dismissToken: string): void {
   if (dismissToken !== String(displayGeneration)) {
     debug("pet.default", "bubble dismissed stale token", { dismissToken, currentGeneration: displayGeneration });
     return;
+  }
+  const clickUrl = transientDisplay?.clickUrl;
+  if (clickUrl) {
+    info("pet.default", "media bubble clicked", { windowId: defaultPetWindow?.id });
+    void shell.openExternal(clickUrl).catch((error: unknown) => {
+      debug("pet.default", "media bubble click open failed", { error: error instanceof Error ? error.message : String(error) });
+    });
   }
   clearDefaultPetDisplayTimers();
   if (defaultPetWindow && !defaultPetWindow.isDestroyed()) {

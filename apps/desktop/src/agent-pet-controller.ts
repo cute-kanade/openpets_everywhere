@@ -105,7 +105,7 @@ export function applyAgentPetSay(petId: string, message: string, reaction?: Open
 export function applyAgentPetShowMedia(petId: string, options: PetShowMediaOptions): { readonly shown: boolean; readonly reason?: string } {
   debug("pet.agent", "showMedia apply", { petId, reaction: options.reaction, hasMessage: Boolean(options.message), durationMs: options.durationMs });
   if (!options.reaction) clearStatusBadge(petId);
-  setAgentDisplay(petId, { message: options.message, reaction: options.reaction, mediaPath: options.mediaPath, displayDurationMs: options.durationMs });
+  setAgentDisplay(petId, { message: options.message, reaction: options.reaction, mediaPath: options.mediaPath, displayDurationMs: options.durationMs, clickUrl: options.clickUrl });
   const shown = showAgentPet(petId);
   return shown ? { shown } : { shown, reason: "dismissed" };
 }

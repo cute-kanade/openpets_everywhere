@@ -191,6 +191,35 @@ export function validateMediaPath(value: unknown): string {
   return path;
 }
 
+/**
+ * Schemes that must never reach shell.openExternal from IPC input: local
+ * content and script execution (file/javascript/data/...), plain http (no
+ * downgrade from https), and Windows shell handlers with side effects.
+ * Everything else — https plus custom registered app protocols (the point of
+ * this field: hand the click back to the tool that sent the media) — is
+ * allowed; an unregistered custom scheme is a no-op at the OS level.
+ */
+const blockedClickUrlProtocols = new Set(["http:", "file:", "javascript:", "data:", "vbscript:", "blob:", "about:", "chrome:", "ms-appx:", "ms-appx-web:", "shell:", "search-ms:", "search:", "res:"]);
+
+export function validateMediaClickUrl(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new IpcProtocolError("invalid_params", "Click URL must be a string.");
+  const trimmed = value.trim();
+  if (trimmed.length < 1 || trimmed.length > 2048 || /[\x00-\x1F\x7F\s]/.test(trimmed)) {
+    throw new IpcProtocolError("invalid_params", "Click URL is invalid.");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new IpcProtocolError("invalid_params", "Click URL must be an absolute URL.");
+  }
+  if (blockedClickUrlProtocols.has(parsed.protocol.toLowerCase())) {
+    throw new IpcProtocolError("invalid_params", "Click URL scheme is not allowed.");
+  }
+  return trimmed;
+}
+
 export function validateMediaDurationMs(value: unknown): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isFinite(value) || value < minMediaDurationMs || value > maxMediaDurationMs) {
