@@ -17,6 +17,7 @@ import type { ActiveBubble } from "./plugin-bubble-arbiter.js";
 import type { PluginBubbleIndicator, PluginCommandForm, PluginBubbleHud, PluginBubbleHudItem } from "./plugin-sdk-bridge.js";
 import { defaultPetSprite, motionToSpriteState, resolveReactionSpriteState, type PetMotionState, type UniversalSpriteState } from "./reaction-animation-mapping.js";
 import { isFocusActionAvailable } from "./capabilities.js";
+import { canForwardMouseEvents as platformCanForwardMouseEvents, shouldWatchForwardedMouseEvents } from "./mouse-forwarding.js";
 import { computeEffectiveWaylandBackend, shouldPetWindowBeFocusable } from "./wayland-backend.js";
 
 export interface PetWindowInteractionHooks {
@@ -332,7 +333,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
   let forwardingWatchTimer: NodeJS.Timeout | null = null;
   const rearmTimers = new Set<NodeJS.Timeout>();
   const webContents = window.webContents;
-  const canForwardMouseEvents = process.platform === "darwin" || process.platform === "win32";
+  const canForwardMouseEvents = platformCanForwardMouseEvents(process.platform);
 
   const scheduleMouseInteropRecovery = (reason: string): void => {
     if (window.isDestroyed()) return;
@@ -375,7 +376,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
     rearmTimers.clear();
   };
 
-  const clearWindowsForwardingWatch = (): void => {
+  const clearForwardingWatch = (): void => {
     if (!forwardingWatchTimer) return;
     clearTimeout(forwardingWatchTimer);
     forwardingWatchTimer = null;
@@ -403,13 +404,13 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
     webContents.send("openpets:pet-probe-hit-test", { clientX: probe.clientX, clientY: probe.clientY, reason });
   };
 
-  const rearmWindowsMouseForwarding = (reason: string, logRearm = true): void => {
+  const rearmMouseForwarding = (reason: string, logRearm = true): void => {
     if (window.isDestroyed()) return;
     if (dragging || lastInteractive) {
-      if (logRearm) debug("pet.window", "windows mouse forwarding rearm skipped", { windowId, reason, dragging: Boolean(dragging), interactive: lastInteractive });
+      if (logRearm) debug("pet.window", "mouse forwarding rearm skipped", { windowId, reason, dragging: Boolean(dragging), interactive: lastInteractive });
       return;
     }
-    if (logRearm) debug("pet.window", "windows mouse forwarding rearm", { windowId, reason });
+    if (logRearm) debug("pet.window", "mouse forwarding rearm", { windowId, reason });
     window.setIgnoreMouseEvents(false);
     window.setIgnoreMouseEvents(true, { forward: true });
     requestCursorHitTestProbe(reason, logRearm);
@@ -418,18 +419,18 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
   const scheduleWindowsMouseForwardingRearm = (reason: string, delayMs: number): void => {
     const timer = setTimeout(() => {
       rearmTimers.delete(timer);
-      rearmWindowsMouseForwarding(reason);
+      rearmMouseForwarding(reason);
     }, delayMs);
     rearmTimers.add(timer);
   };
 
-  const scheduleWindowsForwardingWatch = (reason: string): void => {
-    if (process.platform !== "win32" || forwardingWatchTimer || dragging || lastInteractive || window.isDestroyed()) return;
+  const scheduleForwardingWatch = (reason: string): void => {
+    if (!shouldWatchForwardedMouseEvents(process.platform) || forwardingWatchTimer || dragging || lastInteractive || window.isDestroyed()) return;
     forwardingWatchTimer = setTimeout(() => {
       forwardingWatchTimer = null;
       if (window.isDestroyed() || dragging || lastInteractive) return;
-      if (getCursorProbe().inside) rearmWindowsMouseForwarding(reason, false);
-      scheduleWindowsForwardingWatch(reason);
+      if (getCursorProbe().inside) rearmMouseForwarding(reason, false);
+      scheduleForwardingWatch(reason);
     }, 750);
     forwardingWatchTimer.unref?.();
   };
@@ -438,6 +439,14 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
     if (window.isDestroyed()) return;
     if (process.platform !== "win32") {
       setPassthrough(true);
+      // macOS also depends on forwarded mouse events, and the WindowServer can
+      // stop delivering them across Space switches / display sleep. Probe the
+      // cursor now and keep the watchdog armed so the pet cannot get stuck
+      // click-through with no way back to interactive.
+      if (canForwardMouseEvents) {
+        requestCursorHitTestProbe(reason);
+        scheduleForwardingWatch(reason);
+      }
       return;
     }
 
@@ -446,7 +455,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
     // Toggle immediately, probe the current cursor hit target, then repeat the
     // toggle shortly after load because Windows sometimes re-registers mouse
     // forwarding after Chromium finishes late compositing work.
-    rearmWindowsMouseForwarding(reason);
+    rearmMouseForwarding(reason);
     scheduleWindowsMouseForwardingRearm(`${reason}+75ms`, 75);
     scheduleWindowsMouseForwardingRearm(`${reason}+175ms`, 175);
   };
@@ -462,14 +471,15 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
     const sourceName = typeof source === "string" ? source : undefined;
     if (sourceName !== "idle-forwarding-watch" || lastInteractive) debug("pet.window", "hit test", { windowId, interactive: lastInteractive, dragging, source: sourceName });
     setPassthrough(!lastInteractive && !dragging);
-    if (lastInteractive || dragging) clearWindowsForwardingWatch();
-    else scheduleWindowsForwardingWatch("idle-forwarding-watch");
+    if (lastInteractive || dragging) clearForwardingWatch();
+    else scheduleForwardingWatch("idle-forwarding-watch");
   };
 
   const handleReady = (event: IpcMainEvent): void => {
     if (!isFromWindow(event)) return;
     rendererReady = true;
     setPassthrough(true);
+    scheduleForwardingWatch("ready-forwarding-watch");
   };
 
   const handleDragStart = (event: IpcMainEvent, point: unknown): void => {
@@ -482,7 +492,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
     dragging = { startScreenX: point.screenX, startScreenY: point.screenY, startWindowX: startBounds.x, startWindowY: startBounds.y, width: startBounds.width, height: startBounds.height };
     petWindowDragging.set(window, true);
     debug("pet.window", "drag start", { windowId, point, startBounds });
-    clearWindowsForwardingWatch();
+    clearForwardingWatch();
     setPassthrough(false);
     onPetEvent?.("pet:dragStart", {});
   };
@@ -586,7 +596,7 @@ function installMousePassthroughAndDrag(window: BrowserWindow, hooks: PetWindowI
     ipcMain.off("openpets:bubble-submit", handleBubbleSubmit);
     ipcMain.off("openpets:pet-event", handlePetEvent);
     clearRearmTimers();
-    clearWindowsForwardingWatch();
+    clearForwardingWatch();
     petMouseInteropRecovery.delete(window);
     petWindowDragging.delete(window);
     if (!webContents.isDestroyed()) {

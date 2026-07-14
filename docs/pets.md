@@ -50,6 +50,17 @@ Two distinct window roles, two controllers:
 Both are created by `pet-window.ts` as transparent, frameless, always-on-top
 windows, driven through `pet-preload.cjs` for drag and click-through behavior.
 
+While a pet is click-through it only learns that the cursor is over it through
+*forwarded* mouse events (`setIgnoreMouseEvents(true, { forward: true })`), which
+Electron delivers on macOS and Windows but not on Linux (Linux pet windows are
+kept interactive instead). Both compositors can silently stop forwarding — macOS
+across Space switches, display sleep, and fullscreen transitions; Windows after
+rapid pet reloads and fullscreen sweeps — which would leave the pet stuck
+click-through and impossible to grab. A cursor-probe watchdog in `pet-window.ts`
+re-arms forwarding from the main process (`screen.getCursorScreenPoint()`), which
+keeps working even when forwarding is dead. The platform predicates live in
+`mouse-forwarding.ts`.
+
 ## Reactions → animations → speech
 
 A **reaction** is a categorical pet state (thinking, editing, testing, waiting
