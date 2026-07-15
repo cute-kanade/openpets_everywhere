@@ -1,5 +1,5 @@
 {
-  "manifestVersion": 3, "id": "openpets.calendar-airmail", "name": "$t:plugin.name", "description": "$t:plugin.description", "version": "1.2.0", "runtime": "javascript", "icon": "bell", "sdkVersion": "3.0.0", "entry": "index.js",
+  "manifestVersion": 3, "id": "openpets.calendar-airmail", "name": "$t:plugin.name", "description": "$t:plugin.description", "version": "1.2.1", "runtime": "javascript", "icon": "bell", "sdkVersion": "3.0.0", "entry": "index.js",
   "permissions": ["ui:delivery", "auth", "network", "schedule", "storage", "commands", "status"], "network": { "hosts": ["www.googleapis.com"] },
   "configSchema": { "courier": { "type": "select", "presentation": "sprite-grid", "label": "$t:config.courier.label", "description": "$t:config.courier.description", "default": "courier-airdog", "options": [
     { "value": "courier-airdog", "label": "$t:config.courier.airdog", "previewSprite": "courier-airdog" },
