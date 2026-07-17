@@ -14,6 +14,7 @@ export interface PrepareOpenCodeGlobalSetupOptions {
   readonly pluginVersion?: string;
   readonly commandMode?: OpenCodeCommandMode;
   readonly cliEntryPath?: string;
+  readonly excludeReactions?: readonly string[];
 }
 
 export interface PreparedOpenCodeGlobalSetup {
@@ -138,7 +139,7 @@ function buildNextGlobalConfig(config: Record<string, unknown>, petId: string | 
   mcp.openpets = buildOpenCodeMcpEntry({ cliVersion: options.cliVersion, petId, commandMode: options.commandMode, cliEntryPath: options.cliEntryPath });
   const instructionPath = buildOpenCodeInstructionPath("global", options.configDir);
   const instructions = [...new Set([...(Array.isArray(config.instructions) ? config.instructions.filter((entry): entry is string => typeof entry === "string") : []), instructionPath])];
-  const plugin = [...(Array.isArray(config.plugin) ? config.plugin.filter((entry) => !isManagedOpenPetsPluginEntry(entry)) : []), buildOpenCodePluginPreview(petId, options.pluginVersion ?? options.cliVersion)];
+  const plugin = [...(Array.isArray(config.plugin) ? config.plugin.filter((entry) => !isManagedOpenPetsPluginEntry(entry)) : []), buildOpenCodePluginPreview({ petId, packageVersion: options.pluginVersion ?? options.cliVersion, excludeReactions: options.excludeReactions })];
   return { mcp, instructions, plugin };
 }
 

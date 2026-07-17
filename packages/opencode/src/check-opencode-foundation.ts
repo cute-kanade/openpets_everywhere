@@ -38,8 +38,11 @@ try {
   assert.throws(() => buildOpenCodeMcpEntry({ cliVersion: "0.0.0", petId: "bad/pet" }));
   assert.equal(buildOpenCodeInstructionPath("project"), ".opencode/openpets.md");
   assert.equal(buildOpenCodeInstructionPath("global", join(root, "global")), join(root, "global", "openpets.md"));
-  assert.deepEqual(buildOpenCodePluginPreview("fixer"), ["@open-pets/opencode", { pet: "fixer" }]);
-  assert.deepEqual(buildOpenCodePluginPreview("fixer", "0.0.0"), ["@open-pets/opencode@0.0.0", { pet: "fixer" }]);
+  assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer" }), ["@open-pets/opencode", { pet: "fixer" }]);
+  assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer", packageVersion: "0.0.0" }), ["@open-pets/opencode@0.0.0", { pet: "fixer" }]);
+  assert.deepEqual(buildOpenCodePluginPreview({}), "@open-pets/opencode");
+  assert.deepEqual(buildOpenCodePluginPreview({ excludeReactions: ["success", "thinking"] }), ["@open-pets/opencode", { excludeReactions: ["success", "thinking"] }]);
+  assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer", excludeReactions: ["success"] }), ["@open-pets/opencode", { pet: "fixer", excludeReactions: ["success"] }]);
 
   const jsonc = `{
     // keep this comment
@@ -87,6 +90,8 @@ try {
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", {}]] }], "fixer", "0.0.0").status, "custom");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "fixer" }, "extra"]] }], "fixer", "0.0.0").status, "custom");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "fixer", extra: true }]] }], "fixer", "0.0.0").status, "custom");
+  assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "fixer", excludeReactions: ["success"] }]] }], "fixer", "0.0.0").status, "needs_update", "plugin with excludeReactions but no matching expected spec should need update");
+  assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "helper", excludeReactions: ["success"] }]] }], "fixer", "0.0.0").status, "needs_update", "plugin with excludeReactions but wrong pet is managed-but-outdated");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: ["./openpets-custom-plugin.js"] }], "fixer").status, "custom");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode", { pet: "fixer" }], "./openpets-custom-plugin.js"] }], "fixer").status, "conflict");
 

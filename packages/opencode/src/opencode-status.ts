@@ -36,7 +36,7 @@ export function classifyOpenCodeInstructionsStatus(configs: readonly Record<stri
 }
 
 export function classifyOpenCodePluginStatus(configs: readonly Record<string, unknown>[], petId?: string, packageVersion?: string): OpenCodeStatusResult {
-  const expected = buildOpenCodePluginPreview(petId, packageVersion);
+  const expected = buildOpenCodePluginPreview({ petId, packageVersion });
   const pluginEntries = configs.flatMap((config, index) => Array.isArray(config.plugin) ? config.plugin.map((entry) => ({ source: String(index), entry })) : []);
   const current = pluginEntries.filter(({ entry }) => isExpectedPlugin(entry, expected));
   const recognizable = pluginEntries.filter(({ entry }) => isManagedOpenPetsPluginEntry(entry));
@@ -88,7 +88,7 @@ function isSameCommand(command: readonly string[], expected: readonly string[]):
   return command.length === expected.length && command.every((part, index) => part === expected[index]);
 }
 
-function isExpectedPlugin(value: unknown, expected: string | readonly [string, { readonly pet?: string }]): boolean {
+function isExpectedPlugin(value: unknown, expected: string | readonly [string, { readonly pet?: string; readonly excludeReactions?: readonly string[] }]): boolean {
   if (typeof expected === "string") return value === expected;
   return Array.isArray(value) && value.length === 2 && value[0] === expected[0] && isSamePluginOptions(value[1], expected[1]);
 }
@@ -106,8 +106,14 @@ export function isOpenPetsLikePluginEntry(value: unknown): boolean {
 
 function isPetPluginOptions(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  const keys = Object.keys(value);
-  return keys.length === 1 && keys[0] === "pet" && typeof value.pet === "string" && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value.pet);
+  const keys = Object.keys(value).sort();
+  if (keys.length === 1) return keys[0] === "pet" && typeof value.pet === "string" && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value.pet);
+  if (keys.length === 2) {
+    if (keys[0] !== "excludeReactions" || keys[1] !== "pet") return false;
+    if (typeof value.pet !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(value.pet)) return false;
+    return Array.isArray(value.excludeReactions) && value.excludeReactions.every((r: unknown) => typeof r === "string");
+  }
+  return false;
 }
 
 function isSameMcpEntry(value: unknown, expected: { readonly type: "local"; readonly command: readonly string[]; readonly enabled: true }): boolean {
@@ -128,10 +134,13 @@ function hasValidMcpEnvironment(value: unknown): boolean {
   return Object.entries(value).every(([key, envValue]) => /^[A-Z_][A-Z0-9_]*$/.test(key) && typeof envValue === "string");
 }
 
-function isSamePluginOptions(value: unknown, expected: { readonly pet?: string }): boolean {
+function isSamePluginOptions(value: unknown, expected: { readonly pet?: string; readonly excludeReactions?: readonly string[] }): boolean {
   if (!isRecord(value)) return Object.keys(expected).length === 0;
-  const keys = Object.keys(value);
-  return keys.length === Object.keys(expected).length && value.pet === expected.pet;
+  if (value.pet !== expected.pet) return false;
+  const expectedExclusions = Array.isArray(expected.excludeReactions) ? expected.excludeReactions : [];
+  const actualExclusions = Array.isArray(value.excludeReactions) ? value.excludeReactions : [];
+  if (expectedExclusions.length !== actualExclusions.length) return false;
+  return expectedExclusions.every((r, i) => r === actualExclusions[i]);
 }
 
 function isOpenPetsLikeInstruction(value: string): boolean {

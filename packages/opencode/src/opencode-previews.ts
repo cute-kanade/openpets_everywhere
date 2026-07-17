@@ -43,11 +43,28 @@ export function buildOpenCodeInstructionPath(scope: "project" | "global", config
   return join(configDir, "openpets.md");
 }
 
-export type OpenCodePluginSpec = string | readonly [string, { readonly pet?: string }];
+export type OpenCodePluginSpecOptions = {
+  readonly pet?: string;
+  readonly excludeReactions?: readonly string[];
+};
 
-export function buildOpenCodePluginPreview(petId?: string, packageVersion?: string): OpenCodePluginSpec {
-  const spec = packageVersion ? `@open-pets/opencode@${packageVersion}` : "@open-pets/opencode";
-  return petId === undefined ? spec : [spec, { pet: validateOpenPetsPetArg(petId) }];
+export type OpenCodePluginSpec = string | readonly [string, OpenCodePluginSpecOptions];
+
+export interface BuildOpenCodePluginPreviewOptions {
+  readonly petId?: string;
+  readonly packageVersion?: string;
+  readonly excludeReactions?: readonly string[];
+}
+
+export function buildOpenCodePluginPreview(options?: BuildOpenCodePluginPreviewOptions): OpenCodePluginSpec {
+  const spec = options?.packageVersion ? `@open-pets/opencode@${options.packageVersion}` : "@open-pets/opencode";
+  const hasPet = options?.petId !== undefined;
+  const hasExclusions = Array.isArray(options?.excludeReactions) && options.excludeReactions!.length > 0;
+  if (!hasPet && !hasExclusions) return spec;
+  return [spec, {
+    ...(hasPet ? { pet: validateOpenPetsPetArg(options!.petId!) } : {}),
+    ...(hasExclusions ? { excludeReactions: options!.excludeReactions! } : {}),
+  }];
 }
 
 export function formatOpenCodeMcpConfig(options: OpenCodePreviewOptions): Record<string, unknown> {

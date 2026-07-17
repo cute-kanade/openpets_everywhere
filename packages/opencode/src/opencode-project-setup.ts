@@ -12,6 +12,7 @@ export interface PrepareOpenCodeProjectSetupOptions {
   readonly cliVersion: string;
   readonly commandMode?: OpenCodeCommandMode;
   readonly cliEntryPath?: string;
+  readonly excludeReactions?: readonly string[];
 }
 
 export interface PreparedOpenCodeProjectSetup {
@@ -87,7 +88,7 @@ function buildNextConfig(config: Record<string, unknown>, petId: string, options
   mcp.openpets = buildOpenCodeMcpEntry({ cliVersion: options.cliVersion, petId, commandMode: options.commandMode, cliEntryPath: options.cliEntryPath });
   const instructionPath = buildOpenCodeInstructionPath("project");
   const instructions = [...new Set([...(Array.isArray(config.instructions) ? config.instructions.filter((entry): entry is string => typeof entry === "string") : []), instructionPath])];
-  const pluginSpec = buildOpenCodePluginPreview(petId, options.cliVersion);
+  const pluginSpec = buildOpenCodePluginPreview({ petId, packageVersion: options.cliVersion, excludeReactions: options.excludeReactions });
   const plugin = [...(Array.isArray(config.plugin) ? config.plugin.filter((entry) => !isManagedOpenPetsPluginEntry(entry)) : []), pluginSpec];
   return { mcp, instructions, plugin };
 }

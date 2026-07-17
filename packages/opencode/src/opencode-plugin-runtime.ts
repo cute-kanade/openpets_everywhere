@@ -10,6 +10,8 @@ import { validateOpenPetsPetArg } from "./opencode-previews.js";
 export interface OpenCodePluginOptions {
   readonly pet?: string;
   readonly debug?: boolean;
+  /** Reactions the user wants suppressed. Excluded reactions are silently dropped before any IPC or throttle work. */
+  readonly excludeReactions?: readonly OpenPetsReaction[];
 }
 
 export interface OpenCodePluginRuntimeOptions extends OpenCodePluginOptions {
@@ -37,17 +39,23 @@ const speechCooldownMs = 20_000;
 const permissionCooldownMs = 3_000;
 const reactionCooldownMs = 10_000;
 
+export function isReactionExcluded(reaction: OpenPetsReaction, excludedSet: ReadonlySet<string>): boolean {
+  return excludedSet.has(reaction);
+}
+
 export function createOpenPetsOpenCodeHooks(options: OpenCodePluginRuntimeOptions = {}): OpenCodeHooks {
   const pet = options.pet === undefined ? undefined : validateOpenPetsPetArg(options.pet);
   const clientFactory = options.clientFactory ?? (() => createOpenPetsClient({ connectTimeoutMs: 500, responseTimeoutMs: 500 }));
   const schedule = options.schedule ?? defaultSchedule;
   const debug = options.debug === true || process.env.OPENPETS_DEBUG === "1";
   const debugLog = options.debugLog ?? ((message) => { if (debug) process.stderr.write(`${message}\n`); });
+  const excludedReactions = buildExcludedReactionsSet(options.excludeReactions);
   let client: OpenPetsClient | undefined;
   let lease: { readonly leaseId: string; readonly expiresAt?: number } | undefined;
 
   const run = (decision: OpenCodePluginDecision | undefined): void => {
     if (!decision?.reaction) return;
+    if (isReactionExcluded(decision.reaction, excludedReactions)) return;
     const reaction = decision.reaction;
     try {
       schedule(async () => {
@@ -152,6 +160,22 @@ function shouldSendThrottleKey(key: string, cooldown: number, now: number, path:
   writeThrottleState(path, state);
   return true;
 }
+
+function buildExcludedReactionsSet(excludeReactions?: readonly OpenPetsReaction[]): ReadonlySet<string> {
+  if (!excludeReactions || excludeReactions.length === 0) return emptySet;
+  const valid = new Set<string>();
+  for (const r of excludeReactions) {
+    if (typeof r === "string" && allowedReactionStrings.has(r)) valid.add(r);
+  }
+  return valid.size > 0 ? valid : emptySet;
+}
+
+const emptySet: ReadonlySet<string> = new Set();
+
+const allowedReactionStrings: ReadonlySet<string> = new Set([
+  "idle", "thinking", "working", "editing", "running", "testing",
+  "waiting", "waving", "success", "error", "celebrating",
+]);
 
 function isTestLikeToolArgs(args: unknown): boolean {
   const command = isRecord(args) && typeof args.command === "string" ? args.command.slice(0, 300) : "";

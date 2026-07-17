@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import type { OpenPetsClient, OpenPetsReaction } from "@open-pets/client";
 
 import plugin, { openPetsOpenCodePluginId } from "./plugin.js";
-import { classifyOpenCodeBusEvent, classifyOpenCodeToolReaction, createOpenPetsOpenCodeHooks, getDefaultOpenCodeThrottlePath, shouldIgnoreOpenPetsTool } from "./opencode-plugin-runtime.js";
+import { classifyOpenCodeBusEvent, classifyOpenCodeToolReaction, createOpenPetsOpenCodeHooks, getDefaultOpenCodeThrottlePath, isReactionExcluded, shouldIgnoreOpenPetsTool } from "./opencode-plugin-runtime.js";
 
 assert.equal(plugin.id, openPetsOpenCodePluginId);
 assert.equal(typeof plugin.server, "function");
@@ -120,5 +120,120 @@ const loaded = await plugin.server({}, { pet: "fixer" });
 assert.equal(typeof loaded.event, "function");
 assert.equal(typeof loaded["chat.message"], "function");
 assert.equal(typeof loaded["tool.execute.before"], "function");
+
+// --- excludeReactions tests ---
+
+// isReactionExcluded: basic Set check
+assert.equal(isReactionExcluded("success", new Set(["success", "thinking"])), true);
+assert.equal(isReactionExcluded("error", new Set(["success", "thinking"])), false);
+assert.equal(isReactionExcluded("success", new Set()), false);
+
+// Excluded reaction (success) is NOT sent to client when session.status: idle fires
+{
+  const dir2 = mkdtempSync(join(tmpdir(), "openpets-opencode-exclude-"));
+  try {
+    const excludeCalls: string[] = [];
+    const excludeClient: OpenPetsClient = {
+      hello: async () => ({}),
+      status: async () => ({ ok: true, appRunning: true }),
+      listPets: async () => ({ ok: true, pets: [], defaultPetId: "builtin" }),
+      installPet: async () => { throw new Error("unused"); },
+      installLocalPet: async () => { throw new Error("unused"); },
+      acquireLease: async () => ({ leaseId: "lease-ex", targetKind: "explicit", actualTargetPetId: "fixer", actualTargetPetName: "Fixer", usingDefaultPet: false, expiresAt: Date.now() + 15_000, leaseActive: true }),
+      heartbeatLease: async () => ({ leaseId: "lease-ex", expiresAt: Date.now() + 15_000 }),
+      releaseLease: async () => ({ released: true }),
+      react: async (reaction: OpenPetsReaction) => { excludeCalls.push(reaction); },
+      say: async (message: string) => { excludeCalls.push(`say:${message}`); },
+      showMedia: async () => ({ ok: true, shown: true }),
+    };
+    const scheduled2: Array<() => Promise<void>> = [];
+    const hooks2 = createOpenPetsOpenCodeHooks({
+      pet: "fixer",
+      excludeReactions: ["success", "thinking"],
+      clientFactory: () => excludeClient,
+      schedule: (work) => { scheduled2.push(work); },
+      throttlePath: join(dir2, "throttle.json"),
+      now: () => 300_000,
+    });
+
+    // session.status idle → success → should be excluded, nothing scheduled
+    hooks2.event({ event: { type: "session.status", properties: { status: { type: "idle" } } } });
+    assert.equal(scheduled2.length, 0, "excluded success reaction must not schedule any work");
+
+    // chat.message → thinking → should be excluded
+    hooks2["chat.message"]({}, {});
+    assert.equal(scheduled2.length, 0, "excluded thinking reaction must not schedule any work");
+
+    // session.error → error → NOT excluded, should schedule (with speech)
+    hooks2.event({ event: { type: "session.error" } });
+    assert.equal(scheduled2.length, 1, "non-excluded error reaction should schedule");
+    await scheduled2.shift()?.();
+    assert.ok(excludeCalls.at(-1)?.startsWith("say:"), "non-excluded error reaction should reach client via say");
+
+    // tool.execute.before with edit → editing → NOT excluded, should schedule
+    hooks2["tool.execute.before"]({ tool: "edit" }, { args: {} });
+    assert.equal(scheduled2.length, 1, "non-excluded editing reaction should schedule");
+    await scheduled2.shift()?.();
+    assert.equal(excludeCalls.at(-1), "editing", "non-excluded editing reaction should reach client");
+
+    assert.equal(excludeCalls.includes("success"), false, "success must never have been sent");
+    assert.equal(excludeCalls.includes("thinking"), false, "thinking must never have been sent");
+  } finally {
+    rmSync(dir2, { recursive: true, force: true });
+  }
+}
+
+// Empty excludeReactions array has no effect (current behavior preserved)
+{
+  const dir3 = mkdtempSync(join(tmpdir(), "openpets-opencode-empty-exclude-"));
+  try {
+    const emptyExcludeCalls: string[] = [];
+    const emptyExcludeClient: OpenPetsClient = {
+      hello: async () => ({}),
+      status: async () => ({ ok: true, appRunning: true }),
+      listPets: async () => ({ ok: true, pets: [], defaultPetId: "builtin" }),
+      installPet: async () => { throw new Error("unused"); },
+      installLocalPet: async () => { throw new Error("unused"); },
+      acquireLease: async () => ({ leaseId: "lease-empty", targetKind: "explicit", actualTargetPetId: "fixer", actualTargetPetName: "Fixer", usingDefaultPet: false, expiresAt: Date.now() + 15_000, leaseActive: true }),
+      heartbeatLease: async () => ({ leaseId: "lease-empty", expiresAt: Date.now() + 15_000 }),
+      releaseLease: async () => ({ released: true }),
+      react: async (reaction: OpenPetsReaction) => { emptyExcludeCalls.push(reaction); },
+      say: async () => {},
+      showMedia: async () => ({ ok: true, shown: true }),
+    };
+    const scheduled3: Array<() => Promise<void>> = [];
+    const hooks3 = createOpenPetsOpenCodeHooks({
+      pet: "fixer",
+      excludeReactions: [],
+      clientFactory: () => emptyExcludeClient,
+      schedule: (work) => { scheduled3.push(work); },
+      throttlePath: join(dir3, "throttle.json"),
+      now: () => 400_000,
+    });
+    hooks3.event({ event: { type: "session.status", properties: { status: { type: "idle" } } } });
+    assert.equal(scheduled3.length, 1, "empty excludeReactions should not block success");
+    await scheduled3.shift()?.();
+    assert.equal(emptyExcludeCalls.at(-1), "success");
+  } finally {
+    rmSync(dir3, { recursive: true, force: true });
+  }
+}
+
+// Invalid reaction strings in excludeReactions are silently ignored
+{
+  const validSet = new Set<string>();
+  assert.equal(isReactionExcluded("success", validSet), false, "empty set should not exclude anything");
+  // Invalid reaction names are ignored by buildExcludedReactionsSet (tested implicitly: no crash on invalid input)
+  const hooks4 = createOpenPetsOpenCodeHooks({
+    excludeReactions: ["not-a-real-reaction" as OpenPetsReaction, 42 as unknown as OpenPetsReaction],
+    throttlePath: join(dir, "invalid-throttle.json"),
+    now: () => 500_000,
+  });
+  assert.equal(typeof hooks4.event, "function", "invalid excludeReactions should not crash hook creation");
+}
+
+// Classification is unaffected by filter (filter is in run(), not classify*)
+assert.deepEqual(classifyOpenCodeBusEvent({ type: "session.status", properties: { status: { type: "idle" } } }), { reaction: "success" });
+assert.deepEqual(classifyOpenCodeToolReaction("edit", {}), "editing");
 
 console.error("OpenCode plugin validation passed.");
