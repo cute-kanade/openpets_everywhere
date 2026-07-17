@@ -5,11 +5,13 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createOpenPetsClient, type OpenPetsClient, type OpenPetsReaction } from "@open-pets/client";
 import { pickHookSpeech, type HookSpeechCategory, validateHookSpeech } from "@open-pets/agent-events";
 
-import { validateOpenPetsPetArg } from "./opencode-previews.js";
+import { sanitizeOpenCodeExcludedReactions, validateOpenPetsPetArg } from "./opencode-previews.js";
 
 export interface OpenCodePluginOptions {
   readonly pet?: string;
   readonly debug?: boolean;
+  /** Reactions the user wants suppressed. Excluded reactions are silently dropped before any IPC or throttle work. */
+  readonly excludeReactions?: readonly OpenPetsReaction[];
 }
 
 export interface OpenCodePluginRuntimeOptions extends OpenCodePluginOptions {
@@ -37,17 +39,23 @@ const speechCooldownMs = 20_000;
 const permissionCooldownMs = 3_000;
 const reactionCooldownMs = 10_000;
 
+export function isReactionExcluded(reaction: OpenPetsReaction, excludedSet: ReadonlySet<string>): boolean {
+  return excludedSet.has(reaction);
+}
+
 export function createOpenPetsOpenCodeHooks(options: OpenCodePluginRuntimeOptions = {}): OpenCodeHooks {
   const pet = options.pet === undefined ? undefined : validateOpenPetsPetArg(options.pet);
   const clientFactory = options.clientFactory ?? (() => createOpenPetsClient({ connectTimeoutMs: 500, responseTimeoutMs: 500 }));
   const schedule = options.schedule ?? defaultSchedule;
   const debug = options.debug === true || process.env.OPENPETS_DEBUG === "1";
   const debugLog = options.debugLog ?? ((message) => { if (debug) process.stderr.write(`${message}\n`); });
+  const excludedReactions = buildExcludedReactionsSet(options.excludeReactions);
   let client: OpenPetsClient | undefined;
   let lease: { readonly leaseId: string; readonly expiresAt?: number } | undefined;
 
   const run = (decision: OpenCodePluginDecision | undefined): void => {
     if (!decision?.reaction) return;
+    if (isReactionExcluded(decision.reaction, excludedReactions)) return;
     const reaction = decision.reaction;
     try {
       schedule(async () => {
@@ -152,6 +160,13 @@ function shouldSendThrottleKey(key: string, cooldown: number, now: number, path:
   writeThrottleState(path, state);
   return true;
 }
+
+function buildExcludedReactionsSet(excludeReactions?: readonly OpenPetsReaction[]): ReadonlySet<string> {
+  const valid = sanitizeOpenCodeExcludedReactions(excludeReactions);
+  return valid.length > 0 ? new Set(valid) : emptySet;
+}
+
+const emptySet: ReadonlySet<string> = new Set();
 
 function isTestLikeToolArgs(args: unknown): boolean {
   const command = isRecord(args) && typeof args.command === "string" ? args.command.slice(0, 300) : "";

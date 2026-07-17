@@ -12,6 +12,7 @@ export interface PrepareOpenCodeProjectSetupOptions {
   readonly cliVersion: string;
   readonly commandMode?: OpenCodeCommandMode;
   readonly cliEntryPath?: string;
+  readonly excludeReactions?: readonly string[];
 }
 
 export interface PreparedOpenCodeProjectSetup {
@@ -51,7 +52,7 @@ export function prepareOpenCodeProjectSetup(options: PrepareOpenCodeProjectSetup
   const instructionContent = existsSync(instructionPath) ? readSafeInstructionFile(instructionPath) : "";
   const mcpStatus = classifyOpenCodeMcpStatus(configs, { cliVersion: options.cliVersion, petId, commandMode: options.commandMode, cliEntryPath: options.cliEntryPath });
   const instructionStatus = classifyOpenCodeInstructionsStatus(configs, "project", undefined, { [instructionRelPath]: instructionContent });
-  const pluginStatus = classifyOpenCodePluginStatus(configs, petId, options.cliVersion);
+  const pluginStatus = classifyOpenCodePluginStatus(configs, petId, options.cliVersion, options.excludeReactions);
   for (const status of [mcpStatus, instructionStatus, pluginStatus]) {
     if (status.status === "custom" || status.status === "conflict" || status.status === "error") throw new Error(`${status.message} Edit or remove the custom OpenPets OpenCode entry, then rerun setup.`);
   }
@@ -87,7 +88,7 @@ function buildNextConfig(config: Record<string, unknown>, petId: string, options
   mcp.openpets = buildOpenCodeMcpEntry({ cliVersion: options.cliVersion, petId, commandMode: options.commandMode, cliEntryPath: options.cliEntryPath });
   const instructionPath = buildOpenCodeInstructionPath("project");
   const instructions = [...new Set([...(Array.isArray(config.instructions) ? config.instructions.filter((entry): entry is string => typeof entry === "string") : []), instructionPath])];
-  const pluginSpec = buildOpenCodePluginPreview(petId, options.cliVersion);
+  const pluginSpec = buildOpenCodePluginPreview({ petId, packageVersion: options.cliVersion, excludeReactions: options.excludeReactions });
   const plugin = [...(Array.isArray(config.plugin) ? config.plugin.filter((entry) => !isManagedOpenPetsPluginEntry(entry)) : []), pluginSpec];
   return { mcp, instructions, plugin };
 }

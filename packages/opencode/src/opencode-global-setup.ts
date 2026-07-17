@@ -14,6 +14,7 @@ export interface PrepareOpenCodeGlobalSetupOptions {
   readonly pluginVersion?: string;
   readonly commandMode?: OpenCodeCommandMode;
   readonly cliEntryPath?: string;
+  readonly excludeReactions?: readonly string[];
 }
 
 export interface PreparedOpenCodeGlobalSetup {
@@ -57,7 +58,7 @@ export function prepareOpenCodeGlobalSetup(options: PrepareOpenCodeGlobalSetupOp
   const instructionContent = existsSync(instructionPath) ? readSafeInstructionFile(instructionPath) : "";
   const mcpStatus = classifyOpenCodeMcpStatus(configs, { cliVersion: options.cliVersion, petId, commandMode: options.commandMode, cliEntryPath: options.cliEntryPath });
   const instructionStatus = classifyOpenCodeInstructionsStatus(configs, "global", options.configDir, { [instructionPath]: instructionContent });
-  const pluginStatus = classifyOpenCodePluginStatus(configs, petId, options.pluginVersion ?? options.cliVersion);
+  const pluginStatus = classifyOpenCodePluginStatus(configs, petId, options.pluginVersion ?? options.cliVersion, options.excludeReactions);
   for (const status of [mcpStatus, instructionStatus, pluginStatus]) {
     if (status.status === "custom" || status.status === "conflict" || status.status === "error") throw new Error(`${status.message} Edit or remove the custom OpenPets OpenCode entry, then rerun setup.`);
   }
@@ -138,7 +139,7 @@ function buildNextGlobalConfig(config: Record<string, unknown>, petId: string | 
   mcp.openpets = buildOpenCodeMcpEntry({ cliVersion: options.cliVersion, petId, commandMode: options.commandMode, cliEntryPath: options.cliEntryPath });
   const instructionPath = buildOpenCodeInstructionPath("global", options.configDir);
   const instructions = [...new Set([...(Array.isArray(config.instructions) ? config.instructions.filter((entry): entry is string => typeof entry === "string") : []), instructionPath])];
-  const plugin = [...(Array.isArray(config.plugin) ? config.plugin.filter((entry) => !isManagedOpenPetsPluginEntry(entry)) : []), buildOpenCodePluginPreview(petId, options.pluginVersion ?? options.cliVersion)];
+  const plugin = [...(Array.isArray(config.plugin) ? config.plugin.filter((entry) => !isManagedOpenPetsPluginEntry(entry)) : []), buildOpenCodePluginPreview({ petId, packageVersion: options.pluginVersion ?? options.cliVersion, excludeReactions: options.excludeReactions })];
   return { mcp, instructions, plugin };
 }
 

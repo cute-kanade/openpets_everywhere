@@ -127,7 +127,9 @@ Ships both a config manager and a runtime plugin.
 - **Runtime** (`opencode-plugin-runtime.ts`, plugin id `open-pets-opencode`):
   hooks `event`, `chat.message`, `tool.execute.before/after`, classifies them to
   reactions/speech, manages a lease (renew with a 2s buffer), and applies the
-  same throttle windows as Claude.
+  same throttle windows as Claude. The optional `excludeReactions` plugin option is an
+  array of reactions to suppress before IPC or throttling. It can be used without a
+  `pet` target: `["@open-pets/opencode", { "excludeReactions": ["success", "thinking"] }]`.
 
 ## Cursor — `@open-pets/cursor`
 

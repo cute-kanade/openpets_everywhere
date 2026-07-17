@@ -1,5 +1,7 @@
 import { isAbsolute, join } from "node:path";
 
+import { allowedReactions, type OpenPetsReaction } from "@open-pets/client";
+
 export const openCodeMcpServerName = "openpets";
 export const openPetsCliPackageName = "@open-pets/cli";
 export type OpenCodeCommandMode = "published" | "local" | "bundled";
@@ -43,11 +45,34 @@ export function buildOpenCodeInstructionPath(scope: "project" | "global", config
   return join(configDir, "openpets.md");
 }
 
-export type OpenCodePluginSpec = string | readonly [string, { readonly pet?: string }];
+export type OpenCodePluginSpecOptions = {
+  readonly pet?: string;
+  readonly excludeReactions?: readonly string[];
+};
 
-export function buildOpenCodePluginPreview(petId?: string, packageVersion?: string): OpenCodePluginSpec {
-  const spec = packageVersion ? `@open-pets/opencode@${packageVersion}` : "@open-pets/opencode";
-  return petId === undefined ? spec : [spec, { pet: validateOpenPetsPetArg(petId) }];
+export type OpenCodePluginSpec = string | readonly [string, OpenCodePluginSpecOptions];
+
+export interface BuildOpenCodePluginPreviewOptions {
+  readonly petId?: string;
+  readonly packageVersion?: string;
+  readonly excludeReactions?: readonly string[];
+}
+
+export function sanitizeOpenCodeExcludedReactions(excludeReactions?: readonly string[]): readonly OpenPetsReaction[] {
+  if (!excludeReactions) return [];
+  return [...new Set(excludeReactions.filter((reaction): reaction is OpenPetsReaction => typeof reaction === "string" && allowedReactions.includes(reaction as OpenPetsReaction)))];
+}
+
+export function buildOpenCodePluginPreview(options?: BuildOpenCodePluginPreviewOptions): OpenCodePluginSpec {
+  const spec = options?.packageVersion ? `@open-pets/opencode@${options.packageVersion}` : "@open-pets/opencode";
+  const hasPet = options?.petId !== undefined;
+  const excludeReactions = sanitizeOpenCodeExcludedReactions(options?.excludeReactions);
+  const hasExclusions = excludeReactions.length > 0;
+  if (!hasPet && !hasExclusions) return spec;
+  return [spec, {
+    ...(hasPet ? { pet: validateOpenPetsPetArg(options!.petId!) } : {}),
+    ...(hasExclusions ? { excludeReactions } : {}),
+  }];
 }
 
 export function formatOpenCodeMcpConfig(options: OpenCodePreviewOptions): Record<string, unknown> {

@@ -38,8 +38,11 @@ try {
   assert.throws(() => buildOpenCodeMcpEntry({ cliVersion: "0.0.0", petId: "bad/pet" }));
   assert.equal(buildOpenCodeInstructionPath("project"), ".opencode/openpets.md");
   assert.equal(buildOpenCodeInstructionPath("global", join(root, "global")), join(root, "global", "openpets.md"));
-  assert.deepEqual(buildOpenCodePluginPreview("fixer"), ["@open-pets/opencode", { pet: "fixer" }]);
-  assert.deepEqual(buildOpenCodePluginPreview("fixer", "0.0.0"), ["@open-pets/opencode@0.0.0", { pet: "fixer" }]);
+  assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer" }), ["@open-pets/opencode", { pet: "fixer" }]);
+  assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer", packageVersion: "0.0.0" }), ["@open-pets/opencode@0.0.0", { pet: "fixer" }]);
+  assert.deepEqual(buildOpenCodePluginPreview({}), "@open-pets/opencode");
+  assert.deepEqual(buildOpenCodePluginPreview({ excludeReactions: ["success", "thinking", "not-a-reaction"] }), ["@open-pets/opencode", { excludeReactions: ["success", "thinking"] }], "config previews must not persist unrecognized exclusions");
+  assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer", excludeReactions: ["success"] }), ["@open-pets/opencode", { pet: "fixer", excludeReactions: ["success"] }]);
 
   const jsonc = `{
     // keep this comment
@@ -87,6 +90,10 @@ try {
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", {}]] }], "fixer", "0.0.0").status, "custom");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "fixer" }, "extra"]] }], "fixer", "0.0.0").status, "custom");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "fixer", extra: true }]] }], "fixer", "0.0.0").status, "custom");
+  assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "fixer", excludeReactions: ["success"] }]] }], "fixer", "0.0.0").status, "needs_update", "plugin with excludeReactions but no matching expected spec should need update");
+  assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "helper", excludeReactions: ["success"] }]] }], "fixer", "0.0.0").status, "needs_update", "plugin with excludeReactions but wrong pet is managed-but-outdated");
+  assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { excludeReactions: ["success", "thinking"] }]] }], undefined, "0.0.0", ["thinking", "success"]).status, "installed", "exclusions-only plugin options round-trip without a pet regardless of ordering");
+  assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { excludeReactions: ["success", 1] }]] }], undefined, "0.0.0", ["success"]).status, "custom", "invalid exclusions remain custom rather than managed");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: ["./openpets-custom-plugin.js"] }], "fixer").status, "custom");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode", { pet: "fixer" }], "./openpets-custom-plugin.js"] }], "fixer").status, "conflict");
 
@@ -131,6 +138,11 @@ try {
   const globalRemove = prepareOpenCodeGlobalRemove(globalDir);
   writePreparedOpenCodeGlobalRemove(globalRemove);
   assert.equal(doctorOpenCodeGlobalSetup(globalDir).status, "not_installed");
+
+  const globalExclusionsOnly = join(root, "global-exclusions-only");
+  writePreparedOpenCodeGlobalSetup(prepareOpenCodeGlobalSetup({ configDir: globalExclusionsOnly, cliVersion: "0.0.0", excludeReactions: ["success", "thinking", "not-a-reaction"] }));
+  assert.doesNotMatch(readFileSync(join(globalExclusionsOnly, "opencode.jsonc"), "utf8"), /not-a-reaction/, "setup must not persist unrecognized exclusions");
+  assert.doesNotThrow(() => prepareOpenCodeGlobalSetup({ configDir: globalExclusionsOnly, cliVersion: "0.0.0", excludeReactions: ["thinking", "success", "not-a-reaction"] }), "exclusions-only setup should recognize its existing plugin entry");
 
   const globalLower = join(root, "global-lower");
   mkdirSync(globalLower);

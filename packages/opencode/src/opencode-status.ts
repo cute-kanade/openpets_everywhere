@@ -35,8 +35,8 @@ export function classifyOpenCodeInstructionsStatus(configs: readonly Record<stri
   return { status: "custom", message: "OpenCode has custom OpenPets-like instruction entries.", matches: customEntries.map((entry) => entry.source) };
 }
 
-export function classifyOpenCodePluginStatus(configs: readonly Record<string, unknown>[], petId?: string, packageVersion?: string): OpenCodeStatusResult {
-  const expected = buildOpenCodePluginPreview(petId, packageVersion);
+export function classifyOpenCodePluginStatus(configs: readonly Record<string, unknown>[], petId?: string, packageVersion?: string, excludeReactions?: readonly string[]): OpenCodeStatusResult {
+  const expected = buildOpenCodePluginPreview({ petId, packageVersion, excludeReactions });
   const pluginEntries = configs.flatMap((config, index) => Array.isArray(config.plugin) ? config.plugin.map((entry) => ({ source: String(index), entry })) : []);
   const current = pluginEntries.filter(({ entry }) => isExpectedPlugin(entry, expected));
   const recognizable = pluginEntries.filter(({ entry }) => isManagedOpenPetsPluginEntry(entry));
@@ -88,7 +88,7 @@ function isSameCommand(command: readonly string[], expected: readonly string[]):
   return command.length === expected.length && command.every((part, index) => part === expected[index]);
 }
 
-function isExpectedPlugin(value: unknown, expected: string | readonly [string, { readonly pet?: string }]): boolean {
+function isExpectedPlugin(value: unknown, expected: string | readonly [string, { readonly pet?: string; readonly excludeReactions?: readonly string[] }]): boolean {
   if (typeof expected === "string") return value === expected;
   return Array.isArray(value) && value.length === 2 && value[0] === expected[0] && isSamePluginOptions(value[1], expected[1]);
 }
@@ -104,10 +104,17 @@ export function isOpenPetsLikePluginEntry(value: unknown): boolean {
   return false;
 }
 
-function isPetPluginOptions(value: unknown): boolean {
+function isPetPluginOptions(value: unknown): value is { readonly pet?: string; readonly excludeReactions?: readonly string[] } {
   if (!isRecord(value)) return false;
-  const keys = Object.keys(value);
-  return keys.length === 1 && keys[0] === "pet" && typeof value.pet === "string" && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value.pet);
+  const keys = Object.keys(value).sort();
+  const hasPet = keys.includes("pet");
+  const hasExclusions = keys.includes("excludeReactions");
+  if (!hasPet && !hasExclusions) return false;
+  const expectedKeyCount = (hasPet ? 1 : 0) + (hasExclusions ? 1 : 0);
+  if (keys.length !== expectedKeyCount) return false;
+  if (hasPet && (typeof value.pet !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(value.pet))) return false;
+  if (!hasExclusions) return true;
+  return Array.isArray(value.excludeReactions) && value.excludeReactions.length > 0 && value.excludeReactions.every((reaction: unknown) => typeof reaction === "string");
 }
 
 function isSameMcpEntry(value: unknown, expected: { readonly type: "local"; readonly command: readonly string[]; readonly enabled: true }): boolean {
@@ -128,10 +135,12 @@ function hasValidMcpEnvironment(value: unknown): boolean {
   return Object.entries(value).every(([key, envValue]) => /^[A-Z_][A-Z0-9_]*$/.test(key) && typeof envValue === "string");
 }
 
-function isSamePluginOptions(value: unknown, expected: { readonly pet?: string }): boolean {
-  if (!isRecord(value)) return Object.keys(expected).length === 0;
-  const keys = Object.keys(value);
-  return keys.length === Object.keys(expected).length && value.pet === expected.pet;
+function isSamePluginOptions(value: unknown, expected: { readonly pet?: string; readonly excludeReactions?: readonly string[] }): boolean {
+  if (!isPetPluginOptions(value)) return false;
+  if (value.pet !== expected.pet) return false;
+  const expectedExclusions = new Set(expected.excludeReactions ?? []);
+  const actualExclusions = new Set(value.excludeReactions ?? []);
+  return expectedExclusions.size === actualExclusions.size && [...expectedExclusions].every((reaction) => actualExclusions.has(reaction));
 }
 
 function isOpenPetsLikeInstruction(value: string): boolean {
