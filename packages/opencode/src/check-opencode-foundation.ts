@@ -41,7 +41,7 @@ try {
   assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer" }), ["@open-pets/opencode", { pet: "fixer" }]);
   assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer", packageVersion: "0.0.0" }), ["@open-pets/opencode@0.0.0", { pet: "fixer" }]);
   assert.deepEqual(buildOpenCodePluginPreview({}), "@open-pets/opencode");
-  assert.deepEqual(buildOpenCodePluginPreview({ excludeReactions: ["success", "thinking"] }), ["@open-pets/opencode", { excludeReactions: ["success", "thinking"] }]);
+  assert.deepEqual(buildOpenCodePluginPreview({ excludeReactions: ["success", "thinking", "not-a-reaction"] }), ["@open-pets/opencode", { excludeReactions: ["success", "thinking"] }], "config previews must not persist unrecognized exclusions");
   assert.deepEqual(buildOpenCodePluginPreview({ petId: "fixer", excludeReactions: ["success"] }), ["@open-pets/opencode", { pet: "fixer", excludeReactions: ["success"] }]);
 
   const jsonc = `{
@@ -140,8 +140,9 @@ try {
   assert.equal(doctorOpenCodeGlobalSetup(globalDir).status, "not_installed");
 
   const globalExclusionsOnly = join(root, "global-exclusions-only");
-  writePreparedOpenCodeGlobalSetup(prepareOpenCodeGlobalSetup({ configDir: globalExclusionsOnly, cliVersion: "0.0.0", excludeReactions: ["success", "thinking"] }));
-  assert.doesNotThrow(() => prepareOpenCodeGlobalSetup({ configDir: globalExclusionsOnly, cliVersion: "0.0.0", excludeReactions: ["thinking", "success"] }), "exclusions-only setup should recognize its existing plugin entry");
+  writePreparedOpenCodeGlobalSetup(prepareOpenCodeGlobalSetup({ configDir: globalExclusionsOnly, cliVersion: "0.0.0", excludeReactions: ["success", "thinking", "not-a-reaction"] }));
+  assert.doesNotMatch(readFileSync(join(globalExclusionsOnly, "opencode.jsonc"), "utf8"), /not-a-reaction/, "setup must not persist unrecognized exclusions");
+  assert.doesNotThrow(() => prepareOpenCodeGlobalSetup({ configDir: globalExclusionsOnly, cliVersion: "0.0.0", excludeReactions: ["thinking", "success", "not-a-reaction"] }), "exclusions-only setup should recognize its existing plugin entry");
 
   const globalLower = join(root, "global-lower");
   mkdirSync(globalLower);

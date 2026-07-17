@@ -219,17 +219,17 @@ assert.equal(isReactionExcluded("success", new Set()), false);
   }
 }
 
-// Invalid reaction strings in excludeReactions are silently ignored
+// Invalid reaction strings are ignored without discarding recognized exclusions.
 {
-  const validSet = new Set<string>();
-  assert.equal(isReactionExcluded("success", validSet), false, "empty set should not exclude anything");
-  // Invalid reaction names are ignored by buildExcludedReactionsSet (tested implicitly: no crash on invalid input)
+  const scheduled4: Array<() => Promise<void>> = [];
   const hooks4 = createOpenPetsOpenCodeHooks({
-    excludeReactions: ["not-a-real-reaction" as OpenPetsReaction, 42 as unknown as OpenPetsReaction],
+    excludeReactions: ["success", "not-a-real-reaction" as OpenPetsReaction, 42 as unknown as OpenPetsReaction],
+    schedule: (work) => { scheduled4.push(work); },
     throttlePath: join(dir, "invalid-throttle.json"),
     now: () => 500_000,
   });
-  assert.equal(typeof hooks4.event, "function", "invalid excludeReactions should not crash hook creation");
+  hooks4.event({ event: { type: "session.status", properties: { status: { type: "idle" } } } });
+  assert.equal(scheduled4.length, 0, "recognized exclusions remain active when invalid values are present");
 }
 
 // Classification is unaffected by filter (filter is in run(), not classify*)

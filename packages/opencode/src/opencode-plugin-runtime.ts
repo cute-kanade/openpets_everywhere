@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createOpenPetsClient, type OpenPetsClient, type OpenPetsReaction } from "@open-pets/client";
 import { pickHookSpeech, type HookSpeechCategory, validateHookSpeech } from "@open-pets/agent-events";
 
-import { validateOpenPetsPetArg } from "./opencode-previews.js";
+import { sanitizeOpenCodeExcludedReactions, validateOpenPetsPetArg } from "./opencode-previews.js";
 
 export interface OpenCodePluginOptions {
   readonly pet?: string;
@@ -162,20 +162,11 @@ function shouldSendThrottleKey(key: string, cooldown: number, now: number, path:
 }
 
 function buildExcludedReactionsSet(excludeReactions?: readonly OpenPetsReaction[]): ReadonlySet<string> {
-  if (!excludeReactions || excludeReactions.length === 0) return emptySet;
-  const valid = new Set<string>();
-  for (const r of excludeReactions) {
-    if (typeof r === "string" && allowedReactionStrings.has(r)) valid.add(r);
-  }
-  return valid.size > 0 ? valid : emptySet;
+  const valid = sanitizeOpenCodeExcludedReactions(excludeReactions);
+  return valid.length > 0 ? new Set(valid) : emptySet;
 }
 
 const emptySet: ReadonlySet<string> = new Set();
-
-const allowedReactionStrings: ReadonlySet<string> = new Set([
-  "idle", "thinking", "working", "editing", "running", "testing",
-  "waiting", "waving", "success", "error", "celebrating",
-]);
 
 function isTestLikeToolArgs(args: unknown): boolean {
   const command = isRecord(args) && typeof args.command === "string" ? args.command.slice(0, 300) : "";

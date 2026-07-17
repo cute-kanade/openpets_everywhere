@@ -1,5 +1,7 @@
 import { isAbsolute, join } from "node:path";
 
+import { allowedReactions, type OpenPetsReaction } from "@open-pets/client";
+
 export const openCodeMcpServerName = "openpets";
 export const openPetsCliPackageName = "@open-pets/cli";
 export type OpenCodeCommandMode = "published" | "local" | "bundled";
@@ -56,14 +58,20 @@ export interface BuildOpenCodePluginPreviewOptions {
   readonly excludeReactions?: readonly string[];
 }
 
+export function sanitizeOpenCodeExcludedReactions(excludeReactions?: readonly string[]): readonly OpenPetsReaction[] {
+  if (!excludeReactions) return [];
+  return [...new Set(excludeReactions.filter((reaction): reaction is OpenPetsReaction => typeof reaction === "string" && allowedReactions.includes(reaction as OpenPetsReaction)))];
+}
+
 export function buildOpenCodePluginPreview(options?: BuildOpenCodePluginPreviewOptions): OpenCodePluginSpec {
   const spec = options?.packageVersion ? `@open-pets/opencode@${options.packageVersion}` : "@open-pets/opencode";
   const hasPet = options?.petId !== undefined;
-  const hasExclusions = Array.isArray(options?.excludeReactions) && options.excludeReactions!.length > 0;
+  const excludeReactions = sanitizeOpenCodeExcludedReactions(options?.excludeReactions);
+  const hasExclusions = excludeReactions.length > 0;
   if (!hasPet && !hasExclusions) return spec;
   return [spec, {
     ...(hasPet ? { pet: validateOpenPetsPetArg(options!.petId!) } : {}),
-    ...(hasExclusions ? { excludeReactions: options!.excludeReactions! } : {}),
+    ...(hasExclusions ? { excludeReactions } : {}),
   }];
 }
 

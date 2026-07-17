@@ -109,9 +109,12 @@ function isPetPluginOptions(value: unknown): value is { readonly pet?: string; r
   const keys = Object.keys(value).sort();
   const hasPet = keys.includes("pet");
   const hasExclusions = keys.includes("excludeReactions");
-  if ((!hasPet && !hasExclusions) || keys.length !== Number(hasPet) + Number(hasExclusions)) return false;
+  if (!hasPet && !hasExclusions) return false;
+  const expectedKeyCount = (hasPet ? 1 : 0) + (hasExclusions ? 1 : 0);
+  if (keys.length !== expectedKeyCount) return false;
   if (hasPet && (typeof value.pet !== "string" || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(value.pet))) return false;
-  return !hasExclusions || Array.isArray(value.excludeReactions) && value.excludeReactions.length > 0 && value.excludeReactions.every((reaction: unknown) => typeof reaction === "string");
+  if (!hasExclusions) return true;
+  return Array.isArray(value.excludeReactions) && value.excludeReactions.length > 0 && value.excludeReactions.every((reaction: unknown) => typeof reaction === "string");
 }
 
 function isSameMcpEntry(value: unknown, expected: { readonly type: "local"; readonly command: readonly string[]; readonly enabled: true }): boolean {
