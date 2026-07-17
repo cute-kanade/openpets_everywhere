@@ -92,6 +92,8 @@ try {
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "fixer", extra: true }]] }], "fixer", "0.0.0").status, "custom");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "fixer", excludeReactions: ["success"] }]] }], "fixer", "0.0.0").status, "needs_update", "plugin with excludeReactions but no matching expected spec should need update");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { pet: "helper", excludeReactions: ["success"] }]] }], "fixer", "0.0.0").status, "needs_update", "plugin with excludeReactions but wrong pet is managed-but-outdated");
+  assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { excludeReactions: ["success", "thinking"] }]] }], undefined, "0.0.0", ["thinking", "success"]).status, "installed", "exclusions-only plugin options round-trip without a pet regardless of ordering");
+  assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode@0.0.0", { excludeReactions: ["success", 1] }]] }], undefined, "0.0.0", ["success"]).status, "custom", "invalid exclusions remain custom rather than managed");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: ["./openpets-custom-plugin.js"] }], "fixer").status, "custom");
   assert.equal(classifyOpenCodePluginStatus([{ plugin: [["@open-pets/opencode", { pet: "fixer" }], "./openpets-custom-plugin.js"] }], "fixer").status, "conflict");
 
@@ -136,6 +138,10 @@ try {
   const globalRemove = prepareOpenCodeGlobalRemove(globalDir);
   writePreparedOpenCodeGlobalRemove(globalRemove);
   assert.equal(doctorOpenCodeGlobalSetup(globalDir).status, "not_installed");
+
+  const globalExclusionsOnly = join(root, "global-exclusions-only");
+  writePreparedOpenCodeGlobalSetup(prepareOpenCodeGlobalSetup({ configDir: globalExclusionsOnly, cliVersion: "0.0.0", excludeReactions: ["success", "thinking"] }));
+  assert.doesNotThrow(() => prepareOpenCodeGlobalSetup({ configDir: globalExclusionsOnly, cliVersion: "0.0.0", excludeReactions: ["thinking", "success"] }), "exclusions-only setup should recognize its existing plugin entry");
 
   const globalLower = join(root, "global-lower");
   mkdirSync(globalLower);
