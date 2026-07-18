@@ -8,6 +8,7 @@
 !opencode.json
 !.slim/worktrees/
 !.slim/worktrees.json
+!third-parties/
 
 # BEGIN oh-my-opencode-slim clonedeps
 !.slim/

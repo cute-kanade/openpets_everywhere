@@ -135,6 +135,8 @@ The VM is configured to boot into the Ubuntu desktop (`graphical.target`) with G
 
 See `docs/development.md` (cross-platform & Linux testing) for how this fits the wider DX/testing workflow.
 
+FYI: third-parties/ folder contains other repos related to openpets, putting here so it's easier to work on those other repos too.
+
 ## Cloned Dependency Source
 
 Read-only dependency source repositories are available under
