@@ -49,7 +49,7 @@ function rebuildPending(state, now) {
   const delivered = new Set(state.delivered.map((item) => item.key));
   state.pending = state.occurrences.flatMap((occurrence) => [600_000, 0].map((offset) => ({ key: deliveryKey(occurrence, offset), dueAt: occurrence.startAt - offset, offset, occurrence }))).filter((item) => item.dueAt >= now - GRACE_MS && !delivered.has(item.key)).sort((a, b) => a.dueAt - b.dueAt);
 }
-async function status(ctx, key, vars, tone = "info") { await ctx.status.set({ text: text(ctx.t(key, vars), 500), tone }); }
+async function status(ctx, key, vars, tone = "info") { await ctx.status.set({ text: text(ctx.t(key, vars), 120), tone }); }
 async function courier(ctx) { const config = await ctx.config.get(); return typeof config?.courier === "string" && config.courier ? config.courier : DEFAULT_COURIER; }
 function localDateTime(ctx, time) { return new Intl.DateTimeFormat(ctx.locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(time)); }
 function localTime(ctx, time) { return new Intl.DateTimeFormat(ctx.locale, { timeStyle: "short" }).format(new Date(time)); }

@@ -32,6 +32,7 @@ All from the repo root unless noted (full list in root `package.json`):
 | `pnpm dev:desktop` | Run the desktop app in dev |
 | `pnpm dev:desktop:control-center` | Dev with renderer/Control Center focus |
 | `pnpm dev:desktop:plugins` | Dev with official plugins hot-loaded |
+| `pnpm dev:desktop:third-parties` | Dev with direct plugin folders under `third-parties` hot-loaded |
 | `pnpm package:desktop` / `:dir` | Build + package the desktop app (full / unpacked dir) |
 | `pnpm release:desktop` | macOS-local release automation (GitHub draft) |
 | `pnpm release:npm` | Publish npm packages |
@@ -66,6 +67,10 @@ catch.
   `plugins/official` and `plugins/dev` (via `OPENPETS_DEV_PLUGIN_ROOTS`) so
   official plugins and in-progress dev plugins hot-load when working on OpenPets
   itself.
+- `pnpm dev:desktop:third-parties` loads every direct child of `third-parties`
+  that contains `openpets.plugin.json` through `OPENPETS_DEV_PLUGIN_ROOTS`, with
+  the plugin catalog disabled. Non-plugin folders are ignored, and changes to a
+  discovered plugin's manifest or entry file hot-reload it.
 - Logs land in `userData/logs/openpets.log` (path varies by OS). Route renderer
   diagnostics into the app log, not just DevTools (per `AGENTS.md`).
 

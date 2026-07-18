@@ -36,6 +36,12 @@ try {
   await sync(h.ctx);
   assert.deepEqual(h.calls.menuItems, [], "the menu clears when no future timed event remains today");
 
+  const longEventTitle = "Private calendar event ".repeat(20);
+  h.ctx.net.fetch = async () => ({ status: 200, ok: true, headers: {}, text: "", json: { items: [{ ...event("long-status", h.clock.now() + 3_600_000), summary: longEventTitle }] } });
+  await sync(h.ctx);
+  assert.equal(h.calls.status.at(-1)?.text.length, 120, "the synced status truncates a long event title to the host limit");
+  assert.equal(h.calls.status.every((status) => status.text.length <= 120), true, "every emitted status text stays within the host limit");
+
   const denied = createTestHarness(register, { permissions, locales, config: { courier: "courier-owl" }, nowMs: h.clock.now() });
   const deniedOccurrence = { key: "denied", eventId: "denied", title: "Denied", startAt: h.clock.now() + 60_000, endAt: h.clock.now() + 3_600_000 };
   await denied.ctx.storage.set("calendar-airmail-state", { connected: true, occurrences: [deniedOccurrence], pending: [{ key: "calendar.denied.0", dueAt: h.clock.now() + 60_000, offset: 0, occurrence: deniedOccurrence }], delivered: [] });

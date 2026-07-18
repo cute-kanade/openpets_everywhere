@@ -116,6 +116,29 @@ await scenario("commands retain validated timeout overrides and honor them", asy
   assert.throws(() => api.commands.register({ id: "too-long", title: "Too long", timeoutMs: 300_001 }, () => undefined), /Invalid plugin command timeoutMs\./);
 });
 
+await scenario("unregistered command diagnostics identify safe command and plugin IDs", async ({ api, bridge }) => {
+  await assert.rejects(
+    () => bridge.executeCommand("plug", "missing"),
+    (error: unknown) => error instanceof Error && error.message === 'Plugin command "missing" is not registered for plugin "plug".',
+  );
+
+  api.commands.register({ id: "available", title: "Sensitive command title" }, () => undefined);
+  await assert.rejects(
+    () => bridge.executeCommand("plug", "missing"),
+    (error: unknown) => error instanceof Error && error.message === 'Plugin command "missing" is not registered for plugin "plug". Registered command IDs: available.',
+  );
+});
+
+await scenario("status validation reports safe actionable errors", ({ bridge, store }) => {
+  const record = store.getRecord("plug")!;
+  const api = bridge.createApi({ ...record, approvedPermissions: [...record.approvedPermissions, "status"] }, manifest());
+
+  assert.throws(() => api.status.set({ text: 42 } as never), /Plugin status text must be a string; received number\./);
+  assert.throws(() => api.status.set(" \t "), /Plugin status text must not be empty\./);
+  assert.throws(() => api.status.set("private-status".repeat(10)), /Plugin status text exceeds the 120-character maximum \(received 140\)\./);
+  assert.throws(() => api.status.set({ text: "Ready", tone: "private-tone" } as never), /Plugin status tone must be one of: info, success, warning, error\./);
+});
+
 await scenario("pet.react validates silent reaction options", async ({ api }) => {
   await api.pet.react("waving", { showMessage: false });
   await assert.rejects(() => api.pet.react("waving", { showMessage: "no" }), /Invalid pet reaction showMessage option\./);

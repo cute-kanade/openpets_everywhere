@@ -773,7 +773,11 @@ export class PluginSdkBridge {
   async executeCommand(id: string, commandId: string, args?: Record<string, unknown>, timeoutMs = 5_000): Promise<void> {
     const state = this.#pluginState(id);
     const command = state.commands.get(commandId);
-    if (!command) throw new Error("Plugin command is not registered.");
+    if (!command) {
+      const registeredCommandIds = [...state.commands.keys()];
+      const available = registeredCommandIds.length > 0 ? ` Registered command IDs: ${registeredCommandIds.join(", ")}.` : "";
+      throw new Error(`Plugin command "${commandId}" is not registered for plugin "${id}".${available}`);
+    }
     const values = command.meta.form ? validateCommandFormValues(command.meta.form, args) : undefined;
     state.userCommandDepth += 1;
     const release = () => { setTimeout(() => { state.userCommandDepth = Math.max(0, state.userCommandDepth - 1); }, 2_000).unref?.(); };
@@ -1270,7 +1274,14 @@ export function validateCommandFormValues(form: PluginCommandForm, args: unknown
   return out;
 }
 
-function validateStatus(status: PluginStatus | string): PluginStatus { const value = typeof status === "string" ? { text: status } : status; if (!value || typeof value.text !== "string" || value.text.trim() === "" || value.text.length > 120) throw new Error("Invalid plugin status text."); if (value.tone !== undefined && !["info", "success", "warning", "error"].includes(value.tone)) throw new Error("Invalid plugin status tone."); return { text: value.text, tone: value.tone }; }
+function validateStatus(status: PluginStatus | string): PluginStatus {
+  const value = typeof status === "string" ? { text: status } : status;
+  if (!value || typeof value.text !== "string") throw new Error(`Plugin status text must be a string; received ${typeof value?.text}.`);
+  if (value.text.trim() === "") throw new Error("Plugin status text must not be empty.");
+  if (value.text.length > 120) throw new Error(`Plugin status text exceeds the 120-character maximum (received ${value.text.length}).`);
+  if (value.tone !== undefined && !["info", "success", "warning", "error"].includes(value.tone)) throw new Error("Plugin status tone must be one of: info, success, warning, error.");
+  return { text: value.text, tone: value.tone };
+}
 function validateMoveBy(value: unknown): { x: number; y: number; durationMs?: number } { if (!isRecord(value)) throw new Error("Invalid pet movement options."); const x = Number(value.x); const y = Number(value.y); if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("Invalid pet movement distance."); return { x, y, durationMs: value.durationMs === undefined ? undefined : Number(value.durationMs) }; }
 function validateWander(value: unknown): { distance?: number; durationMs?: number } { const options = isRecord(value) ? value : {}; return { distance: options.distance === undefined ? undefined : Number(options.distance), durationMs: options.durationMs === undefined ? undefined : Number(options.durationMs) }; }
 function parseDaily(spec: string | { time: string; days?: number[] }): { time: string; days?: number[] } { const value = typeof spec === "string" ? { time: spec } : spec; const m = /^(\d{2}):(\d{2})$/.exec(value.time); if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw new Error("Daily schedule time must be HH:mm between 00:00 and 23:59."); if (value.days && (!Array.isArray(value.days) || value.days.some((d) => !Number.isInteger(d) || d < 0 || d > 6))) throw new Error("Daily schedule days must be weekdays 0-6."); return value; }
