@@ -61,7 +61,8 @@ export type OpenPetsPermission =
   | "system:openExternal"
   | "system:metrics"
   | "clipboard"
-  | "network:write";
+  | "network:write"
+  | "network:local";
 
 /**
  * Reaction name passed to {@link OpenPetsPetHandle.react}. Common values are

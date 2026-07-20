@@ -19,7 +19,7 @@ const v3Permissions = [
   ...v2Permissions,
   "pet:interact", "pet:pin", "pet:animate", "pet:speak:dynamic", "pet:drop", "pets:read", "pets:manage",
   "audio", "events", "ui:toast", "ui:panel", "ui:delivery", "notify", "bus", "ai", "secrets", "voice:speak", "voice:listen",
-  "auth", "files", "system:openExternal", "system:metrics", "clipboard", "network:write",
+  "auth", "files", "system:openExternal", "system:metrics", "clipboard", "network:write", "network:local",
 ];
 const configFieldTypesV2 = ["text", "textarea", "number", "boolean", "select", "time", "multiSelect", "list"];
 const configFieldTypesV3 = [...configFieldTypesV2, "date", "secret", "sound"];
@@ -90,11 +90,22 @@ export function validatePluginFolder(sourceDir: string): PluginValidationResult 
   // network
   if (manifest.network !== undefined) {
     const network = manifest.network as Record<string, unknown>;
+    const perms = Array.isArray(manifest.permissions) ? manifest.permissions as unknown[] : [];
+    const isLocalAllowed = perms.includes("network:local");
     if (typeof network !== "object" || network === null || !Array.isArray(network.hosts)) fail("$.network.hosts", "network.hosts must be an array of exact host names.");
-    else network.hosts.forEach((host, index) => {
-      if (typeof host !== "string" || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) || host.includes("*")) fail(`$.network.hosts[${index}]`, "network hosts must be exact host names (no wildcards).");
+      else network.hosts.forEach((host, index) => {
+        const hostname = typeof host === "string" ? host.split(":")[0] : "";
+        const isLocalHost = hostname === "localhost" || hostname.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+/.test(hostname) || /^192\.168\./.test(hostname) || /^10\./.test(hostname) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+
+        if (typeof host !== "string" || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) || host.includes("*")) {
+          fail(`$.network.hosts[${index}]`, "network hosts must be exact host names (no wildcards).");
+        } else if (isLocalAllowed && isLocalHost && !/:\d{1,5}$/.test(host)) {
+          fail(`$.network.hosts[${index}]`, "network:local hosts must include a port (e.g. '127.0.0.1:8765').");
+      } else if (["169.254.169.254", "metadata.google.internal", "169.254.170.2", "fd00:ec2::254"].includes(host.toLowerCase())) {
+        fail(`$.network.hosts[${index}]`, "This host is unconditionally blocked for security reasons.");
+      }
     });
-    if (Array.isArray((manifest.permissions as unknown[]) ?? []) && !(manifest.permissions as unknown[]).includes("network")) fail("$.network", 'Declaring network.hosts without the "network" permission has no effect.');
+    if (perms.length > 0 && !perms.includes("network")) fail("$.network", 'Declaring network.hosts without the "network" permission has no effect.');
   }
 
   // configSchema

@@ -39,10 +39,11 @@ export type PluginPermission =
   | "system:openExternal"
   | "system:metrics"
   | "clipboard"
-  | "network:write";
+  | "network:write"
+  | "network:local";
 export type PluginJavascriptPermission = Exclude<PluginPermission, "timer">;
 /** Permissions flagged sensitive in the UI (louder consent, global toggles). */
-export const sensitivePluginPermissions: ReadonlySet<PluginPermission> = new Set(["voice:listen", "clipboard", "pet:speak:dynamic"]);
+export const sensitivePluginPermissions: ReadonlySet<PluginPermission> = new Set(["voice:listen", "clipboard", "pet:speak:dynamic", "network:local", "network:write"]);
 export type PluginIcon = "plugin" | "bell" | "timer" | "github" | "heart" | "sparkles" | "coffee" | "focus" | "droplet";
 export type PluginConfigFieldType = "text" | "textarea" | "number" | "boolean" | "select" | "time" | "date" | "multiSelect" | "list" | "secret" | "sound";
 
@@ -154,6 +155,7 @@ export const pluginV3Permissions = [
   "system:metrics",
   "clipboard",
   "network:write",
+  "network:local",
 ] as const satisfies readonly PluginPermission[];
 export const pluginPermissions = ["pet:speak", "pet:reaction", "pet:move", "timer", "schedule", "storage", "status", "commands", "network", ...pluginV3Permissions] as const satisfies readonly PluginPermission[];
 const javascriptPluginPermissionsV2 = ["pet:speak", "pet:reaction", "pet:move", "schedule", "storage", "status", "commands", "network"] as const satisfies readonly PluginJavascriptPermission[];
@@ -236,7 +238,7 @@ function validateJavascriptPluginManifest(input: Record<string, unknown>, manife
   validateEntryPath(input.entry, errors);
   validateJavascriptPermissions(input.permissions, manifestVersion, errors);
   validateConfigSchema(input.configSchema, errors, manifestVersion);
-  validateNetwork(input.network, errors);
+  validateNetwork(input.network, input.permissions, errors);
   if (manifestVersion === 3) {
     validateAssets(input.assets, errors);
     validateSpriteGridPreviews(input.configSchema, input.assets, errors);
@@ -324,14 +326,27 @@ function validateEntryPath(value: unknown, errors: PluginManifestValidationError
   if (value.startsWith("/") || value.includes("\\") || value.split("/").includes("..") || !/\.(?:mjs|js)$/.test(value)) addError(errors, "$.entry", "invalid_entry", "entry must be a relative .js or .mjs path.");
 }
 
-function validateNetwork(value: unknown, errors: PluginManifestValidationError[]): void {
+function validateNetwork(value: unknown, permissionsValue: unknown, errors: PluginManifestValidationError[]): void {
   if (value === undefined) return;
   if (!isRecord(value) || !Array.isArray(value.hosts)) return addError(errors, "$.network.hosts", "invalid_network_hosts", "network.hosts must be an array.");
   rejectUnknownFields(value, new Set(["hosts"]), "$.network", errors);
+  
+  const isLocalAllowed = Array.isArray(permissionsValue) && permissionsValue.includes("network:local");
+
   const seen = new Set<string>();
   value.hosts.forEach((host, index) => {
-    if (typeof host !== "string" || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) || host.includes("*") || host.trim() !== host) addError(errors, `$.network.hosts[${index}]`, "invalid_network_host", "network hosts must be exact host names.");
-    else if (seen.has(host)) addError(errors, `$.network.hosts[${index}]`, "duplicate_network_host", "Duplicate network host.");
+    const hostname = host.split(":")[0];
+    const isLocalHost = hostname === "localhost" || hostname.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+/.test(hostname) || /^192\.168\./.test(hostname) || /^10\./.test(hostname) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+
+    if (typeof host !== "string" || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) || host.includes("*") || host.trim() !== host) {
+      addError(errors, `$.network.hosts[${index}]`, "invalid_network_host", "network hosts must be exact host names.");
+    } else if (isLocalAllowed && isLocalHost && !/:\d{1,5}$/.test(host)) {
+      addError(errors, `$.network.hosts[${index}]`, "missing_port", "network:local hosts must include a port (e.g. '127.0.0.1:8765').");
+    } else if (["169.254.169.254", "metadata.google.internal", "169.254.170.2", "fd00:ec2::254"].includes(host.toLowerCase())) {
+      addError(errors, `$.network.hosts[${index}]`, "blocked_host", "This host is unconditionally blocked for security reasons.");
+    } else if (seen.has(host)) {
+      addError(errors, `$.network.hosts[${index}]`, "duplicate_network_host", "Duplicate network host.");
+    }
     seen.add(String(host));
   });
 }
