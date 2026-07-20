@@ -23,9 +23,8 @@ type CodexState = { pets: PetEntry[]; error?: string };
 type PetScaleOption = { label: string; value: number };
 type UserSelectableAnimationState = "idle" | "review" | "running" | "waiting" | "waving" | "jumping" | "failed";
 type ReactionAnimationOverrides = Record<string, UserSelectableAnimationState>;
-type AnalyticsConsent = "unset" | "granted" | "denied";
 type PetPoolCandidate = { id: string; displayName: string };
-type SettingsState = { preferences: { openDefaultPetOnLaunch: boolean; locale?: "system" | string; petScale: number; reactionAnimationOverrides?: ReactionAnimationOverrides; petPoolEnabled: boolean; petPoolOrder?: readonly string[]; petConfinementEnabled: boolean; petCrossDisplayEnabled: boolean; petGravityEnabled: boolean }; petScaleOptions: PetScaleOption[]; analytics: { consent: AnalyticsConsent; enabled: boolean }; petPoolCandidates: ReadonlyArray<PetPoolCandidate> };
+type SettingsState = { preferences: { openDefaultPetOnLaunch: boolean; locale?: "system" | string; petScale: number; reactionAnimationOverrides?: ReactionAnimationOverrides; petPoolEnabled: boolean; petPoolOrder?: readonly string[]; petConfinementEnabled: boolean; petCrossDisplayEnabled: boolean; petGravityEnabled: boolean }; petScaleOptions: PetScaleOption[]; petPoolCandidates: ReadonlyArray<PetPoolCandidate> };
 type LaunchAtLoginState = { supported: boolean; enabled: boolean };
 type LanTopologyIssue = { code: "self_reference" | "missing_reverse"; host: string; edge: "left" | "right" | "up" | "down"; neighbor: string };
 type LanStatusSnapshot = { mode: "off" | "server" | "client"; localHost: string; serverUrl: string; port: number; auth: "token" | "none"; authSource: "env" | "stored" | "generated" | "none"; authInsecure: boolean; tokenHint: string | null; topologyHosts: number; topologyLinks: number; topologyIssues: LanTopologyIssue[]; currentHost: string | null; clients: Array<{ host: string; lastSeen: number; position?: { x: number; y: number } }>; updatedAt: number; persistedCurrentHost: string | null; persistedUpdatedAt: number | null };
@@ -70,7 +69,6 @@ type ControlCenterApi = {
   getDashboardSnapshot(): Promise<DashboardSnapshot>;
   getSettingsState(): Promise<SettingsState>;
   getLanStatus(): Promise<LanStatusSnapshot>;
-  setDesktopAnalyticsConsent(consent: AnalyticsConsent): Promise<SettingsState>;
   getI18n(): Promise<I18nSnapshot>;
   updatePreferences(patch: Partial<SettingsState["preferences"]>): Promise<SettingsState>;
   getReactionAnimationSettings(): Promise<ReactionAnimationSettings>;
@@ -1104,13 +1102,6 @@ function SettingsView() {
     });
   }
 
-  function setAnalyticsConsent(enabled: boolean) {
-    void run(t("settings.busy.saving"), async () => {
-      setSettings(await api.setDesktopAnalyticsConsent(enabled ? "granted" : "denied"));
-      setMessage(t("settings.toast.analyticsSaved"));
-    });
-  }
-
   function changeLocale(value: string) {
     void run(t("settings.busy.saving"), async () => {
       await api.updatePreferences({ locale: value });
@@ -1200,13 +1191,6 @@ function SettingsView() {
                   checked={launchAtLogin?.enabled ?? false}
                   disabled={!launchAtLogin?.supported || !!busy}
                   onChange={(checked) => void run(t("settings.busy.saving"), async () => { setLaunchAtLogin(await api.setLaunchAtLogin(checked)); setMessage(t("settings.toast.loginStartupSaved")); })}
-                />
-                <ToggleRow
-                  title={t("settings.general.analytics.title")}
-                  description={t("settings.general.analytics.description")}
-                  checked={settings?.analytics.enabled ?? false}
-                  disabled={!settings || !!busy}
-                  onChange={setAnalyticsConsent}
                 />
                 <div className="settings-row">
                   <div className="settings-row-info">

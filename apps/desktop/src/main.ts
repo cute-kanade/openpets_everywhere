@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 
 import { getAppStateSnapshot, initializeAppState, releaseStartupInstallLock } from "./app-state.js";
-import { initializeDesktopAnalytics, trackDesktopEvent, trackDesktopStartup } from "./analytics.js";
 import { createAppIcon } from "./assets.js";
 import { setLocaleFromPreference } from "./i18n/index.js";
 import { installDefaultPetDisplayHandlers, shouldOpenDefaultPetOnLaunch, showDefaultPet } from "./default-pet-controller.js";
@@ -83,8 +82,6 @@ if (!gotSingleInstanceLock) {
     }
 
     initializeAppState();
-    initializeDesktopAnalytics();
-    trackDesktopStartup();
     // Resolve the UI language before any window or the tray is built.
     setLocaleFromPreference(getAppStateSnapshot().preferences.locale);
     installInternalUiProtocol();
@@ -92,7 +89,6 @@ if (!gotSingleInstanceLock) {
     createAppTray();
     installDefaultPetDisplayHandlers();
     await startLocalIpcServer();
-    trackDesktopEvent("desktop_ipc_server_started");
     releaseStartupInstallLock();
     const roots = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_ROOTS);
     const paths = parseDevPluginEnv(process.env.OPENPETS_DEV_PLUGIN_PATHS);
@@ -100,14 +96,11 @@ if (!gotSingleInstanceLock) {
     initializePluginPlatformSettings(app.getPath("userData"));
     const pluginCapabilities = createElectronPluginHostCapabilities(app.getPath("userData"));
     let devPluginWatcher: ReturnType<typeof startDevPluginWatcher> | undefined;
-    const pluginService = initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion(), new ElectronPluginJsHost(), writePluginRuntimeLog, process.env.OPENPETS_DISABLE_PLUGIN_CATALOG === "1" || devPluginMode, resolveBundledOfficialPluginRoots(), !devPluginMode, pluginCapabilities, (properties) => {
-      trackDesktopEvent("desktop_plugin_runtime_error", properties);
-    }, (sourcePath) => devPluginWatcher?.addPaths([sourcePath]), (sourcePath) => devPluginWatcher?.removePath(sourcePath));
+    const pluginService = initializePluginService(app.getPath("userData"), defaultPluginPetApi, app.getVersion(), new ElectronPluginJsHost(), writePluginRuntimeLog, process.env.OPENPETS_DISABLE_PLUGIN_CATALOG === "1" || devPluginMode, resolveBundledOfficialPluginRoots(), !devPluginMode, pluginCapabilities, undefined, (sourcePath) => devPluginWatcher?.addPaths([sourcePath]), (sourcePath) => devPluginWatcher?.removePath(sourcePath));
     // Wall-clock schedules (daily/cron/at) re-arm deterministically after sleep.
     powerMonitor.on("resume", () => pluginService.runtime.resyncSchedules());
     if (shouldOpenDefaultPetOnLaunch()) {
       showDefaultPet();
-      trackDesktopEvent("desktop_default_pet_shown", { reason: "launch" });
     }
     startLanController();
     refreshTrayMenu();

@@ -4,7 +4,6 @@ import net from "node:net";
 import { Notification, shell, systemPreferences } from "electron";
 
 import { applyAgentPetReaction, applyAgentPetSay, applyAgentPetShowMedia, clearAgentPetLeaseState, repositionConfinedPet, showAgentPet } from "./agent-pet-controller.js";
-import { classifyAnalyticsError, trackDesktopEvent, trackDesktopIntegrationActivity } from "./analytics.js";
 import { getAppStateSnapshot, recordOpenPetsActivity } from "./app-state.js";
 import { builtInPet } from "./built-in-pet.js";
 import { applyExternalPetReaction, applyExternalPetSay, applyExternalPetShowMedia, getDefaultPetPaused, isDefaultPetVisible } from "./default-pet-controller.js";
@@ -25,7 +24,6 @@ import { t } from "./i18n/index.js";
 let ipcServer: net.Server | null = null;
 let ipcDiscovery: OpenPetsDiscoveryFile | null = null;
 let leaseCleanupTimer: NodeJS.Timeout | null = null;
-let agentConnectedTracked = false;
 /** leaseId → window-tracking unsubscribe function (for confined agent pets). */
 const confinementUnsubscribers = new Map<string, () => void>();
 const leaseManager = new LeaseManager({
@@ -58,21 +56,15 @@ export async function startLocalIpcServer(): Promise<void> {
 
   const server = net.createServer((socket) => handleSocket(socket, token, endpointConfig));
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      listenOnEndpoint(server, endpointConfig.bindEndpoint, () => {
-        server.off("error", reject);
-        protectUnixSocket(endpointConfig.advertisedEndpoint);
-        resolve();
-      });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    listenOnEndpoint(server, endpointConfig.bindEndpoint, () => {
+      server.off("error", reject);
+      protectUnixSocket(endpointConfig.advertisedEndpoint);
+      resolve();
     });
-  } catch (error) {
-    trackDesktopEvent("desktop_ipc_server_failed", { error_code: classifyAnalyticsError(error, "ipc_listen_failed"), endpoint_kind: endpointConfig.bindEndpoint.kind });
-    throw error;
-  }
+  });
   server.on("error", (error) => {
-    trackDesktopEvent("desktop_ipc_server_failed", { error_code: classifyAnalyticsError(error, "ipc_server_error"), endpoint_kind: endpointConfig.bindEndpoint.kind });
     logError("ipc", "server error", error);
     console.error("OpenPets local IPC server error.", error);
   });
@@ -275,7 +267,6 @@ async function handleRawRequest(raw: string, token: string) {
   try {
     const request = parseIpcRequest(raw, token);
     requestId = request.id;
-    trackAgentConnected(request.method);
     debug("ipc", "request received", { requestId, method: request.method });
     return okResponse(request.id, await handleRequest(request));
   } catch (error) {
@@ -339,15 +330,7 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
   if (request.method === "pets.install") {
     const params = isRecord(request.params) ? request.params : {};
     const petId = validateInstallPetId(params.petId);
-    trackDesktopEvent("desktop_pet_install_started", { source: "catalog", entrypoint: "ipc" });
-    let state;
-    try {
-      state = await installPet(petId);
-      trackDesktopEvent("desktop_pet_install_completed", { source: "catalog", entrypoint: "ipc" });
-    } catch (error) {
-      trackDesktopEvent("desktop_pet_install_failed", { source: "catalog", entrypoint: "ipc", error_code: classifyAnalyticsError(error, "pet_install_failed") });
-      throw error;
-    }
+    const state = await installPet(petId);
     const installed = state.pets.installed.find((pet) => pet.id === petId);
     if (!installed) throw new IpcProtocolError("install_failed", "Pet install did not complete.");
     return { ok: true, petId: installed.id, displayName: installed.displayName, installed: true };
@@ -357,25 +340,18 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     const params = isRecord(request.params) ? request.params : {};
     const localPath = validateInstallLocalPath(params.path);
     const kind = validateInstallLocalKind(params.kind);
-    trackDesktopEvent("desktop_pet_install_started", { source: "local", entrypoint: "ipc" });
-    try {
-      const stats = await stat(localPath);
-      let installResult;
-      if (kind === "folder") {
-        if (!stats.isDirectory()) throw new IpcProtocolError("invalid_params", "Local pet path must be a folder.");
-        installResult = await installPetFromFolderWithResult(localPath);
-      } else {
-        if (!stats.isFile()) throw new IpcProtocolError("invalid_params", "Local pet path must be a zip file.");
-        installResult = await installPetFromZipFileWithResult(localPath);
-      }
-      trackDesktopEvent("desktop_pet_install_completed", { source: "local", entrypoint: "ipc" });
-      const installedPet = installResult.state.pets.installed.find((pet) => pet.id === installResult.petId);
-      if (!installedPet) throw new IpcProtocolError("install_failed", "Local pet install did not complete.");
-      return { ok: true, petId: installedPet.id, displayName: installedPet.displayName, installed: true };
-    } catch (error) {
-      trackDesktopEvent("desktop_pet_install_failed", { source: "local", entrypoint: "ipc", error_code: classifyAnalyticsError(error, "pet_install_failed") });
-      throw error;
+    const stats = await stat(localPath);
+    let installResult;
+    if (kind === "folder") {
+      if (!stats.isDirectory()) throw new IpcProtocolError("invalid_params", "Local pet path must be a folder.");
+      installResult = await installPetFromFolderWithResult(localPath);
+    } else {
+      if (!stats.isFile()) throw new IpcProtocolError("invalid_params", "Local pet path must be a zip file.");
+      installResult = await installPetFromZipFileWithResult(localPath);
     }
+    const installedPet = installResult.state.pets.installed.find((pet) => pet.id === installResult.petId);
+    if (!installedPet) throw new IpcProtocolError("install_failed", "Local pet install did not complete.");
+    return { ok: true, petId: installedPet.id, displayName: installedPet.displayName, installed: true };
   }
 
   if (request.method === "lease.acquire") {
@@ -385,7 +361,6 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     const sessionNonce = validateSessionNonce(params.sessionNonce);
     debug("ipc", "lease acquire requested", { requestId: request.id, requestedPetId, clientPid, sessionNonce });
     const lease = leaseManager.acquire(requestedPetId, clientPid, sessionNonce);
-    trackDesktopEvent("desktop_lease_acquired", { requested_pet: requestedPetId ? "explicit" : "default", target_kind: lease.targetKind, fallback_reason: lease.fallbackReason });
     warnPetFallback(requestedPetId, lease.fallbackReason, warnedFallbackPets);
     // Resolve terminal window identity asynchronously (non-blocking).
     // Only attempt on macOS where window-bounds polling is supported.
@@ -427,12 +402,10 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     if (lease?.targetKind === "explicit") {
       const applied = applyAgentPetReaction(lease.actualTargetPetId, reaction);
       safeRecordOpenPetsActivity({ kind: "react", reaction, petId, surface: "agent" });
-      trackDesktopIntegrationActivity("react", { integration_type: "ipc", target_kind: lease.targetKind, shown: applied.shown, reason: applied.reason });
       return { ok: true, reaction, shown: applied.shown, reason: applied.reason, leaseId: lease.leaseId };
     }
     const applied = applyExternalPetReaction(reaction);
     safeRecordOpenPetsActivity({ kind: "react", reaction, petId, surface: "default" });
-    trackDesktopIntegrationActivity("react", { integration_type: "ipc", target_kind: lease?.targetKind ?? "default", shown: applied.shown, reason: applied.reason });
     return { ok: true, reaction, shown: applied.shown, reason: applied.reason };
   }
 
@@ -457,12 +430,10 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
     if (lease?.targetKind === "explicit") {
       const applied = applyAgentPetShowMedia(lease.actualTargetPetId, { mediaPath, message, reaction, durationMs, clickUrl });
       safeRecordOpenPetsActivity({ kind: "say", reaction, petId, surface: "agent" });
-      trackDesktopIntegrationActivity("showMedia", { integration_type: "ipc", target_kind: lease.targetKind, shown: applied.shown, reason: applied.reason, has_reaction: Boolean(reaction) });
       return { ok: true, shown: applied.shown, reason: applied.reason, reaction, leaseId: lease.leaseId };
     }
     const applied = applyExternalPetShowMedia({ mediaPath, message, reaction, durationMs, clickUrl });
     safeRecordOpenPetsActivity({ kind: "say", reaction, petId, surface: "default" });
-    trackDesktopIntegrationActivity("showMedia", { integration_type: "ipc", target_kind: lease?.targetKind ?? "default", shown: applied.shown, reason: applied.reason, has_reaction: Boolean(reaction) });
     return { ok: true, shown: applied.shown, reason: applied.reason, reaction };
   }
 
@@ -475,19 +446,11 @@ async function handleRequest(request: OpenPetsIpcRequest): Promise<unknown> {
   if (lease?.targetKind === "explicit") {
     const applied = applyAgentPetSay(lease.actualTargetPetId, message, reaction);
     safeRecordOpenPetsActivity({ kind: "say", reaction, petId, surface: "agent" });
-    trackDesktopIntegrationActivity("say", { integration_type: "ipc", target_kind: lease.targetKind, shown: applied.shown, reason: applied.reason, has_reaction: Boolean(reaction) });
     return { ok: true, shown: applied.shown, reason: applied.reason, reaction, leaseId: lease.leaseId };
   }
   const applied = applyExternalPetSay(message, reaction);
   safeRecordOpenPetsActivity({ kind: "say", reaction, petId, surface: "default" });
-  trackDesktopIntegrationActivity("say", { integration_type: "ipc", target_kind: lease?.targetKind ?? "default", shown: applied.shown, reason: applied.reason, has_reaction: Boolean(reaction) });
   return { ok: true, shown: applied.shown, reason: applied.reason, reaction };
-}
-
-function trackAgentConnected(method: string): void {
-  if (agentConnectedTracked) return;
-  agentConnectedTracked = true;
-  trackDesktopEvent("desktop_agent_connected", { method });
 }
 
 function safeRecordOpenPetsActivity(activity: Parameters<typeof recordOpenPetsActivity>[0]): void {
