@@ -457,6 +457,7 @@ export const ja: Partial<Messages> = {
   "plugins.permission.system:metrics": "システム指標",
   "plugins.permission.clipboard": "クリップボード",
   "plugins.permission.network:write": "ネットワーク書き込み",
+  "plugins.permission.network:local": "ローカルネットワーク",
 
   // --- Integrations view (renderer) ---
   "integrations.commandMode.published": "公開パッケージ",

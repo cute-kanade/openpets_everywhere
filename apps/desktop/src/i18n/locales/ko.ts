@@ -457,6 +457,7 @@ export const ko: Partial<Messages> = {
   "plugins.permission.system:metrics": "시스템 지표",
   "plugins.permission.clipboard": "클립보드",
   "plugins.permission.network:write": "네트워크 쓰기",
+  "plugins.permission.network:local": "로컬 네트워크",
 
   // --- Integrations view (renderer) ---
   "integrations.commandMode.published": "게시된 패키지",

@@ -114,6 +114,24 @@ denied and the block is recorded in diagnostics. `network:*` is further
 constrained to declared hosts. This is defense in depth: manifest validation,
 user approval, runtime permission check, and quotas all apply.
 
+Network access is gated per call by the **intersection** of manifest-declared
+permissions and the user's persisted approvals. A stale approval never grants a
+capability the current manifest no longer declares.
+
+- Canonical v3 API is `ctx.net.fetch` / `ctx.net.stream`. Hosts must appear in
+  both `manifest.network.hosts` and the approved host list. Exact `host:port`
+  entries match only that port. A bare hostname approval covers **only** the
+  scheme default port (443 for HTTPS, 80 for HTTP) — never an explicit
+  non-default port, and never a later `host:port` addition without fresh approval.
+- `network` covers HTTPS GET to approved **public** hosts (public-host / private-IP
+  checks still apply). Non-GET methods require `network:write` on `ctx.net` only.
+- `network:local` is **additive**: it also allows declared loopback/private HTTP
+  endpoints on `ctx.net` while public HTTPS hosts in the same manifest keep the
+  normal public-host path. Local targets require explicit local IPs/`localhost`
+  (DNS-rebinding defense); cloud-metadata addresses stay blocked.
+- Legacy `ctx.http.fetch` remains GET-only, public HTTPS only — it never gains
+  local or mutating access.
+
 ### Display deliveries
 
 `ui:delivery` is a dedicated permission for the generic, host-owned delivery

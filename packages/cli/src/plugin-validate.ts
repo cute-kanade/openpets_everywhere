@@ -19,7 +19,7 @@ const v3Permissions = [
   ...v2Permissions,
   "pet:interact", "pet:pin", "pet:animate", "pet:speak:dynamic", "pet:drop", "pets:read", "pets:manage",
   "audio", "events", "ui:toast", "ui:panel", "ui:delivery", "notify", "bus", "ai", "secrets", "voice:speak", "voice:listen",
-  "auth", "files", "system:openExternal", "system:metrics", "clipboard", "network:write",
+  "auth", "files", "system:openExternal", "system:metrics", "clipboard", "network:write", "network:local",
 ];
 const configFieldTypesV2 = ["text", "textarea", "number", "boolean", "select", "time", "multiSelect", "list"];
 const configFieldTypesV3 = [...configFieldTypesV2, "date", "secret", "sound"];
@@ -35,6 +35,30 @@ const assetMaxBytes: Record<string, number> = { icons: 256 * 1024, images: 1024 
 const maxEntryBytes = 1024 * 1024;
 const maxPanelBytes = 1024 * 1024;
 const assetNamePattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/**
+ * Manifest-time local/private host detector aligned with desktop validator and
+ * runtime `isPrivateIp` (IPv4 only — host grammar rejects IPv6). Full dotted-quad
+ * match so `127.0.0.1.attacker.com` is never classified local.
+ */
+function isManifestLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  const parts = host.split(".");
+  if (parts.length !== 4) return false;
+  const octets = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : NaN));
+  if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = octets;
+  return (
+    a === 10 ||
+    a === 127 ||
+    a === 0 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127)
+  );
+}
 
 export function validatePluginFolder(sourceDir: string): PluginValidationResult {
   const issues: PluginValidationIssue[] = [];
@@ -90,11 +114,25 @@ export function validatePluginFolder(sourceDir: string): PluginValidationResult 
   // network
   if (manifest.network !== undefined) {
     const network = manifest.network as Record<string, unknown>;
+    const perms = Array.isArray(manifest.permissions) ? manifest.permissions as unknown[] : [];
+    const isLocalAllowed = perms.includes("network:local");
     if (typeof network !== "object" || network === null || !Array.isArray(network.hosts)) fail("$.network.hosts", "network.hosts must be an array of exact host names.");
     else network.hosts.forEach((host, index) => {
-      if (typeof host !== "string" || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) || host.includes("*")) fail(`$.network.hosts[${index}]`, "network hosts must be exact host names (no wildcards).");
+      const hostname = typeof host === "string" ? host.split(":")[0] : "";
+      // Aligned with desktop validator / runtime isPrivateIp (IPv4 + localhost only).
+      const isLocalHost = typeof host === "string" && isManifestLocalHostname(hostname);
+
+      if (typeof host !== "string" || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) || host.includes("*")) {
+        fail(`$.network.hosts[${index}]`, "network hosts must be exact host names (no wildcards).");
+      } else if (["169.254.169.254", "metadata.google.internal", "169.254.170.2", "fd00:ec2::254"].includes(host.toLowerCase())) {
+        fail(`$.network.hosts[${index}]`, "This host is unconditionally blocked for security reasons.");
+      } else if (isLocalHost && !isLocalAllowed) {
+        fail(`$.network.hosts[${index}]`, 'Local/private network hosts require the "network:local" permission.');
+      } else if (isLocalHost && !/:\d{1,5}$/.test(host)) {
+        fail(`$.network.hosts[${index}]`, "network:local hosts must include a port (e.g. '127.0.0.1:8765').");
+      }
     });
-    if (Array.isArray((manifest.permissions as unknown[]) ?? []) && !(manifest.permissions as unknown[]).includes("network")) fail("$.network", 'Declaring network.hosts without the "network" permission has no effect.');
+    if (perms.length > 0 && !perms.includes("network")) fail("$.network", 'Declaring network.hosts without the "network" permission has no effect.');
   }
 
   // configSchema

@@ -457,6 +457,7 @@ export const zhHans: Partial<Messages> = {
   "plugins.permission.system:metrics": "系统指标",
   "plugins.permission.clipboard": "剪贴板",
   "plugins.permission.network:write": "网络写入",
+  "plugins.permission.network:local": "局域网",
 
   // --- Integrations view (renderer) ---
   "integrations.commandMode.published": "已发布的包",

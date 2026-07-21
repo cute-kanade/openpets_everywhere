@@ -363,7 +363,8 @@ export class PluginSdkBridge {
   }
 
   createApi(record: PluginStateRecord, manifest: OpenPetsJavascriptPluginManifest) {
-    const approved = new Set(record.approvedPermissions);
+    const declared = new Set<string>(manifest.permissions);
+    const approved = new Set(record.approvedPermissions.filter((permission) => declared.has(permission)));
     const state = this.#pluginState(record.id);
     const caps = this.#capabilities;
     const pluginId = record.id;
@@ -632,13 +633,15 @@ export class PluginSdkBridge {
           requirePermission("network");
           state.httpWindow.tick(quotas.httpPerMinute, "HTTP");
           const opts = validateNetOptions(options, approved);
-          return safeHttpFetch(String(url), opts, allowedNetworkHosts(record, manifest), { logger: this.#logger, pluginId, route: "net.fetch" });
+          const allowLocal = approved.has("network:local");
+          return safeHttpFetch(String(url), opts, allowedNetworkHosts(record, manifest), allowLocal, { logger: this.#logger, pluginId, route: "net.fetch" });
         },
         stream: async (url: string, options: unknown, onChunk: (chunk: string) => void) => {
           requirePermission("network");
           state.httpWindow.tick(quotas.httpPerMinute, "HTTP");
           const opts = validateNetOptions(options, approved);
-          return safeHttpStream(String(url), opts, allowedNetworkHosts(record, manifest), guardCallback(onChunk), { logger: this.#logger, pluginId, route: "net.stream" });
+          const allowLocal = approved.has("network:local");
+          return safeHttpStream(String(url), opts, allowedNetworkHosts(record, manifest), guardCallback(onChunk), allowLocal, { logger: this.#logger, pluginId, route: "net.stream" });
         },
       },
       notify: {
@@ -743,7 +746,7 @@ export class PluginSdkBridge {
         unregister: (id: string) => { state.commands.delete(String(id)); },
       },
       status: { set: (status: PluginStatus | string) => { requirePermission("status"); state.status = validateStatus(status); }, clear: () => { state.status = undefined; } },
-      http: { fetch: async (url: string, options?: unknown) => { requirePermission("network"); state.httpWindow.tick(quotas.httpPerMinute, "HTTP"); const opts = isRecord(options) ? options : {}; check(opts.method === undefined || String(opts.method).toUpperCase() === "GET", "Plugin HTTP fetch only supports GET."); return safeHttpFetch(String(url), { method: "GET", headers: isRecord(opts.headers) ? opts.headers as Record<string, string> : undefined, timeoutMs: opts.timeoutMs === undefined ? undefined : Number(opts.timeoutMs) }, allowedNetworkHosts(record, manifest), { logger: this.#logger, pluginId, route: "http.fetch" }); } },
+      http: { fetch: async (url: string, options?: unknown) => { requirePermission("network"); state.httpWindow.tick(quotas.httpPerMinute, "HTTP"); const opts = isRecord(options) ? options : {}; check(opts.method === undefined || String(opts.method).toUpperCase() === "GET", "Plugin HTTP fetch only supports GET."); return safeHttpFetch(String(url), { method: "GET", headers: safeNetHeaders(opts.headers), timeoutMs: opts.timeoutMs === undefined ? undefined : Number(opts.timeoutMs) }, allowedNetworkHosts(record, manifest), false, { logger: this.#logger, pluginId, route: "http.fetch" }); } },
       log: Object.fromEntries((["debug", "info", "warn", "error"] as PluginLogLevel[]).map((level) => [level, (...args: unknown[]) => { state.logWindow.tick(quotas.logsPerMinute, "log"); this.#logger(level, "plugin log", { id: manifest.id, args }); }])) as Record<PluginLogLevel, (...args: unknown[]) => void>,
       t: makePluginT(manifest.id),
       get locale(): string { return getActiveLocaleLang(); },
@@ -907,15 +910,56 @@ function safeNetHeaders(value: unknown): Record<string, string> | undefined {
   return out;
 }
 
-function allowedNetworkHosts(record: PluginStateRecord, manifest: OpenPetsJavascriptPluginManifest): Set<string> { const manifestHosts = new Set((manifest.network?.hosts ?? []).map((h) => h.toLowerCase())); const approved = record.approvedNetworkHosts?.map((h) => h.toLowerCase()) ?? []; return new Set(approved.filter((h) => manifestHosts.has(h))); }
+function allowedNetworkHosts(record: PluginStateRecord, manifest: OpenPetsJavascriptPluginManifest): Set<string> {
+  const manifestHosts = new Set((manifest.network?.hosts ?? []).map((h) => h.toLowerCase()));
+  const approved = record.approvedNetworkHosts?.map((h) => h.toLowerCase()) ?? [];
+  return new Set(approved.filter((h) => manifestHosts.has(h)));
+}
 
-async function prepareSafeRequest(urlText: string, opts: ValidatedNetOptions, allowedHosts: Set<string>): Promise<{ url: URL; init: RequestInit; controller: AbortController; timeout: NodeJS.Timeout }> {
+const UNCONDITIONALLY_BLOCKED_HOSTS = new Set([
+  "169.254.169.254", "metadata.google.internal", "169.254.170.2", "fd00:ec2::254"
+]);
+
+function isExplicitLocalHost(host: string): boolean {
+  return host === "localhost" || host.endsWith(".localhost") || isPrivateIp(host);
+}
+
+function isApprovedNetworkHost(host: string, effectivePort: string, defaultPort: string, allowedHosts: Set<string>): boolean {
+  if (allowedHosts.has(`${host}:${effectivePort}`)) return true;
+  // Bare hostname approval covers only the scheme default port — never an explicit non-default port.
+  return effectivePort === defaultPort && allowedHosts.has(host);
+}
+
+async function prepareSafeRequest(urlText: string, opts: ValidatedNetOptions, allowedHosts: Set<string>, allowLocal: boolean = false): Promise<{ url: URL; init: RequestInit; controller: AbortController; timeout: NodeJS.Timeout }> {
   const url = new URL(urlText);
-  if (url.protocol !== "https:") throw new Error("Plugin HTTP fetch requires HTTPS.");
   if (url.username || url.password) throw new Error("Plugin HTTP fetch credentials are not allowed.");
   const host = url.hostname.toLowerCase();
-  if (!allowedHosts.has(host)) throw new Error("Plugin HTTP host is not approved.");
-  await assertPublicHost(host);
+
+  if (UNCONDITIONALLY_BLOCKED_HOSTS.has(host)) {
+    throw new Error("Plugin HTTP host is unconditionally blocked (metadata service).");
+  }
+
+  const localTarget = isExplicitLocalHost(host);
+  if (localTarget) {
+    if (!allowLocal) throw new Error("Plugin HTTP fetch requires HTTPS (or HTTP with network:local).");
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Plugin HTTP fetch requires HTTPS (or HTTP with network:local).");
+  } else if (url.protocol !== "https:") {
+    throw new Error("Plugin HTTP fetch requires HTTPS (or HTTP with network:local).");
+  }
+
+  const defaultPort = url.protocol === "https:" ? "443" : "80";
+  const effectivePort = url.port || defaultPort;
+  if (!isApprovedNetworkHost(host, effectivePort, defaultPort, allowedHosts)) {
+    throw new Error("Plugin HTTP host is not approved.");
+  }
+
+  if (localTarget) {
+    // network:local is additive: local endpoints keep loopback/metadata defenses; public hosts still use assertPublicHost below.
+    if (host === "localhost" || host.endsWith(".localhost")) url.hostname = "127.0.0.1";
+  } else {
+    await assertPublicHost(host);
+  }
+
   const controller = new AbortController();
   const timeoutMs = Math.min(Math.max(Number(opts.timeoutMs ?? 10_000), 1_000), 120_000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -925,14 +969,14 @@ async function prepareSafeRequest(urlText: string, opts: ValidatedNetOptions, al
 
 type NetworkDiagnostics = { logger?: PluginRuntimeLogger; pluginId?: string; route?: string };
 
-export async function safeHttpFetch(urlText: string, options: ValidatedNetOptions | unknown, allowedHosts: Set<string>, diagnostics?: NetworkDiagnostics): Promise<SimpleHttpResponse> {
+export async function safeHttpFetch(urlText: string, options: ValidatedNetOptions | unknown, allowedHosts: Set<string>, allowLocal: boolean = false, diagnostics?: NetworkDiagnostics): Promise<SimpleHttpResponse> {
   const opts: ValidatedNetOptions = isValidatedNetOptions(options) ? options : { method: "GET", headers: undefined, timeoutMs: undefined };
   const started = Date.now();
   let host = "";
   try { host = new URL(urlText).hostname.toLowerCase(); } catch { host = "invalid"; }
   logPluginDiagnostic(diagnostics?.logger, "debug", "plugin network request", { pluginId: diagnostics?.pluginId, route: diagnostics?.route ?? "net.fetch", method: opts.method, host, phase: "begin" });
   let prepared: Awaited<ReturnType<typeof prepareSafeRequest>>;
-  try { prepared = await prepareSafeRequest(urlText, opts, allowedHosts); }
+  try { prepared = await prepareSafeRequest(urlText, opts, allowedHosts, allowLocal); }
   catch (error) { logPluginDiagnostic(diagnostics?.logger, "warn", "plugin network request", { pluginId: diagnostics?.pluginId, route: diagnostics?.route ?? "net.fetch", method: opts.method, host, phase: "denied", reason: error instanceof Error ? error.message : String(error), errorCode: classifyPluginError(error), durationMs: Date.now() - started }); throw error; }
   const { url, init, timeout } = prepared;
   try {
@@ -953,12 +997,12 @@ export async function safeHttpFetch(urlText: string, options: ValidatedNetOption
   } finally { clearTimeout(timeout); }
 }
 
-export async function safeHttpStream(urlText: string, opts: ValidatedNetOptions, allowedHosts: Set<string>, onChunk: (chunk: string) => void, diagnostics?: NetworkDiagnostics): Promise<{ status: number; ok: boolean }> {
+export async function safeHttpStream(urlText: string, opts: ValidatedNetOptions, allowedHosts: Set<string>, onChunk: (chunk: string) => void, allowLocal: boolean = false, diagnostics?: NetworkDiagnostics): Promise<{ status: number; ok: boolean }> {
   const started = Date.now();
   let host = "";
   try { host = new URL(urlText).hostname.toLowerCase(); } catch { host = "invalid"; }
   let prepared: Awaited<ReturnType<typeof prepareSafeRequest>>;
-  try { prepared = await prepareSafeRequest(urlText, { ...opts, timeoutMs: opts.timeoutMs ?? 120_000 }, allowedHosts); }
+  try { prepared = await prepareSafeRequest(urlText, { ...opts, timeoutMs: opts.timeoutMs ?? 120_000 }, allowedHosts, allowLocal); }
   catch (error) { logPluginDiagnostic(diagnostics?.logger, "warn", "plugin network request", { pluginId: diagnostics?.pluginId, route: diagnostics?.route ?? "net.stream", method: opts.method, host, phase: "denied", reason: error instanceof Error ? error.message : String(error), errorCode: classifyPluginError(error), durationMs: Date.now() - started }); throw error; }
   const { url, init, timeout } = prepared;
   try {

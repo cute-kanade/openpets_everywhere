@@ -37,7 +37,7 @@ type PluginPermission =
   | "pet:speak" | "pet:reaction" | "pet:move" | "timer" | "schedule" | "storage" | "status" | "commands" | "network"
   | "pet:interact" | "pet:pin" | "pet:animate" | "pet:speak:dynamic" | "pet:drop" | "pets:read" | "pets:manage"
   | "audio" | "events" | "ui:toast" | "ui:panel" | "ui:delivery" | "notify" | "bus" | "ai" | "secrets" | "voice:speak" | "voice:listen"
-  | "auth" | "files" | "system:openExternal" | "system:metrics" | "clipboard" | "network:write";
+  | "auth" | "files" | "system:openExternal" | "system:metrics" | "clipboard" | "network:write" | "network:local";
 type PluginPlatformSettings = {
   allowPluginAudio: boolean;
   allowDynamicSpeech: boolean;
@@ -1590,8 +1590,9 @@ const pluginPermissionLabelKeys: Record<PluginPermission, string> = {
   "system:metrics": "plugins.permission.system:metrics",
   clipboard: "plugins.permission.clipboard",
   "network:write": "plugins.permission.network:write",
+  "network:local": "plugins.permission.network:local",
 };
-const sensitivePermissionSet = new Set<PluginPermission>(["voice:listen", "clipboard", "pet:speak:dynamic"]);
+const sensitivePermissionSet = new Set<PluginPermission>(["voice:listen", "clipboard", "pet:speak:dynamic", "network:local"]);
 
 const pluginStatusTone: Record<NonNullable<PluginStatus["tone"]>, keyof typeof statusPillToneClass> = {
   info: "blue",

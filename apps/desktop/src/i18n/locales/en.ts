@@ -506,6 +506,7 @@ export const en = {
   "plugins.permission.system:metrics": "System metrics",
   "plugins.permission.clipboard": "Clipboard",
   "plugins.permission.network:write": "Network write",
+  "plugins.permission.network:local": "Local network",
 
   // --- Integrations view (renderer) ---
   "integrations.commandMode.published": "Published package",

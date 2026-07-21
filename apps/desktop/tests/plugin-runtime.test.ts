@@ -126,6 +126,117 @@ await scenario("javascript http fetch denies unapproved host and non-get", async
   await assert.rejects(() => jsHost.starts[0].sdk!.http.fetch("https://api.github.com/", { method: "POST" }), /only supports GET/);
 });
 
+await scenario("javascript http fetch stays GET-only when network:write is approved", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, {
+    manifestVersion: 3,
+    runtime: "javascript",
+    sdkVersion: "3.0.0",
+    approvedPermissions: ["network", "network:write"],
+    approvedNetworkHosts: ["1.1.1.1"],
+  }, jsManifest({
+    manifestVersion: 3,
+    sdkVersion: "3.0.0",
+    permissions: ["network", "network:write"],
+    network: { hosts: ["1.1.1.1"] },
+  }));
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  await assert.rejects(() => jsHost.starts[0].sdk!.http.fetch("https://1.1.1.1/", { method: "POST" }), /only supports GET/);
+});
+
+await scenario("javascript net.fetch with network:local reaches local and public hosts", async ({ store }) => {
+  const originalFetch = globalThis.fetch;
+  const jsHost = new FakeJsHost();
+  const localHost = "127.0.0.1:18766";
+  const publicHost = "1.1.1.1";
+  globalThis.fetch = (async (input: string | URL) => new Response(String(input).includes("127.0.0.1") ? "local-ok" : "public-ok", { status: 200 })) as typeof fetch;
+  try {
+    addPlugin(store, {
+      manifestVersion: 3,
+      runtime: "javascript",
+      sdkVersion: "3.0.0",
+      approvedPermissions: ["network", "network:local"],
+      approvedNetworkHosts: [localHost, publicHost],
+    }, jsManifest({
+      manifestVersion: 3,
+      sdkVersion: "3.0.0",
+      permissions: ["network", "network:local"],
+      network: { hosts: [localHost, publicHost] },
+    }));
+    await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+    const local = await jsHost.starts[0].sdk!.net.fetch(`http://${localHost}/`);
+    assert.equal(local.status, 200);
+    assert.equal(local.text, "local-ok");
+    const pub = await jsHost.starts[0].sdk!.net.fetch(`https://${publicHost}/`);
+    assert.equal(pub.status, 200);
+    assert.equal(pub.text, "public-ok");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+await scenario("javascript net.fetch denies stale network:write after manifest removal", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, {
+    manifestVersion: 3,
+    runtime: "javascript",
+    sdkVersion: "3.0.0",
+    approvedPermissions: ["network", "network:write"],
+    approvedNetworkHosts: ["1.1.1.1"],
+  }, jsManifest({
+    manifestVersion: 3,
+    sdkVersion: "3.0.0",
+    permissions: ["network"],
+    network: { hosts: ["1.1.1.1"] },
+  }));
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  await assert.rejects(() => jsHost.starts[0].sdk!.net.fetch("https://1.1.1.1/", { method: "POST", body: "{}" }), /network:write/);
+});
+
+await scenario("javascript net.fetch bare host approval denies non-default port", async ({ store }) => {
+  const originalFetch = globalThis.fetch;
+  const jsHost = new FakeJsHost();
+  globalThis.fetch = (async () => new Response("ok", { status: 200 })) as typeof fetch;
+  try {
+    addPlugin(store, {
+      manifestVersion: 3,
+      runtime: "javascript",
+      sdkVersion: "3.0.0",
+      approvedPermissions: ["network"],
+      approvedNetworkHosts: ["1.1.1.1"],
+    }, jsManifest({
+      manifestVersion: 3,
+      sdkVersion: "3.0.0",
+      permissions: ["network"],
+      network: { hosts: ["1.1.1.1"] },
+    }));
+    await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+    await assert.rejects(() => jsHost.starts[0].sdk!.net.fetch("https://1.1.1.1:8443/"), /host is not approved/);
+    const ok = await jsHost.starts[0].sdk!.net.fetch("https://1.1.1.1/");
+    assert.equal(ok.status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+await scenario("javascript net.fetch requires exact approved host:port", async ({ store }) => {
+  const jsHost = new FakeJsHost();
+  addPlugin(store, {
+    manifestVersion: 3,
+    runtime: "javascript",
+    sdkVersion: "3.0.0",
+    approvedPermissions: ["network", "network:local"],
+    approvedNetworkHosts: ["127.0.0.1"],
+  }, jsManifest({
+    manifestVersion: 3,
+    sdkVersion: "3.0.0",
+    permissions: ["network", "network:local"],
+    network: { hosts: ["127.0.0.1:9876"] },
+  }));
+  await runtime(store, new FakeScheduler(), new FakePetApi(), undefined, jsHost).start();
+  await assert.rejects(() => jsHost.starts[0].sdk!.net.fetch("http://127.0.0.1:9876/"), /host is not approved/);
+});
+
 await scenario("javascript http fetch rejects oversized response", async ({ store }) => {
   const originalFetch = globalThis.fetch;
   const jsHost = new FakeJsHost();
@@ -434,7 +545,7 @@ function manifest(patch: Partial<OpenPetsDeclarativePluginManifest> & { everyMin
 }
 
 function jsManifest(patch: Partial<OpenPetsJavascriptPluginManifest> = {}): OpenPetsJavascriptPluginManifest {
-  return { manifestVersion: 2, id: patch.id ?? "plug", name: "Plug", version: patch.version ?? "1.0.0", runtime: "javascript", sdkVersion: patch.sdkVersion ?? "1.0.0", entry: patch.entry ?? "index.js", permissions: patch.permissions ?? [], network: patch.network };
+  return { manifestVersion: patch.manifestVersion ?? 2, id: patch.id ?? "plug", name: "Plug", version: patch.version ?? "1.0.0", runtime: "javascript", sdkVersion: patch.sdkVersion ?? "1.0.0", entry: patch.entry ?? "index.js", permissions: patch.permissions ?? [], network: patch.network };
 }
 
 function isJsManifest(data: unknown): data is OpenPetsJavascriptPluginManifest {

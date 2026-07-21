@@ -61,7 +61,8 @@ export type OpenPetsPermission =
   | "system:openExternal"
   | "system:metrics"
   | "clipboard"
-  | "network:write";
+  | "network:write"
+  | "network:local";
 
 /**
  * Reaction name passed to {@link OpenPetsPetHandle.react}. Common values are
@@ -722,8 +723,10 @@ export interface OpenPetsHttpResponse {
 }
 
 /**
- * HTTPS fetch to manifest-declared, user-approved hosts. Requires `network`.
- * HTTPS-only with redirect, response-size, and private-IP/SSRF guards.
+ * Restricted fetch/stream to manifest-declared, user-approved hosts. Requires `network`.
+ * Public endpoints are HTTPS-only (redirect, response-size, and private-IP/SSRF guards).
+ * Exact declared local HTTP endpoints additionally require `network:local`.
+ * Non-GET methods require `network:write`. Signatures below are the contract.
  */
 export interface OpenPetsNetApi {
   fetch(url: string, options?: OpenPetsNetFetchOptions): Promise<OpenPetsHttpResponse>;

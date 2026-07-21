@@ -457,6 +457,7 @@ export const es419: Partial<Messages> = {
   "plugins.permission.system:metrics": "Métricas del sistema",
   "plugins.permission.clipboard": "Portapapeles",
   "plugins.permission.network:write": "Escritura en red",
+  "plugins.permission.network:local": "Red local",
 
   // --- Integrations view (renderer) ---
   "integrations.commandMode.published": "Paquete publicado",

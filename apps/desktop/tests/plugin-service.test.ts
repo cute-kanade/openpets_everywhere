@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { OPENPETS_PLUGIN_MANIFEST_FILENAME, type OpenPetsDeclarativePluginManifest } from "../src/plugin-manifest.js";
-import { PluginService, executeDefaultPetPluginCommand, getDefaultPetPluginCommands, setPluginServiceForTests, stopPluginService } from "../src/plugin-service.js";
+import { PluginService, executeDefaultPetPluginCommand, formatPermissionDialogDetail, getDefaultPetPluginCommands, setPluginServiceForTests, stopPluginService } from "../src/plugin-service.js";
 import { PluginStateStore, type PluginStateRecord } from "../src/plugin-state.js";
 
 let lastRoot = "";
@@ -761,3 +761,17 @@ function makeZip(name: string, data: Buffer): Buffer {
 }
 
 function crc32(buffer: Buffer): number { let crc = -1; for (const byte of buffer) { crc ^= byte; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); } return (crc ^ -1) >>> 0; }
+
+{
+  const detailNoNet = formatPermissionDialogDetail({ manifestVersion: 1, id: "plug.no.net", name: "No Net", version: "1.0.0", runtime: "declarative", permissions: ["timer", "pet:speak"], triggers: [] });
+  assert.equal(detailNoNet, "Permissions: timer, pet:speak");
+
+  const detailNet = formatPermissionDialogDetail({ manifestVersion: 2, id: "plug.net", name: "Net", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "index.js", permissions: ["network"], network: { hosts: ["api.github.com"] } });
+  assert.equal(detailNet, "Permissions: network\nNetwork endpoints: api.github.com");
+
+  const detailLocalNet = formatPermissionDialogDetail({ manifestVersion: 2, id: "plug.local", name: "Local", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "index.js", permissions: ["network", "network:local"], network: { hosts: ["127.0.0.1:8765", "api.github.com"] } });
+  assert.equal(detailLocalNet, "Permissions: network, network:local\nNetwork endpoints: 127.0.0.1:8765, api.github.com\nLocal network access: Allows connections to local or loopback services.");
+
+  const detailLocalNoHosts = formatPermissionDialogDetail({ manifestVersion: 2, id: "plug.local.nohosts", name: "Local No Hosts", version: "1.0.0", runtime: "javascript", sdkVersion: "1.0.0", entry: "index.js", permissions: ["network:local"] });
+  assert.equal(detailLocalNoHosts, "Permissions: network:local\nNetwork endpoints: None declared\nLocal network access: Allows connections to local or loopback services.");
+}
