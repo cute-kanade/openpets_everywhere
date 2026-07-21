@@ -1,4 +1,4 @@
-# OpenPets Drag Vocab MVP
+# OpenPets Drag Vocab
 
 An [OpenPets](https://github.com/open-pets/openpets) plugin that provides instant dictionary definitions and translations when you drag and drop text onto your pet!
 

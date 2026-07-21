@@ -172,6 +172,43 @@ assertInvalid(
   "invalid_timer_interval",
 );
 
+// network:local — local/private hosts require the permission + explicit port;
+// public lookalikes (e.g. 127.0.0.1.attacker.com) are never classified local.
+const jsNetworkBase = {
+  manifestVersion: 3 as const,
+  id: "js-plugin",
+  name: "JS Plugin",
+  version: "1.0.0",
+  runtime: "javascript" as const,
+  sdkVersion: "3.0.0",
+  entry: "dist/index.js",
+};
+const localNetworkBase = {
+  ...jsNetworkBase,
+  permissions: ["pet:speak", "network", "network:local"],
+};
+const publicNetworkBase = {
+  ...jsNetworkBase,
+  permissions: ["pet:speak", "network"],
+};
+// Without network:local, recognized local hosts are rejected.
+assertInvalid({ ...publicNetworkBase, network: { hosts: ["127.0.0.1:8765"] } }, "missing_local_network_permission");
+assertInvalid({ ...publicNetworkBase, network: { hosts: ["localhost:8765"] } }, "missing_local_network_permission");
+// Public lookalike is not local — valid without network:local and without a port.
+assertValid({ ...publicNetworkBase, network: { hosts: ["127.0.0.1.attacker.com"] } });
+assertValid({ ...localNetworkBase, network: { hosts: ["127.0.0.1.attacker.com"] } });
+// With network:local, true local hosts need an explicit port.
+assertValid({ ...localNetworkBase, network: { hosts: ["127.0.0.1:8765"] } });
+assertValid({ ...localNetworkBase, network: { hosts: ["localhost:8765"] } });
+assertValid({ ...localNetworkBase, network: { hosts: ["LOCALHOST:8765"] } });
+assertValid({ ...localNetworkBase, network: { hosts: ["169.254.1.1:8080"] } });
+assertValid({ ...localNetworkBase, network: { hosts: ["100.64.0.1:8080"] } });
+assertInvalid({ ...localNetworkBase, network: { hosts: ["127.0.0.1"] } }, "missing_port");
+assertInvalid({ ...localNetworkBase, network: { hosts: ["localhost"] } }, "missing_port");
+assertInvalid({ ...localNetworkBase, network: { hosts: ["LOCALHOST"] } }, "missing_port");
+assertInvalid({ ...localNetworkBase, network: { hosts: ["169.254.1.1"] } }, "missing_port");
+assertInvalid({ ...localNetworkBase, network: { hosts: ["100.64.0.1"] } }, "missing_port");
+
 assertInvalid(
   {
     ...validManifest,

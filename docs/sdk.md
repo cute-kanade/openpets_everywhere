@@ -50,7 +50,7 @@ each gated by a permission ([plugins.md](plugins.md)):
 | `ctx.ai` | Host-mediated AI gateway | `ai` |
 | `ctx.secrets` | Encrypted plugin-scoped secrets | `secrets` |
 | `ctx.auth` | Host-mediated OAuth/PKCE | `auth` |
-| `ctx.net` | Restricted HTTPS fetch / streaming to declared hosts | `network:*` |
+| `ctx.net` | Declared∩approved hosts; public HTTPS + optional local HTTP via `network:local`; non-GET via `network:write` | `network`, `network:write`, `network:local` |
 | `ctx.files` | Scoped file access | `files` |
 | `ctx.system` | System info / clipboard | `system:*`, `clipboard` |
 | `ctx.assets` | Resolve declared asset refs (icons/images/sprites/sounds) | (declared assets) |
@@ -63,6 +63,14 @@ The exact signatures live in `packages/sdk/src/index.ts` — that file is the
 contract, so program against it rather than any list copied into a doc.
 `OpenPetsPermission` in the SDK mirrors manifest validation so authors get
 autocomplete for exactly the capabilities they can request.
+
+`ctx.net` is the canonical network surface. Executable permissions are
+manifest∩approved. Hosts match the intersection of `network.hosts` and approved
+hosts; a bare hostname covers only the scheme default port. `network:local` adds
+declared loopback/private HTTP endpoints alongside public HTTPS (public hosts
+still use public-host checks). `network:write` unlocks non-GET on `ctx.net` only.
+Legacy `ctx.http.fetch` stays GET-only public HTTPS and never inherits local or
+write access.
 
 Commands time out after five seconds by default. A command that deliberately
 waits for user interaction, such as host-mediated OAuth, may declare a bounded

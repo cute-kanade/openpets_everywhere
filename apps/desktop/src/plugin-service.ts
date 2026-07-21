@@ -854,10 +854,51 @@ function isDialogOptions(value: unknown): value is OpenDialogOptions {
   return typeof value === "object" && value !== null;
 }
 
-async function defaultConfirmPermissions(manifest: OpenPetsPluginManifest): Promise<boolean> {
-  const { dialog } = await import("electron");
+function isLocalNetworkHost(host: string): boolean {
+  if (typeof host !== "string") return false;
+  const hostname = host.split(":")[0]?.toLowerCase() ?? "";
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "::1") return true;
+  const parts = hostname.split(".");
+  if (parts.length !== 4) return false;
+  const octets = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : NaN));
+  if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = octets;
+  return (
+    a === 10 ||
+    a === 127 ||
+    a === 0 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127)
+  );
+}
+
+export function formatPermissionDialogDetail(manifest: OpenPetsPluginManifest): string {
   const permissions = manifest.permissions.length === 0 ? "No permissions" : manifest.permissions.join(", ");
-  const name = manifest.name.startsWith("$t:") ? manifest.id : manifest.name;
-  const result = await dialog.showMessageBox({ type: "question", buttons: ["Load plugin", "Cancel"], defaultId: 0, cancelId: 1, title: "Load OpenPets plugin?", message: `Load ${name}?`, detail: `Permissions: ${permissions}` });
+  const detailLines = [`Permissions: ${permissions}`];
+
+  const hasNetworkPermission = manifest.permissions.some((permission) => permission === "network" || permission === "network:write" || permission === "network:local");
+  const declaredHosts = "network" in manifest && Array.isArray(manifest.network?.hosts) ? manifest.network.hosts : undefined;
+  const hasNetworkAccess = hasNetworkPermission || (declaredHosts !== undefined && declaredHosts.length > 0);
+
+  if (hasNetworkAccess) {
+    const endpointsText = declaredHosts && declaredHosts.length > 0 ? declaredHosts.join(", ") : "None declared";
+    detailLines.push(`Network endpoints: ${endpointsText}`);
+  }
+
+  const hasLocalNetwork = manifest.permissions.includes("network:local") || (declaredHosts?.some((host) => isLocalNetworkHost(host)) ?? false);
+  if (hasLocalNetwork) {
+    detailLines.push("Local network access: Allows connections to local or loopback services.");
+  }
+
+  return detailLines.join("\n");
+}
+
+export async function defaultConfirmPermissions(manifest: OpenPetsPluginManifest): Promise<boolean> {
+  const { dialog } = await import("electron");
+  const name = resolvePluginText(manifest.id, manifest.name) ?? (manifest.name.startsWith("$t:") ? manifest.id : manifest.name);
+  const detail = formatPermissionDialogDetail(manifest);
+  const result = await dialog.showMessageBox({ type: "question", buttons: ["Load plugin", "Cancel"], defaultId: 0, cancelId: 1, title: "Load OpenPets plugin?", message: `Load ${name}?`, detail });
   return result.response === 0;
 }

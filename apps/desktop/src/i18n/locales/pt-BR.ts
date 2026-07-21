@@ -460,6 +460,7 @@ export const ptBR: Partial<Messages> = {
   "plugins.permission.system:metrics": "Métricas do sistema",
   "plugins.permission.clipboard": "Área de transferência",
   "plugins.permission.network:write": "Gravação na rede",
+  "plugins.permission.network:local": "Rede local",
 
   // --- Integrations view (renderer) ---
   "integrations.commandMode.published": "Pacote publicado",

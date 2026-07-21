@@ -1,8 +1,8 @@
 {
   "manifestVersion": 3,
-  "id": "openpets.drag-vocab-mvp",
-  "name": "Vocabulary Drag & Drop",
-  "description": "Drag words to see definitions and translations in a natively scrollable HUD card.",
+  "id": "openpets.drag-vocab",
+  "name": "$t:plugin.name",
+  "description": "$t:plugin.description",
   "version": "1.0.0",
   "runtime": "javascript",
   "icon": "sparkles",

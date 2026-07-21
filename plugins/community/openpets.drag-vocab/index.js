@@ -21,16 +21,26 @@ OpenPetsPlugin.register({
 
     async function ankiRequest(action, params = {}) {
       try {
-        console.log(`Sending Anki request via ctx.http.fetch: ${action}`);
-        const response = await ctx.http.fetch('http://127.0.0.1:8765', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, version: 6, params })
+        const response = await ctx.net.fetch("http://127.0.0.1:8765", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, version: 6, params }),
         });
-        
-        const data = typeof response.json === 'function' ? await response.json() : response.json;
-        if (data.error) throw new Error(data.error);
-        return data.result;
+
+        if (!response.ok) {
+          throw new Error(`AnkiConnect HTTP ${response.status}`);
+        }
+
+        let data = response.json;
+        if (data === undefined) {
+          try {
+            data = JSON.parse(response.text || "{}");
+          } catch {
+            throw new Error("AnkiConnect returned non-JSON response");
+          }
+        }
+        if (data && typeof data === "object" && data.error) throw new Error(data.error);
+        return data && typeof data === "object" ? data.result : undefined;
       } catch (err) {
         console.error("Anki API Error:", err);
         if (ctx.log) ctx.log.error("Anki API Error details: " + err.message + "\n" + err.stack);
@@ -297,6 +307,5 @@ OpenPetsPlugin.register({
       try { await globalThis.__vocabBubbleHandle.dismiss(); } catch (e) {}
       globalThis.__vocabBubbleHandle = null;
     }
-    globalThis.__vocabPluginStopped = true;
   }
 });

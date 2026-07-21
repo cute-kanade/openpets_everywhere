@@ -70,6 +70,7 @@ Current community lineup:
 | Plugin id | What it is |
 |-----------|------------|
 | `openpets.walkabout` | Makes the pet roam the screen, follow the cursor, or patrol back and forth |
+| `openpets.drag-vocab` | Drag text onto the pet for dictionary definitions/translations; optional local AnkiConnect flashcard save |
 
 > Drift note: `web/docs/plugin-publishing.md` still lists an **older** lineup
 > (`ambient-companion`, `break-buddy`, `pet-pal`, `github-notifications`). That

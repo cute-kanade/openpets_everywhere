@@ -326,24 +326,50 @@ function validateEntryPath(value: unknown, errors: PluginManifestValidationError
   if (value.startsWith("/") || value.includes("\\") || value.split("/").includes("..") || !/\.(?:mjs|js)$/.test(value)) addError(errors, "$.entry", "invalid_entry", "entry must be a relative .js or .mjs path.");
 }
 
+/**
+ * Manifest-time local/private host detector aligned with runtime `isPrivateIp`
+ * (IPv4 only — host grammar rejects IPv6). Full dotted-quad match so
+ * `127.0.0.1.attacker.com` is never classified local. localhost is case-insensitive.
+ */
+function isManifestLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  const parts = host.split(".");
+  if (parts.length !== 4) return false;
+  const octets = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : NaN));
+  if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = octets;
+  return (
+    a === 10 ||
+    a === 127 ||
+    a === 0 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127)
+  );
+}
+
 function validateNetwork(value: unknown, permissionsValue: unknown, errors: PluginManifestValidationError[]): void {
   if (value === undefined) return;
   if (!isRecord(value) || !Array.isArray(value.hosts)) return addError(errors, "$.network.hosts", "invalid_network_hosts", "network.hosts must be an array.");
   rejectUnknownFields(value, new Set(["hosts"]), "$.network", errors);
-  
+
   const isLocalAllowed = Array.isArray(permissionsValue) && permissionsValue.includes("network:local");
 
   const seen = new Set<string>();
   value.hosts.forEach((host, index) => {
-    const hostname = host.split(":")[0];
-    const isLocalHost = hostname === "localhost" || hostname.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+/.test(hostname) || /^192\.168\./.test(hostname) || /^10\./.test(hostname) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+    const hostname = typeof host === "string" ? host.split(":")[0] : "";
+    const isLocalHost = typeof host === "string" && isManifestLocalHostname(hostname);
 
     if (typeof host !== "string" || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) || host.includes("*") || host.trim() !== host) {
       addError(errors, `$.network.hosts[${index}]`, "invalid_network_host", "network hosts must be exact host names.");
-    } else if (isLocalAllowed && isLocalHost && !/:\d{1,5}$/.test(host)) {
-      addError(errors, `$.network.hosts[${index}]`, "missing_port", "network:local hosts must include a port (e.g. '127.0.0.1:8765').");
     } else if (["169.254.169.254", "metadata.google.internal", "169.254.170.2", "fd00:ec2::254"].includes(host.toLowerCase())) {
       addError(errors, `$.network.hosts[${index}]`, "blocked_host", "This host is unconditionally blocked for security reasons.");
+    } else if (isLocalHost && !isLocalAllowed) {
+      addError(errors, `$.network.hosts[${index}]`, "missing_local_network_permission", 'Local/private network hosts require the "network:local" permission.');
+    } else if (isLocalHost && !/:\d{1,5}$/.test(host)) {
+      addError(errors, `$.network.hosts[${index}]`, "missing_port", "network:local hosts must include a port (e.g. '127.0.0.1:8765').");
     } else if (seen.has(host)) {
       addError(errors, `$.network.hosts[${index}]`, "duplicate_network_host", "Duplicate network host.");
     }

@@ -460,6 +460,7 @@ export const zhHant: Partial<Messages> = {
   "plugins.permission.system:metrics": "系統指標",
   "plugins.permission.clipboard": "剪貼簿",
   "plugins.permission.network:write": "網路寫入",
+  "plugins.permission.network:local": "區域網路",
 
   // --- Integrations view (renderer) ---
   "integrations.commandMode.published": "已發佈套件",

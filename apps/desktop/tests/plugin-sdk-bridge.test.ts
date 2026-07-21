@@ -130,7 +130,7 @@ await scenario("hud bubble spec validation is enforced", async ({ store, bridge 
   };
   store.upsertRecord(updatedRecord);
   
-  const approvedApi = bridge.createApi(updatedRecord, manifest());
+  const approvedApi = bridge.createApi(updatedRecord, manifest({ permissions: updatedRecord.approvedPermissions as OpenPetsJavascriptPluginManifest["permissions"] }));
 
   // Should succeed with valid HUD
   await approvedApi.ui.bubble({
@@ -216,7 +216,7 @@ await scenario("delivery requires permission and tears down without callbacks", 
   await assert.rejects(() => api.ui.delivery({ key: "calendar.1", courier: { kind: "sprite", name: "courier" }, title: "Event", detail: "Soon", expiresAt: Date.now() + 60_000 }), /ui:delivery/);
   const record = { ...store.getRecord("plug")!, approvedPermissions: [...store.getRecord("plug")!.approvedPermissions, "ui:delivery" as const] };
   store.upsertRecord(record);
-  const approved = bridge.createApi(record, manifest());
+  const approved = bridge.createApi(record, manifest({ permissions: record.approvedPermissions as OpenPetsJavascriptPluginManifest["permissions"] }));
   await assert.rejects(() => approved.ui.delivery({ key: "calendar.1", courier: { kind: "sprite", name: "courier" }, title: "Event", detail: "Soon", expiresAt: Date.now() + 60_000, x: 1 }), /Invalid delivery descriptor field/);
   const handle = await approved.ui.delivery({ key: "calendar.1", courier: { kind: "sprite", name: "courier" }, title: "Event", detail: "Soon", expiresAt: Date.now() + 60_000 });
   let dismissed = false;
@@ -230,7 +230,7 @@ await scenario("delivery requires permission and tears down without callbacks", 
 await scenario("delivery re-registration retires obsolete handles and callbacks", async ({ bridge, store, capabilities }) => {
   const record = { ...store.getRecord("plug")!, approvedPermissions: [...store.getRecord("plug")!.approvedPermissions, "ui:delivery" as const] };
   store.upsertRecord(record);
-  const api = bridge.createApi(record, manifest());
+  const api = bridge.createApi(record, manifest({ permissions: record.approvedPermissions as OpenPetsJavascriptPluginManifest["permissions"] }));
   const first = await api.ui.delivery({ key: "calendar.1", courier: { kind: "sprite", name: "courier" }, title: "First", detail: "Soon", expiresAt: Date.now() + 60_000 });
   let firstDismissals = 0;
   assert.deepEqual(api.ui.deliverySubscribe(first.deliveryId, () => { firstDismissals += 1; }), { ok: true });
@@ -244,6 +244,96 @@ await scenario("delivery re-registration retires obsolete handles and callbacks"
   assert.equal(firstDismissals, 0);
   assert.equal(secondReason, "click");
   assert.deepEqual(api.ui.deliverySubscribe(second.deliveryId, () => undefined), { ok: false });
+});
+
+await scenario("net.fetch with network:local reaches exact local HTTP and public HTTPS hosts", async ({ bridge, store }) => {
+  const originalFetch = globalThis.fetch;
+  const localHost = "127.0.0.1:18765";
+  const publicHost = "1.1.1.1";
+  const seen: string[] = [];
+  globalThis.fetch = (async (input: string | URL | { url?: string }) => {
+    const href = String(input);
+    seen.push(href);
+    return new Response(href.includes("127.0.0.1") ? "local-ok" : "public-ok", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const record = {
+      ...store.getRecord("plug")!,
+      approvedPermissions: ["network" as const, "network:local" as const],
+      approvedNetworkHosts: [localHost, publicHost],
+    };
+    store.upsertRecord(record);
+    const api = bridge.createApi(record, manifest({
+      permissions: ["network", "network:local"],
+      network: { hosts: [localHost, publicHost] },
+    }));
+    const local = await api.net.fetch(`http://${localHost}/status`);
+    assert.equal(local.status, 200);
+    assert.equal(local.text, "local-ok");
+    const pub = await api.net.fetch(`https://${publicHost}/`);
+    assert.equal(pub.status, 200);
+    assert.equal(pub.text, "public-ok");
+    assert.equal(seen.length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+await scenario("stale network:local approval is denied after manifest removal", async ({ bridge, store }) => {
+  const localHost = "127.0.0.1:18765";
+  const record = {
+    ...store.getRecord("plug")!,
+    approvedPermissions: ["network" as const, "network:local" as const],
+    approvedNetworkHosts: [localHost],
+  };
+  store.upsertRecord(record);
+  // Manifest no longer declares network:local — intersection must drop the stale approval.
+  const api = bridge.createApi(record, manifest({ permissions: ["network"], network: { hosts: [localHost] } }));
+  await assert.rejects(() => api.net.fetch(`http://${localHost}/status`), /HTTPS|network:local|not public|restricted/);
+});
+
+await scenario("bare host approval does not authorize a non-default URL port", async ({ bridge, store }) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response("ok", { status: 200 })) as typeof fetch;
+  try {
+    const record = {
+      ...store.getRecord("plug")!,
+      approvedPermissions: ["network" as const],
+      approvedNetworkHosts: ["1.1.1.1"],
+    };
+    store.upsertRecord(record);
+    const api = bridge.createApi(record, manifest({ permissions: ["network"], network: { hosts: ["1.1.1.1"] } }));
+    await assert.rejects(() => api.net.fetch("https://1.1.1.1:8443/"), /host is not approved/);
+    const ok = await api.net.fetch("https://1.1.1.1/");
+    assert.equal(ok.status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+await scenario("legacy http.fetch stays GET-only even when network:write is approved", async ({ bridge, store }) => {
+  const record = {
+    ...store.getRecord("plug")!,
+    approvedPermissions: ["network" as const, "network:write" as const],
+    approvedNetworkHosts: ["1.1.1.1"],
+  };
+  store.upsertRecord(record);
+  const api = bridge.createApi(record, manifest({ permissions: ["network", "network:write"], network: { hosts: ["1.1.1.1"] } }));
+  await assert.rejects(() => api.http.fetch("https://1.1.1.1/", { method: "POST" }), /only supports GET/);
+});
+
+await scenario("approved bare hostname does not approve a newly declared host:port entry", async ({ bridge, store }) => {
+  const record = {
+    ...store.getRecord("plug")!,
+    approvedPermissions: ["network" as const, "network:local" as const],
+    approvedNetworkHosts: ["127.0.0.1"],
+  };
+  store.upsertRecord(record);
+  const api = bridge.createApi(record, manifest({
+    permissions: ["network", "network:local"],
+    network: { hosts: ["127.0.0.1:9876"] },
+  }));
+  await assert.rejects(() => api.net.fetch("http://127.0.0.1:9876/"), /host is not approved/);
 });
 
 type ScenarioContext = {
@@ -327,7 +417,7 @@ function createTestCapabilities(): TestCapabilities {
   };
 }
 
-function manifest(): OpenPetsJavascriptPluginManifest {
+function manifest(patch: Partial<OpenPetsJavascriptPluginManifest> = {}): OpenPetsJavascriptPluginManifest {
   return {
     manifestVersion: 3,
     id: "plug",
@@ -336,7 +426,8 @@ function manifest(): OpenPetsJavascriptPluginManifest {
     runtime: "javascript",
     sdkVersion: "3.0.0",
     entry: "index.js",
-    permissions: ["commands", "events", "storage", "auth"],
+    permissions: patch.permissions ?? ["commands", "events", "storage", "pet:reaction", "auth"],
     assets: { icons: { focus: "assets/focus.svg" } },
+    ...(patch.network === undefined ? {} : { network: patch.network }),
   };
 }
